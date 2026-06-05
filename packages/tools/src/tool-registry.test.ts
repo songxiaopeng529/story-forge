@@ -1,0 +1,92 @@
+import { describe, expect, it } from "vitest";
+import { createWorkspaceFileTools } from "./file-tools";
+import { ToolRegistry, type ToolDefinition } from "./tool-registry";
+import { WorkspaceSandbox } from "./workspace-sandbox";
+
+describe("ToolRegistry", () => {
+  it("registers tools and exposes schemas without executors", () => {
+    const registry = new ToolRegistry();
+    const definition: ToolDefinition = {
+      name: "echo",
+      description: "Echo text",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+        },
+        required: ["text"],
+      },
+      execute: (input) => input,
+    };
+
+    registry.register(definition);
+
+    expect(registry.list()).toEqual([definition]);
+    expect(registry.schemas()).toEqual([
+      {
+        name: "echo",
+        description: "Echo text",
+        parameters: definition.parameters,
+      },
+    ]);
+  });
+
+  it("executes a known tool and wraps output in an ok result", async () => {
+    const registry = new ToolRegistry([
+      {
+        name: "uppercase",
+        description: "Uppercase text",
+        parameters: {
+          type: "object",
+          properties: {
+            text: { type: "string" },
+          },
+          required: ["text"],
+        },
+        execute: (input) => String(input.text).toUpperCase(),
+      },
+    ]);
+
+    await expect(registry.execute("uppercase", { text: "forge" })).resolves.toEqual({
+      ok: true,
+      output: "FORGE",
+    });
+  });
+
+  it("returns a structured error for unknown tools", async () => {
+    const registry = new ToolRegistry();
+
+    await expect(registry.execute("missing", {})).resolves.toEqual({
+      ok: false,
+      error: "Tool not found: missing",
+    });
+  });
+
+  it("catches execution errors and returns the error message", async () => {
+    const registry = new ToolRegistry([
+      {
+        name: "explode",
+        description: "Explode",
+        parameters: { type: "object" },
+        execute: () => {
+          throw new Error("boom");
+        },
+      },
+    ]);
+
+    await expect(registry.execute("explode", {})).resolves.toEqual({
+      ok: false,
+      error: "boom",
+    });
+  });
+
+  it("provides sandboxed workspace file tools with structured validation errors", async () => {
+    const registry = new ToolRegistry(createWorkspaceFileTools(new WorkspaceSandbox(process.cwd())));
+
+    expect(registry.schemas().map((schema) => schema.name)).toEqual(["workspace.readFile", "workspace.listDirectory"]);
+    await expect(registry.execute("workspace.readFile", {})).resolves.toEqual({
+      ok: false,
+      error: "workspace.readFile requires a string path",
+    });
+  });
+});
