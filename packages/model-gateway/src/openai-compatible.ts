@@ -7,7 +7,6 @@ export type OpenAICompatibleProviderOptions = {
   baseUrl: string;
   model: string;
   fetch?: FetchFunction;
-  name?: string;
   capabilities?: Partial<ModelCapabilities>;
 };
 
@@ -35,24 +34,25 @@ type OpenAICompatibleChatCompletion = {
 };
 
 export class OpenAICompatibleProvider implements ModelProvider {
-  readonly name: string;
-  readonly model: string;
+  readonly id: string;
   readonly capabilities: ModelCapabilities;
 
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly fetch: FetchFunction;
+  private readonly model: string;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.apiKey = options.apiKey;
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.model = options.model;
-    this.name = options.name ?? "openai-compatible";
+    this.id = `openai-compatible:${options.model}`;
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.capabilities = {
-      chat: options.capabilities?.chat ?? true,
-      tools: options.capabilities?.tools ?? true,
+      toolCalling: options.capabilities?.toolCalling ?? true,
       streaming: options.capabilities?.streaming ?? false,
+      jsonSchema: options.capabilities?.jsonSchema ?? true,
+      contextWindowTokens: options.capabilities?.contextWindowTokens ?? 128_000,
     };
   }
 
@@ -76,15 +76,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     const completion = (await response.json()) as OpenAICompatibleChatCompletion;
     const message = completion.choices?.[0]?.message;
+    if (!message) {
+      throw new Error("OpenAI-compatible provider returned an invalid response: missing choices[0].message");
+    }
 
     return {
-      content: message?.content ?? "",
-      toolCalls:
-        message?.tool_calls?.map((toolCall) => ({
-          id: toolCall.id ?? "",
-          name: toolCall.function?.name ?? "",
-          input: parseToolArguments(toolCall.function?.arguments),
-        })) ?? [],
+      content: message.content ?? "",
+      toolCalls: message.tool_calls?.map(parseToolCall) ?? [],
     };
   }
 }
@@ -109,7 +107,23 @@ function toOpenAICompatibleTool(tool: ToolSchema): OpenAICompatibleTool {
   };
 }
 
-function parseToolArguments(argumentsText: string | undefined): Record<string, unknown> {
+function parseToolCall(toolCall: OpenAICompatibleToolCall) {
+  if (!toolCall.id) {
+    throw new Error("OpenAI-compatible provider returned an invalid tool call: missing id");
+  }
+
+  if (!toolCall.function?.name) {
+    throw new Error(`OpenAI-compatible provider returned an invalid tool call ${toolCall.id}: missing function.name`);
+  }
+
+  return {
+    id: toolCall.id,
+    name: toolCall.function.name,
+    input: parseToolArguments(toolCall.id, toolCall.function.arguments),
+  };
+}
+
+function parseToolArguments(toolCallId: string, argumentsText: string | undefined): Record<string, unknown> {
   if (!argumentsText) {
     return {};
   }
@@ -121,10 +135,14 @@ function parseToolArguments(argumentsText: string | undefined): Record<string, u
       return parsed as Record<string, unknown>;
     }
   } catch {
-    return {};
+    throw new Error(
+      `OpenAI-compatible provider returned invalid tool arguments for call ${toolCallId}: expected JSON object arguments`,
+    );
   }
 
-  return {};
+  throw new Error(
+    `OpenAI-compatible provider returned invalid tool arguments for call ${toolCallId}: expected JSON object arguments`,
+  );
 }
 
 async function createProviderError(response: Response): Promise<string> {

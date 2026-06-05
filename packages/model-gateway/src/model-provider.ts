@@ -30,14 +30,14 @@ export type ChatResponse = {
 };
 
 export type ModelCapabilities = {
-  chat: boolean;
-  tools: boolean;
+  toolCalling: boolean;
   streaming: boolean;
+  jsonSchema: boolean;
+  contextWindowTokens: number;
 };
 
 export interface ModelProvider {
-  readonly name: string;
-  readonly model: string;
+  readonly id: string;
   readonly capabilities: ModelCapabilities;
 
   chat(request: ChatRequest): Promise<ChatResponse>;

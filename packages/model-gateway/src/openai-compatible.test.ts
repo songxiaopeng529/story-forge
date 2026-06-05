@@ -2,6 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 
 describe("OpenAICompatibleProvider", () => {
+  it("exposes the canonical provider id and capabilities", () => {
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch: vi.fn(),
+    });
+
+    expect(provider.id).toBe("openai-compatible:story-forge-small");
+    expect(provider.capabilities).toEqual({
+      toolCalling: true,
+      streaming: false,
+      jsonSchema: true,
+      contextWindowTokens: 128_000,
+    });
+  });
+
   it("posts chat completions with normalized base URL and parses content with tool calls", async () => {
     const fetch = vi.fn(async () =>
       new Response(
@@ -84,7 +101,7 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
-  it("defaults malformed tool call arguments to an empty input object", async () => {
+  it("rejects malformed tool call argument JSON", async () => {
     const fetch = vi.fn(async () =>
       new Response(
         JSON.stringify({
@@ -115,10 +132,107 @@ describe("OpenAICompatibleProvider", () => {
       fetch,
     });
 
-    await expect(provider.chat({ messages: [{ role: "user", content: "Repair" }] })).resolves.toEqual({
-      content: "",
-      toolCalls: [{ id: "call_bad_json", name: "repair_outline", input: {} }],
+    await expect(provider.chat({ messages: [{ role: "user", content: "Repair" }] })).rejects.toThrow(
+      "OpenAI-compatible provider returned invalid tool arguments for call call_bad_json: expected JSON object arguments",
+    );
+  });
+
+  it("rejects successful responses without a choice message", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ choices: [] })));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
     });
+
+    await expect(provider.chat({ messages: [{ role: "user", content: "Hello" }] })).rejects.toThrow(
+      "OpenAI-compatible provider returned an invalid response: missing choices[0].message",
+    );
+  });
+
+  it.each([
+    {
+      label: "id",
+      toolCall: {
+        type: "function",
+        function: {
+          name: "read_file",
+          arguments: "{}",
+        },
+      },
+      error: "OpenAI-compatible provider returned an invalid tool call: missing id",
+    },
+    {
+      label: "name",
+      toolCall: {
+        id: "call_missing_name",
+        type: "function",
+        function: {
+          arguments: "{}",
+        },
+      },
+      error: "OpenAI-compatible provider returned an invalid tool call call_missing_name: missing function.name",
+    },
+  ])("rejects tool calls missing $label", async ({ toolCall, error }) => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [toolCall],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    await expect(provider.chat({ messages: [{ role: "user", content: "Read" }] })).rejects.toThrow(error);
+  });
+
+  it("rejects tool arguments that parse to a non-object value", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_array_args",
+                    type: "function",
+                    function: {
+                      name: "repair_outline",
+                      arguments: "[\"not\", \"an\", \"object\"]",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    await expect(provider.chat({ messages: [{ role: "user", content: "Repair" }] })).rejects.toThrow(
+      "OpenAI-compatible provider returned invalid tool arguments for call call_array_args: expected JSON object arguments",
+    );
   });
 
   it("throws a useful error when the provider returns a non-ok status", async () => {
