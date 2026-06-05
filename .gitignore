@@ -1,0 +1,10 @@
+.DS_Store
+node_modules
+dist
+out
+coverage
+*.log
+.turbo
+.env
+.env.*
+!.env.example

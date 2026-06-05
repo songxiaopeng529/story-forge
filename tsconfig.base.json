@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@story-forge/shared": ["packages/shared/src/index.ts"],
+      "@story-forge/model-gateway": ["packages/model-gateway/src/index.ts"],
+      "@story-forge/tools": ["packages/tools/src/index.ts"],
+      "@story-forge/memory": ["packages/memory/src/index.ts"],
+      "@story-forge/skills": ["packages/skills/src/index.ts"],
+      "@story-forge/mcp": ["packages/mcp/src/index.ts"],
+      "@story-forge/agent-core": ["packages/agent-core/src/index.ts"]
+    }
+  }
+}
