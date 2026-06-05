@@ -46,5 +46,9 @@ function readStringPath(input: Record<string, unknown>, toolName: string): strin
     throw new Error(`${toolName} requires a string path`);
   }
 
+  if (!input.path.trim()) {
+    throw new Error(`${toolName} requires a non-empty path`);
+  }
+
   return input.path;
 }

@@ -89,4 +89,25 @@ describe("ToolRegistry", () => {
       error: "workspace.readFile requires a string path",
     });
   });
+
+  it("rejects empty or whitespace-only file tool paths", async () => {
+    const registry = new ToolRegistry(createWorkspaceFileTools(new WorkspaceSandbox(process.cwd())));
+
+    await expect(registry.execute("workspace.readFile", { path: "" })).resolves.toEqual({
+      ok: false,
+      error: "workspace.readFile requires a non-empty path",
+    });
+    await expect(registry.execute("workspace.listDirectory", { path: "  " })).resolves.toEqual({
+      ok: false,
+      error: "workspace.listDirectory requires a non-empty path",
+    });
+  });
+
+  it("allows omitted listDirectory path to mean the workspace root", async () => {
+    const registry = new ToolRegistry(createWorkspaceFileTools(new WorkspaceSandbox(process.cwd())));
+
+    const result = await registry.execute("workspace.listDirectory", {});
+
+    expect(result.ok).toBe(true);
+  });
 });

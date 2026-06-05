@@ -56,4 +56,17 @@ describe("WorkspaceSandbox", () => {
     );
     await expect(readFile(outsidePath, "utf8")).resolves.toBe("secret");
   });
+
+  it("blocks symlinked directories that resolve outside the workspace root", async () => {
+    const root = await createWorkspace();
+    const outsideDirectory = await mkdtemp(path.join(path.dirname(root), "outside-directory-"));
+    const linkPath = path.join(root, "linked-directory");
+    await writeFile(path.join(outsideDirectory, "secret.txt"), "secret");
+    await symlink(outsideDirectory, linkPath);
+    const sandbox = new WorkspaceSandbox(root);
+
+    await expect(sandbox.listDirectory("linked-directory")).rejects.toThrow(
+      "Path escapes workspace root: linked-directory",
+    );
+  });
 });

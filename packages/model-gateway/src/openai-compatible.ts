@@ -57,6 +57,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
+    const toolNameMap = createToolNameMap(request.tools ?? []);
     const response = await this.fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -66,7 +67,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       body: JSON.stringify({
         model: this.model,
         messages: request.messages.map(toOpenAICompatibleMessage),
-        ...(request.tools ? { tools: request.tools.map(toOpenAICompatibleTool) } : {}),
+        ...(request.tools ? { tools: request.tools.map((tool) => toOpenAICompatibleTool(tool, toolNameMap)) } : {}),
       }),
     });
 
@@ -82,7 +83,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     return {
       content: message.content ?? "",
-      toolCalls: message.tool_calls?.map(parseToolCall) ?? [],
+      toolCalls: message.tool_calls?.map((toolCall) => parseToolCall(toolCall, toolNameMap)) ?? [],
     };
   }
 }
@@ -100,14 +101,22 @@ function toOpenAICompatibleMessage(message: ChatMessage): Record<string, string>
   };
 }
 
-function toOpenAICompatibleTool(tool: ToolSchema): OpenAICompatibleTool {
+function toOpenAICompatibleTool(tool: ToolSchema, toolNameMap: Map<string, string>): OpenAICompatibleTool {
+  const safeName = sanitizeToolName(tool.name);
+  if (!toolNameMap.has(safeName)) {
+    throw new Error(`OpenAI-compatible provider could not map tool name: ${tool.name}`);
+  }
+
   return {
     type: "function",
-    function: tool,
+    function: {
+      ...tool,
+      name: safeName,
+    },
   };
 }
 
-function parseToolCall(toolCall: OpenAICompatibleToolCall) {
+function parseToolCall(toolCall: OpenAICompatibleToolCall, toolNameMap: Map<string, string>) {
   if (!toolCall.id) {
     throw new Error("OpenAI-compatible provider returned an invalid tool call: missing id");
   }
@@ -116,11 +125,36 @@ function parseToolCall(toolCall: OpenAICompatibleToolCall) {
     throw new Error(`OpenAI-compatible provider returned an invalid tool call ${toolCall.id}: missing function.name`);
   }
 
+  const originalName = toolNameMap.get(toolCall.function.name) ?? toolCall.function.name;
+
   return {
     id: toolCall.id,
-    name: toolCall.function.name,
+    name: originalName,
     input: parseToolArguments(toolCall.id, toolCall.function.arguments),
   };
+}
+
+function createToolNameMap(tools: ToolSchema[]): Map<string, string> {
+  const toolNameMap = new Map<string, string>();
+
+  for (const tool of tools) {
+    const safeName = sanitizeToolName(tool.name);
+    const existingName = toolNameMap.get(safeName);
+    if (existingName && existingName !== tool.name) {
+      throw new Error(
+        `OpenAI-compatible tool name collision: ${tool.name} and ${existingName} both normalize to ${safeName}`,
+      );
+    }
+
+    toolNameMap.set(safeName, tool.name);
+  }
+
+  return toolNameMap;
+}
+
+function sanitizeToolName(toolName: string): string {
+  const safeName = toolName.replace(/[^A-Za-z0-9_-]/g, "_");
+  return safeName || "_";
 }
 
 function parseToolArguments(toolCallId: string, argumentsText: string | undefined): Record<string, unknown> {

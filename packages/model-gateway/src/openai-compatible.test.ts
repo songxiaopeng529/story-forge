@@ -101,6 +101,106 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
+  it("maps StoryForge tool names to OpenAI-safe function names and maps returned calls back", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_workspace_read",
+                    type: "function",
+                    function: {
+                      name: "workspace_readFile",
+                      arguments: "{\"path\":\"README.md\"}",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const response = await provider.chat({
+      messages: [{ role: "user", content: "Read README" }],
+      tools: [
+        {
+          name: "workspace.readFile",
+          description: "Read a workspace file",
+          parameters: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+            },
+            required: ["path"],
+          },
+        },
+      ],
+    });
+
+    const [, requestInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "workspace_readFile",
+            description: "Read a workspace file",
+          },
+        },
+      ],
+    });
+    expect(response.toolCalls).toEqual([
+      {
+        id: "call_workspace_read",
+        name: "workspace.readFile",
+        input: { path: "README.md" },
+      },
+    ]);
+  });
+
+  it("rejects duplicate OpenAI-safe tool names in a single request", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "" } }] })));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    await expect(
+      provider.chat({
+        messages: [{ role: "user", content: "Read README" }],
+        tools: [
+          {
+            name: "workspace.readFile",
+            description: "Read a workspace file",
+            parameters: { type: "object" },
+          },
+          {
+            name: "workspace/readFile",
+            description: "Read another workspace file",
+            parameters: { type: "object" },
+          },
+        ],
+      }),
+    ).rejects.toThrow(
+      "OpenAI-compatible tool name collision: workspace/readFile and workspace.readFile both normalize to workspace_readFile",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("accepts explicit empty JSON object tool arguments", async () => {
     const fetch = vi.fn(async () =>
       new Response(
