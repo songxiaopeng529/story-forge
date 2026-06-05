@@ -1,5 +1,26 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "node:path";
+import { createDesktopRuntime, type DesktopProviderConfig } from "./runtime-factory";
+
+type RunTurnInput = {
+  workspaceRoot: string;
+  providerConfig: DesktopProviderConfig;
+  prompt: string;
+};
+
+ipcMain.handle("agent:run-turn", async (_event, input: RunTurnInput) => {
+  const runtime = createDesktopRuntime({
+    workspaceRoot: input.workspaceRoot,
+    providerConfig: input.providerConfig,
+  });
+
+  const events = [];
+  for await (const event of runtime.runTurn(input.prompt)) {
+    events.push(event);
+  }
+
+  return events;
+});
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -10,7 +31,7 @@ function createWindow(): void {
     title: "StoryForge",
     backgroundColor: "#f4f6f8",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: join(__dirname, "../preload/index.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
