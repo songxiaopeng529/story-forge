@@ -27,6 +27,18 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@types/node@25.9.1)(vite@8.0.16(@types/node@25.9.1)(esbuild@0.27.7))
 
+  packages/agent-core:
+    dependencies:
+      '@story-forge/model-gateway':
+        specifier: workspace:*
+        version: link:../model-gateway
+      '@story-forge/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@story-forge/tools':
+        specifier: workspace:*
+        version: link:../tools
+
   packages/mcp: {}
 
   packages/memory: {}
