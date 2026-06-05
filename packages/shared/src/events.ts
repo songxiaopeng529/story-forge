@@ -3,56 +3,55 @@ export type SessionId = `sf_session_${string}`;
 export type RuntimeStartedEvent = {
   type: "runtime.started";
   sessionId: SessionId;
+  createdAt: string;
 };
 
 export type RuntimeCompletedEvent = {
   type: "runtime.completed";
-  sessionId?: SessionId;
+  sessionId: SessionId;
 };
 
 export type RuntimeErrorEvent = {
   type: "runtime.error";
-  sessionId?: SessionId;
-  error: {
-    message: string;
-    code?: string;
-  };
+  sessionId: SessionId;
+  message: string;
 };
 
 export type MessageDeltaEvent = {
   type: "message.delta";
-  sessionId?: SessionId;
-  delta: string;
+  sessionId: SessionId;
+  content: string;
 };
 
 export type ToolCallEvent = {
   type: "tool.call";
-  sessionId?: SessionId;
-  toolName: string;
+  sessionId: SessionId;
   callId: string;
+  name: string;
   input: unknown;
 };
 
 export type ToolResultEvent = {
   type: "tool.result";
-  sessionId?: SessionId;
-  toolName: string;
+  sessionId: SessionId;
   callId: string;
+  name: string;
+  ok: boolean;
   output: unknown;
 };
 
 export type PermissionRequestEvent = {
   type: "permission.request";
-  sessionId?: SessionId;
+  sessionId: SessionId;
   requestId: string;
   reason: string;
 };
 
 export type MemoryWriteEvent = {
   type: "memory.write";
-  sessionId?: SessionId;
+  sessionId: SessionId;
   key: string;
-  value: unknown;
+  value: string;
 };
 
 export type AgentEvent =
@@ -71,6 +70,8 @@ export function createSessionId(): SessionId {
   return `sf_session_${entropy}`;
 }
 
-export function isTerminalAgentEvent(event: AgentEvent): boolean {
+export type TerminalAgentEvent = RuntimeCompletedEvent | RuntimeErrorEvent;
+
+export function isTerminalAgentEvent(event: AgentEvent): event is TerminalAgentEvent {
   return event.type === "runtime.completed" || event.type === "runtime.error";
 }
