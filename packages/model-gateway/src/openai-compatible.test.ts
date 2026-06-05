@@ -101,6 +101,94 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
+  it("accepts explicit empty JSON object tool arguments", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [
+                  {
+                    id: "call_empty_object",
+                    type: "function",
+                    function: {
+                      name: "refresh_outline",
+                      arguments: "{}",
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    await expect(provider.chat({ messages: [{ role: "user", content: "Refresh" }] })).resolves.toEqual({
+      content: "",
+      toolCalls: [{ id: "call_empty_object", name: "refresh_outline", input: {} }],
+    });
+  });
+
+  it.each([
+    {
+      label: "missing",
+      toolCall: {
+        id: "call_missing_args",
+        type: "function",
+        function: {
+          name: "repair_outline",
+        },
+      },
+      error:
+        "OpenAI-compatible provider returned invalid tool arguments for call call_missing_args: missing JSON object arguments",
+    },
+    {
+      label: "empty",
+      toolCall: {
+        id: "call_empty_args",
+        type: "function",
+        function: {
+          name: "repair_outline",
+          arguments: "  ",
+        },
+      },
+      error:
+        "OpenAI-compatible provider returned invalid tool arguments for call call_empty_args: missing JSON object arguments",
+    },
+  ])("rejects $label tool call arguments", async ({ toolCall, error }) => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "",
+                tool_calls: [toolCall],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    await expect(provider.chat({ messages: [{ role: "user", content: "Repair" }] })).rejects.toThrow(error);
+  });
+
   it("rejects malformed tool call argument JSON", async () => {
     const fetch = vi.fn(async () =>
       new Response(

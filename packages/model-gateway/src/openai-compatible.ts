@@ -124,8 +124,10 @@ function parseToolCall(toolCall: OpenAICompatibleToolCall) {
 }
 
 function parseToolArguments(toolCallId: string, argumentsText: string | undefined): Record<string, unknown> {
-  if (!argumentsText) {
-    return {};
+  if (!argumentsText?.trim()) {
+    throw new Error(
+      `OpenAI-compatible provider returned invalid tool arguments for call ${toolCallId}: missing JSON object arguments`,
+    );
   }
 
   try {
