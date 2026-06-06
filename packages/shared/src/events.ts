@@ -1,5 +1,13 @@
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
+export type AgentStopReason =
+  | "completed"
+  | "user-stopped"
+  | "time-limit"
+  | "repeated-tool-call"
+  | "consecutive-tool-failures"
+  | "step-limit"
+  | "unrecoverable-error";
 
 export type RuntimeStartedEvent = {
   type: "runtime.started";
@@ -12,6 +20,8 @@ export type RuntimeCompletedEvent = {
   type: "runtime.completed";
   sessionId: SessionId;
   turnId: TurnId;
+  stopReason?: AgentStopReason;
+  steps?: number;
 };
 
 export type RuntimeErrorEvent = {
@@ -19,6 +29,8 @@ export type RuntimeErrorEvent = {
   sessionId: SessionId;
   turnId: TurnId;
   message: string;
+  stopReason?: AgentStopReason;
+  steps?: number;
 };
 
 export type MessageDeltaEvent = {
