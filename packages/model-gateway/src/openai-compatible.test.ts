@@ -436,4 +436,89 @@ describe("OpenAICompatibleProvider", () => {
       "OpenAI-compatible provider request failed: 429 Too Many Requests - quota exhausted",
     );
   });
+
+  it("replays assistant tool calls, tool results, reasoning content, and forwards cancellation", async () => {
+    const fetch = vi.fn(async (_input: string, init: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: "done",
+                reasoning_content: "verified the result",
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const controller = new AbortController();
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-reasoning",
+      fetch,
+      extraBody: {
+        thinking: { type: "enabled" },
+        reasoning_effort: "max",
+      },
+    });
+
+    const response = await provider.chat(
+      {
+        messages: [
+          { role: "user", content: "Read README" },
+          {
+            role: "assistant",
+            content: "",
+            reasoningContent: "I need the file",
+            toolCalls: [{ id: "call_1", name: "workspace.readFile", input: { path: "README.md" } }],
+          },
+          {
+            role: "tool",
+            content: "StoryForge",
+            name: "workspace.readFile",
+            toolCallId: "call_1",
+          },
+        ],
+      },
+      { signal: controller.signal },
+    );
+
+    const [, requestInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(requestInit.signal).toBe(controller.signal);
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "max",
+      messages: [
+        { role: "user", content: "Read README" },
+        {
+          role: "assistant",
+          content: "",
+          reasoning_content: "I need the file",
+          tool_calls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: {
+                name: "workspace_readFile",
+                arguments: "{\"path\":\"README.md\"}",
+              },
+            },
+          ],
+        },
+        {
+          role: "tool",
+          content: "StoryForge",
+          name: "workspace.readFile",
+          tool_call_id: "call_1",
+        },
+      ],
+    });
+    expect(response).toEqual({
+      content: "done",
+      reasoningContent: "verified the result",
+      toolCalls: [],
+    });
+  });
 });

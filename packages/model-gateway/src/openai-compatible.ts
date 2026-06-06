@@ -1,4 +1,12 @@
-import type { ChatMessage, ChatRequest, ChatResponse, ModelCapabilities, ModelProvider, ToolSchema } from "./model-provider";
+import type {
+  ChatMessage,
+  ChatOptions,
+  ChatRequest,
+  ChatResponse,
+  ModelCapabilities,
+  ModelProvider,
+  ToolSchema,
+} from "./model-provider";
 
 type FetchFunction = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -8,6 +16,8 @@ export type OpenAICompatibleProviderOptions = {
   model: string;
   fetch?: FetchFunction;
   capabilities?: Partial<ModelCapabilities>;
+  headers?: Record<string, string>;
+  extraBody?: Record<string, unknown>;
 };
 
 type OpenAICompatibleTool = {
@@ -28,6 +38,7 @@ type OpenAICompatibleChatCompletion = {
   choices?: Array<{
     message?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: OpenAICompatibleToolCall[];
     };
   }>;
@@ -41,11 +52,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
   private readonly baseUrl: string;
   private readonly fetch: FetchFunction;
   private readonly model: string;
+  private readonly headers: Record<string, string>;
+  private readonly extraBody: Record<string, unknown>;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.apiKey = options.apiKey;
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.model = options.model;
+    this.headers = options.headers ?? {};
+    this.extraBody = options.extraBody ?? {};
     this.id = `openai-compatible:${options.model}`;
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.capabilities = {
@@ -56,19 +71,22 @@ export class OpenAICompatibleProvider implements ModelProvider {
     };
   }
 
-  async chat(request: ChatRequest): Promise<ChatResponse> {
+  async chat(request: ChatRequest, options: ChatOptions = {}): Promise<ChatResponse> {
     const toolNameMap = createToolNameMap(request.tools ?? []);
     const response = await this.fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${this.apiKey}`,
         "content-type": "application/json",
+        ...this.headers,
       },
       body: JSON.stringify({
         model: this.model,
-        messages: request.messages.map(toOpenAICompatibleMessage),
+        messages: request.messages.map((message) => toOpenAICompatibleMessage(message, toolNameMap)),
         ...(request.tools ? { tools: request.tools.map((tool) => toOpenAICompatibleTool(tool, toolNameMap)) } : {}),
+        ...this.extraBody,
       }),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
 
     if (!response.ok) {
@@ -81,10 +99,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
       throw new Error("OpenAI-compatible provider returned an invalid response: missing choices[0].message");
     }
 
-    return {
+    const result: ChatResponse = {
       content: message.content ?? "",
       toolCalls: message.tool_calls?.map((toolCall) => parseToolCall(toolCall, toolNameMap)) ?? [],
     };
+    if (message.reasoning_content) {
+      result.reasoningContent = message.reasoning_content;
+    }
+    return result;
   }
 }
 
@@ -92,12 +114,42 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-function toOpenAICompatibleMessage(message: ChatMessage): Record<string, string> {
+function toOpenAICompatibleMessage(
+  message: ChatMessage,
+  toolNameMap: Map<string, string>,
+): Record<string, unknown> {
+  if (message.role === "assistant") {
+    return {
+      role: message.role,
+      content: message.content,
+      ...(message.reasoningContent ? { reasoning_content: message.reasoningContent } : {}),
+      ...(message.toolCalls?.length
+        ? {
+            tool_calls: message.toolCalls.map((toolCall) => ({
+              id: toolCall.id,
+              type: "function",
+              function: {
+                name: sanitizeToolName(toolCall.name),
+                arguments: JSON.stringify(toolCall.input),
+              },
+            })),
+          }
+        : {}),
+    };
+  }
+
+  if (message.role === "tool") {
+    return {
+      role: message.role,
+      content: message.content,
+      name: message.name,
+      tool_call_id: message.toolCallId,
+    };
+  }
+
   return {
     role: message.role,
     content: message.content,
-    ...(message.name ? { name: message.name } : {}),
-    ...(message.toolCallId ? { tool_call_id: message.toolCallId } : {}),
   };
 }
 

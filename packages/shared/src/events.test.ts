@@ -1,35 +1,48 @@
 import { describe, expect, it } from "vitest";
 
-import { createSessionId, isTerminalAgentEvent, type AgentEvent, type SessionId } from "./events";
+import {
+  createSessionId,
+  createTurnId,
+  isTerminalAgentEvent,
+  type AgentEvent,
+  type SessionId,
+  type TurnId,
+} from "./events";
 
 const sessionId = "sf_session_test" satisfies SessionId;
+const turnId = "sf_turn_test" satisfies TurnId;
 
 const runtimeStartedEvent = {
   type: "runtime.started",
   sessionId,
+  turnId,
   createdAt: "2026-06-05T00:00:00.000Z",
 } satisfies AgentEvent;
 
 const runtimeCompletedEvent = {
   type: "runtime.completed",
   sessionId,
+  turnId,
 } satisfies AgentEvent;
 
 const runtimeErrorEvent = {
   type: "runtime.error",
   sessionId,
+  turnId,
   message: "The runtime stopped.",
 } satisfies AgentEvent;
 
 const messageDeltaEvent = {
   type: "message.delta",
   sessionId,
+  turnId,
   content: "hello",
 } satisfies AgentEvent;
 
 const toolCallEvent = {
   type: "tool.call",
   sessionId,
+  turnId,
   callId: "call_1",
   name: "read_file",
   input: { path: "README.md" },
@@ -38,6 +51,7 @@ const toolCallEvent = {
 const toolResultEvent = {
   type: "tool.result",
   sessionId,
+  turnId,
   callId: "call_1",
   name: "read_file",
   ok: true,
@@ -47,6 +61,7 @@ const toolResultEvent = {
 const permissionRequestEvent = {
   type: "permission.request",
   sessionId,
+  turnId,
   requestId: "permission_1",
   reason: "Need to edit a workspace file.",
 } satisfies AgentEvent;
@@ -54,6 +69,7 @@ const permissionRequestEvent = {
 const memoryWriteEvent = {
   type: "memory.write",
   sessionId,
+  turnId,
   key: "preference",
   value: "Use pnpm.",
 } satisfies AgentEvent;
@@ -72,6 +88,12 @@ const agentEventFixtures = [
 describe("createSessionId", () => {
   it("returns a StoryForge session id", () => {
     expect(createSessionId()).toMatch(/^sf_session_[a-z0-9]+$/);
+  });
+});
+
+describe("createTurnId", () => {
+  it("returns a StoryForge turn id", () => {
+    expect(createTurnId()).toMatch(/^sf_turn_[a-z0-9]+$/);
   });
 });
 
