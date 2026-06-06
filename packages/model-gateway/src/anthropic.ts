@@ -57,9 +57,10 @@ export class AnthropicProvider implements ModelProvider {
       .filter((message) => message.role === "system")
       .map((message) => message.content)
       .join("\n\n");
-    const messages = request.messages
-      .filter((message) => message.role !== "system")
-      .map((message) => toAnthropicMessage(message, toolNameMap));
+    const messages = toAnthropicMessages(
+      request.messages.filter((message) => message.role !== "system"),
+      toolNameMap,
+    );
     const response = await this.fetch(`${this.baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
@@ -154,6 +155,38 @@ function toAnthropicMessage(message: Exclude<ChatMessage, { role: "system" }>, t
   }
 
   return { role: "user", content: message.content };
+}
+
+function toAnthropicMessages(
+  messages: Array<Exclude<ChatMessage, { role: "system" }>>,
+  toolNameMap: Map<string, string>,
+): Array<{ role: string; content: unknown }> {
+  const result: Array<{ role: string; content: unknown }> = [];
+  for (const message of messages) {
+    const converted = toAnthropicMessage(message, toolNameMap);
+    const previous = result.at(-1);
+    if (
+      message.role === "tool"
+      && previous?.role === "user"
+      && Array.isArray(previous.content)
+      && previous.content.every(isToolResultBlock)
+      && Array.isArray(converted.content)
+    ) {
+      previous.content.push(...converted.content);
+    } else {
+      result.push(converted);
+    }
+  }
+  return result;
+}
+
+function isToolResultBlock(value: unknown): boolean {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "type" in value
+    && value.type === "tool_result",
+  );
 }
 
 function createToolNameMap(tools: ToolSchema[]): Map<string, string> {

@@ -11,6 +11,7 @@ export type ProviderPreset = {
   protocol: ProviderProtocol;
   baseUrl: string;
   recommendedModels: string[];
+  headers?: Record<string, string>;
   default?: boolean;
 };
 
@@ -51,6 +52,10 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai-compatible",
     baseUrl: "https://openrouter.ai/api/v1",
     recommendedModels: ["openrouter/auto"],
+    headers: {
+      "HTTP-Referer": "https://storyforge.local",
+      "X-Title": "StoryForge",
+    },
   },
   volcano: {
     id: "volcano",
@@ -86,21 +91,14 @@ export class ProviderRegistry {
       fetch: this.fetch,
       ...(config.providerId === "deepseek"
         ? {
-            capabilities: { contextWindowTokens: 128_000 },
+            capabilities: { contextWindowTokens: 1_000_000 },
             extraBody: {
               thinking: { type: "enabled" },
               reasoning_effort: "max",
             },
           }
         : {}),
-      ...(config.providerId === "openrouter"
-        ? {
-            headers: {
-              "HTTP-Referer": "https://storyforge.local",
-              "X-Title": "StoryForge",
-            },
-          }
-        : {}),
+      ...(preset.headers ? { headers: preset.headers } : {}),
     });
   }
 
@@ -126,7 +124,10 @@ export class ProviderRegistry {
           "anthropic-version": "2023-06-01",
           "x-api-key": apiKey,
         }
-      : { authorization: `Bearer ${apiKey}` };
+      : {
+          authorization: `Bearer ${apiKey}`,
+          ...preset.headers,
+        };
     const response = await this.fetch(url, {
       headers,
       ...(options.signal ? { signal: options.signal } : {}),

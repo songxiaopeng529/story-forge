@@ -41,6 +41,12 @@ describe("AnthropicProvider", () => {
           name: "workspace.readFile",
           toolCallId: "tool_1",
         },
+        {
+          role: "tool",
+          content: "package contents",
+          name: "workspace.readFile",
+          toolCallId: "tool_1b",
+        },
       ],
       tools: [
         {
@@ -86,6 +92,11 @@ describe("AnthropicProvider", () => {
               type: "tool_result",
               tool_use_id: "tool_1",
               content: "StoryForge",
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "tool_1b",
+              content: "package contents",
             },
           ],
         },

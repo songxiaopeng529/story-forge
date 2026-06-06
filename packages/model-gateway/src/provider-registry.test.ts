@@ -30,6 +30,7 @@ describe("ProviderRegistry", () => {
 
     expect(deepseek).toBeInstanceOf(OpenAICompatibleProvider);
     expect(anthropic).toBeInstanceOf(AnthropicProvider);
+    expect(deepseek.capabilities.contextWindowTokens).toBe(1_000_000);
   });
 
   it("discovers OpenAI-compatible models without exposing the secret", async () => {
