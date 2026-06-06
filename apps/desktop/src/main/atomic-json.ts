@@ -30,10 +30,17 @@ export async function readJsonOrQuarantine<T>(
   }
 }
 
-export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+export async function writeJsonAtomic(
+  filePath: string,
+  value: unknown,
+  options: { mode?: number } = {},
+): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+    encoding: "utf8",
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
+  });
   await rename(temporaryPath, filePath);
 }
 

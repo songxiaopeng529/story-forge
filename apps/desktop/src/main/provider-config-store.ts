@@ -105,7 +105,7 @@ export class ProviderConfigStore {
     if (apiKey) {
       const secretsFile = await this.readSecrets();
       secretsFile.secrets[input.providerId] = this.crypto.encryptString(apiKey).toString("base64");
-      await writeJsonAtomic(this.secretsPath, secretsFile);
+      await writeJsonAtomic(this.secretsPath, secretsFile, { mode: 0o600 });
     }
 
     const view = (await this.list()).find((provider) => provider.providerId === input.providerId);
@@ -118,7 +118,7 @@ export class ProviderConfigStore {
   async clearSecret(providerId: ProviderId): Promise<void> {
     const secretsFile = await this.readSecrets();
     delete secretsFile.secrets[providerId];
-    await writeJsonAtomic(this.secretsPath, secretsFile);
+    await writeJsonAtomic(this.secretsPath, secretsFile, { mode: 0o600 });
   }
 
   async setDefault(providerId: ProviderId): Promise<void> {

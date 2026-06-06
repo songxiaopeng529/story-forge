@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -24,6 +24,7 @@ describe("ProviderConfigStore", () => {
     expect(providersFile).not.toContain("secret-value");
     expect(secretsFile).not.toContain("secret-value");
     expect(secretsFile).toContain(Buffer.from("encrypted:secret-value").toString("base64"));
+    expect((await stat(join(rootDir, "secrets.json"))).mode & 0o777).toBe(0o600);
 
     await expect(store.resolve("deepseek")).resolves.toMatchObject({
       providerId: "deepseek",
