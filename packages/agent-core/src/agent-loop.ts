@@ -31,6 +31,7 @@ export type AgentLoopRunInput = {
   messages: ChatMessage[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
+  onCheckpoint?: (messages: ChatMessage[]) => void | Promise<void>;
 };
 
 export type AgentLoopResult = {
@@ -116,6 +117,7 @@ export class AgentLoop {
         messages.push(assistantMessage);
 
         if (response.toolCalls.length === 0) {
+          await checkpoint(input, messages);
           if (response.content) {
             await emit(input, {
               type: "message.delta",
@@ -142,6 +144,7 @@ export class AgentLoop {
           }
           if (repeatedToolCalls >= MAX_REPEATED_TOOL_CALLS) {
             appendSkippedToolResults(messages, response.toolCalls.slice(index), "repeated-tool-call");
+            await checkpoint(input, messages);
             return await finish("repeated-tool-call");
           }
 
@@ -155,6 +158,7 @@ export class AgentLoop {
           });
           if (toolStop) {
             appendSkippedToolResults(messages, response.toolCalls.slice(index), toolStop);
+            await checkpoint(input, messages);
             return await finish(toolStop);
           }
 
@@ -193,9 +197,11 @@ export class AgentLoop {
               response.toolCalls.slice(index + 1),
               "consecutive-tool-failures",
             );
+            await checkpoint(input, messages);
             return await finish("consecutive-tool-failures");
           }
         }
+        await checkpoint(input, messages);
       }
     } catch (error) {
       const stopReason = input.signal?.aborted
@@ -359,4 +365,8 @@ function createLoopAbort(externalSignal: AbortSignal | undefined, maxDurationMs:
 
 async function emit(input: AgentLoopRunInput, event: AgentEvent): Promise<void> {
   await input.onEvent?.(event);
+}
+
+async function checkpoint(input: AgentLoopRunInput, messages: ChatMessage[]): Promise<void> {
+  await input.onCheckpoint?.([...messages]);
 }

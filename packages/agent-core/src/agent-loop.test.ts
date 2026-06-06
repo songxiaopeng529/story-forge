@@ -51,6 +51,7 @@ describe("AgentLoop", () => {
       return { content: "Finished", toolCalls: [] };
     });
     const executionOrder: number[] = [];
+    const checkpoints: ChatMessage[][] = [];
     const tools = new ToolRegistry([
       {
         name: "test.sequence",
@@ -67,6 +68,9 @@ describe("AgentLoop", () => {
       sessionId,
       turnId,
       messages: [{ role: "user", content: "Run both tools" }],
+      onCheckpoint: (messages) => {
+        checkpoints.push(messages);
+      },
     });
 
     expect(executionOrder).toEqual([1, 2]);
@@ -85,6 +89,7 @@ describe("AgentLoop", () => {
       toolCallId: "call_1",
       content: JSON.stringify({ value: 1 }),
     });
+    expect(checkpoints[0]?.filter((message) => message.role === "tool")).toHaveLength(2);
     expect(result).toMatchObject({ stopReason: "completed", steps: 4 });
   });
 
