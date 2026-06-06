@@ -31,7 +31,7 @@ function createWindow(): void {
     title: "StoryForge",
     backgroundColor: "#f4f6f8",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },

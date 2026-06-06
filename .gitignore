@@ -5,6 +5,7 @@ out
 coverage
 *.log
 .turbo
+.superpowers/
 .env
 .env.*
 !.env.example
