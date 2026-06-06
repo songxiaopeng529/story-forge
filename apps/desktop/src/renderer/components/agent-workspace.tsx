@@ -108,6 +108,16 @@ export function AgentWorkspace(props: {
             {props.session.messages.map((message) => (
               <Message key={message.id} message={message} />
             ))}
+            {props.session.stopReason && props.session.status !== "completed" ? (
+              <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
+                <summary className="cursor-pointer font-medium text-amber-800">
+                  Session {props.session.status}
+                </summary>
+                <div className="mt-2 text-xs text-amber-700">
+                  Stop reason: {props.session.stopReason}
+                </div>
+              </details>
+            ) : null}
             {props.activities.length > 0 ? (
               <details className="rounded-lg border border-forge-line bg-white p-3 text-sm">
                 <summary className="cursor-pointer font-medium text-slate-700">
