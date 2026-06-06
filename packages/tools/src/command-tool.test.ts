@@ -1,0 +1,142 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { createWorkspaceCommandTool, validateCommand } from "./command-tool";
+import { ToolRegistry } from "./tool-registry";
+import { WorkspaceSandbox } from "./workspace-sandbox";
+
+describe("validateCommand", () => {
+  it("allows project development scripts and read-only git commands", () => {
+    expect(() => validateCommand("pnpm", ["test"])).not.toThrow();
+    expect(() => validateCommand("npm", ["run", "typecheck"])).not.toThrow();
+    expect(() => validateCommand("git", ["status", "--short"])).not.toThrow();
+    expect(() => validateCommand("git", ["diff", "--stat"])).not.toThrow();
+  });
+
+  it("rejects shells, privilege escalation, dependency changes, publishing, and destructive git", () => {
+    expect(() => validateCommand("sh", ["-c", "echo unsafe"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("sudo", ["pnpm", "test"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("npm", ["install", "left-pad"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("pnpm", ["publish"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("git", ["reset", "--hard"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("git", ["checkout", "--", "file.txt"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("git", ["diff", "--output=/tmp/leak"])).toThrow("Command is not allowed");
+    expect(() => validateCommand("prettier", ["--write", "../outside.ts"])).toThrow("Command is not allowed");
+  });
+});
+
+describe("workspace.runCommand", () => {
+  it("runs an allowed command in a workspace-relative directory without a shell", async () => {
+    const root = await createCommandWorkspace();
+    const nested = path.join(root, "nested");
+    await mkdir(nested);
+    await writeFile(
+      path.join(nested, "package.json"),
+      JSON.stringify({
+        scripts: {
+          "test:cwd": "node -e \"console.log(process.cwd())\"",
+        },
+      }),
+    );
+    const registry = commandRegistry(root);
+
+    const result = await registry.execute("workspace.runCommand", {
+      program: "npm",
+      args: ["run", "test:cwd"],
+      cwd: "nested",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+      },
+    });
+    if (result.ok) {
+      expect(result.output).toMatchObject({ stdout: expect.stringContaining("nested") });
+    }
+  });
+
+  it("terminates commands that exceed their timeout", async () => {
+    const root = await createCommandWorkspace();
+    const result = await commandRegistry(root).execute("workspace.runCommand", {
+      program: "npm",
+      args: ["run", "test:slow"],
+      timeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        timedOut: true,
+      },
+    });
+  });
+
+  it("caps combined stdout and stderr at one MiB and marks truncation", async () => {
+    const root = await createCommandWorkspace();
+    const result = await commandRegistry(root).execute("workspace.runCommand", {
+      program: "npm",
+      args: ["run", "test:output"],
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        exitCode: 0,
+        truncated: true,
+      },
+    });
+    if (result.ok) {
+      const output = result.output as { stdout: string; stderr: string };
+      expect(Buffer.byteLength(output.stdout) + Buffer.byteLength(output.stderr)).toBeLessThanOrEqual(
+        1024 * 1024,
+      );
+    }
+  });
+
+  it("terminates the process group when the execution signal is aborted", async () => {
+    const root = await createCommandWorkspace();
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await commandRegistry(root).execute(
+      "workspace.runCommand",
+      {
+        program: "npm",
+        args: ["run", "test:slow"],
+      },
+      { signal: controller.signal },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        aborted: true,
+      },
+    });
+  });
+});
+
+function commandRegistry(root: string): ToolRegistry {
+  const sandbox = new WorkspaceSandbox(root);
+  return new ToolRegistry([createWorkspaceCommandTool(sandbox)]);
+}
+
+async function createCommandWorkspace(): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), "story-forge-command-"));
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      scripts: {
+        "test:cwd": "node -e \"console.log(process.cwd())\"",
+        "test:slow": "node -e \"setTimeout(() => {}, 10000)\"",
+        "test:output": "node -e \"process.stdout.write('x'.repeat(1100000))\"",
+      },
+    }),
+  );
+  return root;
+}

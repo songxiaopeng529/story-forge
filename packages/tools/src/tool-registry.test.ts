@@ -83,7 +83,12 @@ describe("ToolRegistry", () => {
   it("provides sandboxed workspace file tools with structured validation errors", async () => {
     const registry = new ToolRegistry(createWorkspaceFileTools(new WorkspaceSandbox(process.cwd())));
 
-    expect(registry.schemas().map((schema) => schema.name)).toEqual(["workspace.readFile", "workspace.listDirectory"]);
+    expect(registry.schemas().map((schema) => schema.name)).toEqual([
+      "workspace.readFile",
+      "workspace.listDirectory",
+      "workspace.writeFile",
+      "workspace.replaceText",
+    ]);
     await expect(registry.execute("workspace.readFile", {})).resolves.toEqual({
       ok: false,
       error: "workspace.readFile requires a string path",
@@ -109,5 +114,23 @@ describe("ToolRegistry", () => {
     const result = await registry.execute("workspace.listDirectory", {});
 
     expect(result.ok).toBe(true);
+  });
+
+  it("validates write and replace tool inputs", async () => {
+    const registry = new ToolRegistry(createWorkspaceFileTools(new WorkspaceSandbox(process.cwd())));
+
+    await expect(registry.execute("workspace.writeFile", { path: "file.txt" })).resolves.toEqual({
+      ok: false,
+      error: "workspace.writeFile requires string content",
+    });
+    await expect(
+      registry.execute("workspace.replaceText", {
+        path: "file.txt",
+        oldText: "before",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "workspace.replaceText requires string newText",
+    });
   });
 });
