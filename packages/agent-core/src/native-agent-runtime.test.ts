@@ -83,6 +83,7 @@ describe("NativeAgentRuntime", () => {
     expect(events).toContainEqual({
       type: "tool.result",
       sessionId: events[0]?.sessionId,
+      turnId: events[0]?.turnId,
       callId: "call_1",
       name: "story.echo",
       ok: true,

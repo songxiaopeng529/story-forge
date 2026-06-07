@@ -1,115 +1,322 @@
-import { Bot, FolderOpen, KeyRound, Play, Settings, TerminalSquare } from "lucide-react";
-import { useState } from "react";
-
-const runtimeItems = [
-  { label: "Runtime", value: "Native Loop" },
-  { label: "Tools", value: "Workspace read/list" },
-  { label: "Memory", value: "In-memory" },
-  { label: "MCP", value: "Disabled" },
-];
+import type { ProviderId } from "@story-forge/model-gateway";
+import type { AgentEvent, SessionId, TurnId } from "@story-forge/shared";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import type {
+  PersistedMessageView,
+  ProviderView,
+  SessionView,
+  WorkspaceView,
+} from "../shared/story-forge-api";
+import { AgentWorkspace } from "./components/agent-workspace";
+import { ModelsPage } from "./components/models-page";
+import { PrimaryNavigation, type Page } from "./components/primary-navigation";
+import { SessionSidebar } from "./components/session-sidebar";
+import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
 
 export function App() {
+  const [page, setPage] = useState<Page>("agent");
+  const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceView[]>([]);
+  const [sessions, setSessions] = useState<SessionView[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>();
+  const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
+  const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
-  const [events, setEvents] = useState<unknown[]>([]);
+  const [error, setError] = useState<string>();
+  const [loading, setLoading] = useState(true);
+  const composingRef = useRef(false);
 
-  async function runAgent(): Promise<void> {
-    const nextEvents = await window.storyForge.runTurn({
-      workspaceRoot: "/Users/bytedance/Desktop/code/story-forge",
-      providerConfig: {
-        apiKey: "",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-4.1-mini",
-      },
-      prompt,
+  const selectedSession = sessions.find((session) => session.id === selectedSessionId);
+  const selectedWorkspace = workspaces.find(
+    (workspace) => workspace.id === selectedWorkspaceId,
+  );
+  const selectedProvider = providers.find(
+    (provider) => provider.providerId === selectedProviderId,
+  );
+  const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
+
+  useEffect(() => {
+    let disposed = false;
+    const unsubscribe = window.storyForge.turns.onEvent((event) => {
+      if (disposed) {
+        return;
+      }
+      setActivities((current) => ({
+        ...current,
+        [event.sessionId]: [...(current[event.sessionId] ?? []), event],
+      }));
+      if (event.type === "runtime.started") {
+        setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
+      }
+      if (event.type === "runtime.completed" || event.type === "runtime.error") {
+        setActiveTurns((current) => {
+          const next = { ...current };
+          delete next[event.sessionId];
+          return next;
+        });
+        void refreshSession(event.sessionId);
+      }
     });
-    setEvents(nextEvents);
+
+    void (async () => {
+      try {
+        const [nextProviders, nextWorkspaces, nextSessions] = await Promise.all([
+          window.storyForge.providers.list(),
+          window.storyForge.workspaces.list(),
+          window.storyForge.sessions.list(),
+        ]);
+        if (disposed) {
+          return;
+        }
+        setProviders(nextProviders);
+        setWorkspaces(nextWorkspaces);
+        setSessions(nextSessions);
+        const defaultProvider = nextProviders.find((provider) => provider.isDefault)
+          ?? nextProviders[0];
+        if (defaultProvider) {
+          setSelectedProviderId(defaultProvider.providerId);
+        }
+        const initialWorkspace = nextWorkspaces[0];
+        const initialSession = initialWorkspace
+          ? nextSessions.find((session) => session.workspaceId === initialWorkspace.id)
+          : undefined;
+        setSelectedWorkspaceId(initialWorkspace?.id);
+        setSelectedSessionId(initialSession?.id);
+      } catch (loadError) {
+        setError(formatError(loadError));
+      } finally {
+        if (!disposed) {
+          setLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
+
+  async function refreshSession(sessionId: SessionId): Promise<void> {
+    try {
+      const session = await window.storyForge.sessions.get(sessionId);
+      setSessions((current) => upsertSession(current, session));
+    } catch (refreshError) {
+      setError(formatError(refreshError));
+    }
+  }
+
+  async function openWorkspace(): Promise<void> {
+    try {
+      const workspace = await window.storyForge.workspaces.open();
+      if (!workspace) {
+        return;
+      }
+      setWorkspaces((current) => upsertWorkspace(current, workspace));
+      setSelectedWorkspaceId(workspace.id);
+      const workspaceSessions = await window.storyForge.sessions.list(workspace.id);
+      setSessions((current) => [
+        ...current.filter((session) => session.workspaceId !== workspace.id),
+        ...workspaceSessions,
+      ]);
+      setSelectedSessionId(workspaceSessions[0]?.id);
+    } catch (workspaceError) {
+      setError(formatError(workspaceError));
+    }
+  }
+
+  async function createSession(workspaceId = selectedWorkspaceId): Promise<SessionView | undefined> {
+    if (!workspaceId) {
+      return undefined;
+    }
+    try {
+      const session = await window.storyForge.sessions.create({ workspaceId });
+      setSessions((current) => upsertSession(current, session));
+      setSelectedWorkspaceId(workspaceId);
+      setSelectedSessionId(session.id);
+      setPage("agent");
+      return session;
+    } catch (sessionError) {
+      setError(formatError(sessionError));
+      return undefined;
+    }
+  }
+
+  async function sendPrompt(): Promise<void> {
+    const content = prompt.trim();
+    if (!content) {
+      return;
+    }
+    let session = selectedSession;
+    if (!session) {
+      session = await createSession();
+    }
+    if (!session || activeTurns[session.id]) {
+      return;
+    }
+
+    setPrompt("");
+    setError(undefined);
+    setActivities((current) => ({ ...current, [session.id]: [] }));
+    const optimisticMessage: PersistedMessageView = {
+      id: `pending-${Date.now()}`,
+      role: "user",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    setSessions((current) => current.map((candidate) =>
+      candidate.id === session.id
+        ? { ...candidate, messages: [...candidate.messages, optimisticMessage] }
+        : candidate
+    ));
+    try {
+      const { turnId } = await window.storyForge.turns.start({
+        sessionId: session.id,
+        prompt: content,
+      });
+      setActiveTurns((current) => ({ ...current, [session.id]: turnId }));
+    } catch (turnError) {
+      setError(formatError(turnError));
+      await refreshSession(session.id);
+    }
+  }
+
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent;
+    if (
+      event.key !== "Enter"
+      || event.shiftKey
+      || composingRef.current
+      || nativeEvent.isComposing
+      || nativeEvent.keyCode === 229
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (!activeTurnId) {
+      void sendPrompt();
+    }
+  }
+
+  async function stopTurn(): Promise<void> {
+    if (!activeTurnId) {
+      return;
+    }
+    try {
+      await window.storyForge.turns.stop(activeTurnId);
+    } catch (stopError) {
+      setError(formatError(stopError));
+    }
+  }
+
+  async function renameSession(title: string): Promise<void> {
+    if (!selectedSession || !title.trim()) {
+      return;
+    }
+    try {
+      const renamed = await window.storyForge.sessions.rename(
+        selectedSession.id,
+        title.trim(),
+      );
+      setSessions((current) => upsertSession(current, renamed));
+    } catch (renameError) {
+      setError(formatError(renameError));
+    }
+  }
+
+  async function deleteSession(): Promise<void> {
+    if (!selectedSession || activeTurns[selectedSession.id]) {
+      return;
+    }
+    try {
+      await window.storyForge.sessions.delete(selectedSession.id);
+      const remaining = sessions.filter((session) => session.id !== selectedSession.id);
+      setSessions(remaining);
+      setSelectedSessionId(
+        remaining.find((session) => session.workspaceId === selectedWorkspaceId)?.id,
+      );
+    } catch (deleteError) {
+      setError(formatError(deleteError));
+    }
+  }
+
+  async function removeWorkspace(workspaceId: string): Promise<void> {
+    try {
+      await window.storyForge.workspaces.remove(workspaceId);
+      const nextWorkspaces = workspaces.filter((workspace) => workspace.id !== workspaceId);
+      setWorkspaces(nextWorkspaces);
+      if (workspaceId === selectedWorkspaceId) {
+        const nextWorkspace = nextWorkspaces[0];
+        setSelectedWorkspaceId(nextWorkspace?.id);
+        setSelectedSessionId(
+          sessions.find((session) => session.workspaceId === nextWorkspace?.id)?.id,
+        );
+      }
+    } catch (removeError) {
+      setError(formatError(removeError));
+    }
   }
 
   return (
-    <main className="grid h-screen grid-cols-[280px_1fr] bg-forge-canvas text-forge-ink">
-      <aside className="border-r border-forge-line bg-white px-4 py-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-forge-ink text-white">
-            <Bot size={20} aria-hidden="true" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold leading-6">StoryForge</h1>
-            <p className="text-sm text-slate-600">Coding agent desktop</p>
-          </div>
+    <main className="grid h-screen grid-cols-[220px_1fr] bg-forge-canvas text-forge-ink">
+      <PrimaryNavigation page={page} onChange={setPage} />
+      {page === "models" ? (
+        <ModelsPage
+          providers={providers}
+          selectedProvider={selectedProvider}
+          onProvidersChange={setProviders}
+          onSelect={setSelectedProviderId}
+          onError={setError}
+          error={error}
+        />
+      ) : (
+        <div className="grid min-w-0 grid-cols-[290px_1fr]">
+          <SessionSidebar
+            workspaces={workspaces}
+            sessions={sessions}
+            selectedWorkspaceId={selectedWorkspaceId}
+            selectedSessionId={selectedSessionId}
+            activeTurns={activeTurns}
+            onOpenWorkspace={() => void openWorkspace()}
+            onCreateSession={(workspaceId) => void createSession(workspaceId)}
+            onRemoveWorkspace={(workspaceId) => void removeWorkspace(workspaceId)}
+            onSelectWorkspace={(workspaceId) => {
+              setSelectedWorkspaceId(workspaceId);
+              setSelectedSessionId(
+                sessions.find((session) => session.workspaceId === workspaceId)?.id,
+              );
+            }}
+            onSelectSession={(sessionId, workspaceId) => {
+              setSelectedWorkspaceId(workspaceId);
+              setSelectedSessionId(sessionId);
+            }}
+          />
+          <AgentWorkspace
+            loading={loading}
+            workspace={selectedWorkspace}
+            session={selectedSession}
+            activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            activeTurnId={activeTurnId}
+            prompt={prompt}
+            error={error}
+            onPromptChange={setPrompt}
+            onPromptKeyDown={handlePromptKeyDown}
+            onCompositionStart={() => {
+              composingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false;
+            }}
+            onSend={() => void sendPrompt()}
+            onStop={() => void stopTurn()}
+            onRename={(title) => void renameSession(title)}
+            onDelete={() => void deleteSession()}
+            onOpenWorkspace={() => void openWorkspace()}
+          />
         </div>
-
-        <nav className="mt-8 space-y-1">
-          <button className="flex h-10 w-full items-center gap-3 rounded-md bg-forge-ink px-3 text-left text-sm font-medium text-white">
-            <TerminalSquare size={16} aria-hidden="true" />
-            Agent Core
-          </button>
-          <button className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-slate-700 hover:bg-slate-100">
-            <FolderOpen size={16} aria-hidden="true" />
-            Workspace
-          </button>
-          <button className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-slate-700 hover:bg-slate-100">
-            <KeyRound size={16} aria-hidden="true" />
-            Models
-          </button>
-          <button className="flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-slate-700 hover:bg-slate-100">
-            <Settings size={16} aria-hidden="true" />
-            Settings
-          </button>
-        </nav>
-      </aside>
-
-      <section className="flex min-w-0 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-forge-line bg-white px-6">
-          <div>
-            <h2 className="text-base font-semibold">Native Agent Session</h2>
-            <p className="text-sm text-slate-600">Local workspace runner</p>
-          </div>
-          <button
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-forge-ember px-3 text-sm font-medium text-white hover:bg-[#a93d27]"
-            onClick={() => void runAgent()}
-            type="button"
-          >
-            <Play size={16} aria-hidden="true" />
-            Run
-          </button>
-        </header>
-
-        <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px]">
-          <div className="flex min-w-0 flex-col p-6">
-            <div className="flex-1 overflow-auto rounded-md border border-forge-line bg-white p-4">
-              {events.length === 0 ? (
-                <div className="rounded-md bg-slate-100 p-4 text-sm text-slate-700">
-                  StoryForge is ready for a workspace, a model provider, and a first native agent turn.
-                </div>
-              ) : (
-                <pre className="whitespace-pre-wrap text-xs text-slate-700">{JSON.stringify(events, null, 2)}</pre>
-              )}
-            </div>
-
-            <label className="mt-4 block">
-              <span className="sr-only">Agent prompt</span>
-              <textarea
-                className="h-28 w-full resize-none rounded-md border border-forge-line bg-white p-3 text-sm outline-none ring-forge-ember focus:ring-2"
-                onChange={(event) => setPrompt(event.target.value)}
-                placeholder="Ask StoryForge to inspect, explain, or change code..."
-                value={prompt}
-              />
-            </label>
-          </div>
-
-          <aside className="border-l border-forge-line bg-white p-5">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Runtime Map</h3>
-            <div className="mt-4 space-y-3">
-              {runtimeItems.map((item) => (
-                <div key={item.label} className="rounded-md border border-forge-line bg-forge-canvas p-3">
-                  <div className="text-xs font-medium uppercase text-slate-500">{item.label}</div>
-                  <div className="mt-1 text-sm font-semibold">{item.value}</div>
-                </div>
-              ))}
-            </div>
-          </aside>
-        </div>
-      </section>
+      )}
     </main>
   );
 }

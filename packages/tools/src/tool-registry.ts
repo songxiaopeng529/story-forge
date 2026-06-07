@@ -1,10 +1,14 @@
 export type ToolParameters = Record<string, unknown>;
 
+export type ToolExecutionContext = {
+  signal?: AbortSignal;
+};
+
 export type ToolDefinition<Input extends Record<string, unknown> = Record<string, unknown>, Output = unknown> = {
   name: string;
   description: string;
   parameters: ToolParameters;
-  execute: (input: Input) => Output | Promise<Output>;
+  execute: (input: Input, context: ToolExecutionContext) => Output | Promise<Output>;
 };
 
 export type ToolSchema = Pick<ToolDefinition, "name" | "description" | "parameters">;
@@ -44,14 +48,18 @@ export class ToolRegistry {
     }));
   }
 
-  async execute(name: string, input: Record<string, unknown>): Promise<ToolExecutionResult> {
+  async execute(
+    name: string,
+    input: Record<string, unknown>,
+    context: ToolExecutionContext = {},
+  ): Promise<ToolExecutionResult> {
     const definition = this.tools.get(name);
     if (!definition) {
       return { ok: false, error: `Tool not found: ${name}` };
     }
 
     try {
-      const output = await definition.execute(input);
+      const output = await definition.execute(input, context);
       return { ok: true, output };
     } catch (error) {
       return { ok: false, error: formatToolError(error) };

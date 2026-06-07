@@ -19,6 +19,23 @@ body {
 }
 
 button,
+input,
 textarea {
   font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+.form-input {
+  @apply h-10 w-full rounded-md border border-forge-line bg-white px-3 text-sm outline-none ring-forge-ember focus:ring-2;
+}
+
+.secondary-button {
+  @apply rounded-md border border-forge-line bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50;
 }

@@ -1,28 +1,21 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { ProviderRegistry } from "@story-forge/model-gateway";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+} from "electron";
 import { join } from "node:path";
-import { createDesktopRuntime, type DesktopProviderConfig } from "./runtime-factory";
+import { IPC_CHANNELS } from "../shared/story-forge-api";
+import { AgentCoordinator } from "./agent-coordinator";
+import { registerIpcHandlers } from "./ipc-handlers";
+import { ProviderConfigStore } from "./provider-config-store";
+import { ProviderService } from "./provider-service";
+import { SessionRepository } from "./session-repository";
+import { WorkspaceRepository } from "./workspace-repository";
 
-type RunTurnInput = {
-  workspaceRoot: string;
-  providerConfig: DesktopProviderConfig;
-  prompt: string;
-};
-
-ipcMain.handle("agent:run-turn", async (_event, input: RunTurnInput) => {
-  const runtime = createDesktopRuntime({
-    workspaceRoot: input.workspaceRoot,
-    providerConfig: input.providerConfig,
-  });
-
-  const events = [];
-  for await (const event of runtime.runTurn(input.prompt)) {
-    events.push(event);
-  }
-
-  return events;
-});
-
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -31,7 +24,7 @@ function createWindow(): void {
     title: "StoryForge",
     backgroundColor: "#f4f6f8",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.mjs"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -42,9 +35,54 @@ function createWindow(): void {
   } else {
     void window.loadFile(join(__dirname, "../renderer/index.html"));
   }
+  return window;
 }
 
-app.whenReady().then(createWindow);
+async function initializeApplication(): Promise<void> {
+  const rootDir = app.getPath("userData");
+  const providerStore = new ProviderConfigStore({
+    rootDir,
+    crypto: {
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encryptString: (value) => safeStorage.encryptString(value),
+      decryptString: (value) => safeStorage.decryptString(value),
+    },
+  });
+  const workspaceRepository = new WorkspaceRepository({ rootDir });
+  const sessionRepository = new SessionRepository({ rootDir });
+  await sessionRepository.recoverInterruptedSessions();
+  const registry = new ProviderRegistry();
+  const providerService = new ProviderService({ store: providerStore, registry });
+  const coordinator = new AgentCoordinator({
+    providerStore,
+    sessionRepository,
+    workspaceRepository,
+    providerFactory: registry,
+    emit: (event) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.turnEvent, event);
+      }
+    },
+  });
+
+  registerIpcHandlers({
+    ipc: ipcMain,
+    providers: providerService,
+    workspaces: workspaceRepository,
+    sessions: sessionRepository,
+    coordinator,
+    selectWorkspace: async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openDirectory", "createDirectory"],
+        title: "Open StoryForge workspace",
+      });
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+  });
+  createWindow();
+}
+
+void app.whenReady().then(initializeApplication);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

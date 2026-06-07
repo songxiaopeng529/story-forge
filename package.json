@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.11.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "build": "turbo run build",
-    "dev": "pnpm --filter @story-forge/desktop dev",
+    "predev": "corepack pnpm --filter '@story-forge/desktop^...' build",
+    "dev": "corepack pnpm --filter @story-forge/desktop dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"

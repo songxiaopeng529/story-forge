@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./out/main/index.js",
+  "main": "./out/main/main.js",
   "scripts": {
     "build": "electron-vite build",
     "dev": "electron-vite dev",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@story-forge/agent-core": "workspace:*",
     "@story-forge/model-gateway": "workspace:*",
+    "@story-forge/shared": "workspace:*",
     "@story-forge/tools": "workspace:*",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
