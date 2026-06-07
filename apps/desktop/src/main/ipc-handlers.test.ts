@@ -21,6 +21,9 @@ describe("registerIpcHandlers", () => {
         prompt: "hello",
       }),
     ).rejects.toThrow();
+    await expect(
+      fixture.invoke(IPC_CHANNELS.sessionsGet, "sf_session_../../providers"),
+    ).rejects.toThrow();
     expect(fixture.start).not.toHaveBeenCalled();
   });
 

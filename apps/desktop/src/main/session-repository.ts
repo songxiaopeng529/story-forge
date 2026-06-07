@@ -40,13 +40,16 @@ const persistedMessageSchema = z.discriminatedUnion("role", [
 
 const sessionSchema = z.object({
   schemaVersion: z.literal(1),
-  id: z.custom<SessionId>((value) => typeof value === "string" && value.startsWith("sf_session_")),
+  id: z.custom<SessionId>(isValidSessionId, { message: "Invalid session id" }),
   workspaceId: z.string(),
   title: z.string(),
   providerId: z.enum(["deepseek", "openai", "anthropic", "openrouter", "volcano"]),
   model: z.string(),
   status: z.enum(["idle", "running", "completed", "interrupted", "stopped", "error"]),
-  currentTurnId: z.custom<TurnId>((value) => typeof value === "string" && value.startsWith("sf_turn_")).optional(),
+  currentTurnId: z.custom<TurnId>(
+    (value) => typeof value === "string" && /^sf_turn_[a-z0-9]+$/.test(value),
+    { message: "Invalid turn id" },
+  ).optional(),
   stopReason: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -59,6 +62,7 @@ export type SessionStatus = SessionRecord["status"];
 
 export class SessionRepository {
   private readonly sessionsDir: string;
+  private readonly updateTails = new Map<SessionId, Promise<void>>();
 
   constructor(options: { rootDir: string }) {
     this.sessionsDir = join(options.rootDir, "sessions");
@@ -92,10 +96,20 @@ export class SessionRepository {
     const names = await readdir(this.sessionsDir);
     const sessions = await Promise.all(
       names
-        .filter((name) => name.endsWith(".json"))
-        .map((name) => this.get(name.slice(0, -5) as SessionId)),
+        .filter((name) => /^sf_session_[a-z0-9]+\.json$/.test(name))
+        .map(async (name) => {
+          try {
+            return await this.get(name.slice(0, -5) as SessionId);
+          } catch (error) {
+            if (isCorruptSessionError(error)) {
+              return undefined;
+            }
+            throw error;
+          }
+        }),
     );
     return sessions
+      .filter((session): session is SessionRecord => Boolean(session))
       .filter((session) => !workspaceId || session.workspaceId === workspaceId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
@@ -118,7 +132,9 @@ export class SessionRepository {
   async appendMessage(sessionId: SessionId, message: PersistedMessage): Promise<SessionRecord> {
     return this.update(sessionId, (session) => ({
       ...session,
-      title: session.messages.length === 0 && message.role === "user"
+      title: session.messages.length === 0
+        && session.title === "New session"
+        && message.role === "user"
         ? deriveTitle(message.content)
         : session.title,
       messages: [...session.messages, message],
@@ -167,20 +183,22 @@ export class SessionRepository {
   }
 
   async delete(sessionId: SessionId): Promise<void> {
-    await rm(this.pathFor(sessionId), { force: true });
+    await this.enqueueUpdate(sessionId, () => rm(this.pathFor(sessionId), { force: true }));
   }
 
   private async update(
     sessionId: SessionId,
     updater: (session: SessionRecord) => SessionRecord,
   ): Promise<SessionRecord> {
-    const current = await this.get(sessionId);
-    const updated = sessionSchema.parse({
-      ...updater(current),
-      updatedAt: new Date().toISOString(),
+    return this.enqueueUpdate(sessionId, async () => {
+      const current = await this.get(sessionId);
+      const updated = sessionSchema.parse({
+        ...updater(current),
+        updatedAt: new Date().toISOString(),
+      });
+      await this.write(updated);
+      return updated;
     });
-    await this.write(updated);
-    return updated;
   }
 
   private async write(session: SessionRecord): Promise<void> {
@@ -188,7 +206,26 @@ export class SessionRepository {
   }
 
   private pathFor(sessionId: SessionId): string {
+    if (!isValidSessionId(sessionId)) {
+      throw new Error(`Invalid session id: ${sessionId}`);
+    }
     return join(this.sessionsDir, `${sessionId}.json`);
+  }
+
+  private enqueueUpdate<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T> {
+    const previous = this.updateTails.get(sessionId) ?? Promise.resolve();
+    const result = previous.then(operation, operation);
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.updateTails.set(sessionId, tail);
+    void tail.finally(() => {
+      if (this.updateTails.get(sessionId) === tail) {
+        this.updateTails.delete(sessionId);
+      }
+    });
+    return result;
   }
 }
 
@@ -199,4 +236,12 @@ function deriveTitle(content: string): string {
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
+}
+
+function isValidSessionId(value: unknown): value is SessionId {
+  return typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value);
+}
+
+function isCorruptSessionError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Session file is corrupt:");
 }

@@ -31,10 +31,12 @@ const providerIdSchema = z.enum([
   "volcano",
 ]);
 const sessionIdSchema = z.custom<SessionId>(
-  (value) => typeof value === "string" && value.startsWith("sf_session_"),
+  (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
+  { message: "Invalid session id" },
 );
 const turnIdSchema = z.custom<TurnId>(
-  (value) => typeof value === "string" && value.startsWith("sf_turn_"),
+  (value) => typeof value === "string" && /^sf_turn_[a-z0-9]+$/.test(value),
+  { message: "Invalid turn id" },
 );
 const workspaceIdSchema = z.string().min(1);
 

@@ -35,6 +35,9 @@ importers:
       '@story-forge/model-gateway':
         specifier: workspace:*
         version: link:../../packages/model-gateway
+      '@story-forge/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@story-forge/tools':
         specifier: workspace:*
         version: link:../../packages/tools

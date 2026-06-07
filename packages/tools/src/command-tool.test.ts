@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -69,10 +69,8 @@ describe("workspace.runCommand", () => {
     });
 
     expect(result).toMatchObject({
-      ok: true,
-      output: {
-        timedOut: true,
-      },
+      ok: false,
+      error: expect.stringContaining('"timedOut":true'),
     });
   });
 
@@ -113,10 +111,39 @@ describe("workspace.runCommand", () => {
     );
 
     expect(result).toMatchObject({
-      ok: true,
-      output: {
-        aborted: true,
-      },
+      ok: false,
+      error: expect.stringContaining('"aborted":true'),
+    });
+  });
+
+  it("marks non-zero command exits as failed while preserving diagnostic output", async () => {
+    const root = await createCommandWorkspace();
+    const result = await commandRegistry(root).execute("workspace.runCommand", {
+      program: "npm",
+      args: ["run", "test:fail"],
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('"exitCode":7'),
+    });
+    if (!result.ok) {
+      expect(result.error).toContain("expected failure");
+    }
+  });
+
+  it("rejects command arguments whose nearest existing path escapes through a symlink", async () => {
+    const root = await createCommandWorkspace();
+    const outside = await mkdtemp(path.join(tmpdir(), "story-forge-command-outside-"));
+    await writeFile(path.join(outside, "outside.txt"), "outside");
+    await symlink(outside, path.join(root, "linked"));
+
+    await expect(commandRegistry(root).execute("workspace.runCommand", {
+      program: "prettier",
+      args: ["--write", "linked/outside.txt"],
+    })).resolves.toEqual({
+      ok: false,
+      error: "Command argument escapes workspace root: linked/outside.txt",
     });
   });
 });
@@ -135,6 +162,7 @@ async function createCommandWorkspace(): Promise<string> {
         "test:cwd": "node -e \"console.log(process.cwd())\"",
         "test:slow": "node -e \"setTimeout(() => {}, 10000)\"",
         "test:output": "node -e \"process.stdout.write('x'.repeat(1100000))\"",
+        "test:fail": "node -e \"console.error('expected failure');process.exit(7)\"",
       },
     }),
   );

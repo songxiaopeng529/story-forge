@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -70,5 +70,68 @@ describe("SessionRepository", () => {
     const directory = await import("node:fs/promises").then(({ readdir }) => readdir(sessionsDir));
     expect(directory.some((name) => name.startsWith(`${session.id}.json.corrupt-`))).toBe(true);
     await expect(readFile(sessionPath, "utf8")).rejects.toThrow();
+  });
+
+  it("quarantines corrupt files without blocking healthy session listing", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const healthy = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    const corruptPath = join(rootDir, "sessions", "sf_session_corrupt.json");
+    await writeFile(corruptPath, "{broken", "utf8");
+
+    await expect(repository.list()).resolves.toEqual([
+      expect.objectContaining({ id: healthy.id }),
+    ]);
+    expect(
+      (await readdir(join(rootDir, "sessions"))).some((name) =>
+        name.startsWith("sf_session_corrupt.json.corrupt-")
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects malformed session ids before resolving a filesystem path", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+
+    await expect(
+      repository.get("sf_session_../../providers" as never),
+    ).rejects.toThrow("Invalid session id");
+    await expect(
+      repository.delete("sf_session_../../providers" as never),
+    ).rejects.toThrow("Invalid session id");
+  });
+
+  it("serializes concurrent updates so titles and messages are not lost", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+
+    await Promise.all([
+      repository.rename(session.id, "Renamed session"),
+      repository.appendMessage(session.id, {
+        id: "message-concurrent",
+        role: "user",
+        content: "Concurrent message",
+        createdAt: "2026-06-07T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(await repository.get(session.id)).toMatchObject({
+      title: "Renamed session",
+      messages: [
+        expect.objectContaining({
+          id: "message-concurrent",
+          content: "Concurrent message",
+        }),
+      ],
+    });
   });
 });

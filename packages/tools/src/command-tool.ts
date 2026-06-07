@@ -67,7 +67,12 @@ export function createWorkspaceCommandTool(sandbox: WorkspaceSandbox): ToolDefin
       const timeoutMs = readTimeout(input.timeoutMs);
       validateCommand(program, args);
       const cwd = await sandbox.resolveDirectory(cwdInput);
-      return runCommand({ program, args, cwd, timeoutMs }, context);
+      await sandbox.assertCommandArgumentsInside(cwdInput, args);
+      const result = await runCommand({ program, args, cwd, timeoutMs }, context);
+      if (result.aborted || result.timedOut || result.exitCode !== 0) {
+        throw new Error(`Command failed: ${JSON.stringify(result)}`);
+      }
+      return result;
     },
   };
 }

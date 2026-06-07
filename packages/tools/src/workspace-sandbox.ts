@@ -72,6 +72,25 @@ export class WorkspaceSandbox {
     return this.resolveExistingPath(directoryPath);
   }
 
+  async assertCommandArgumentsInside(directoryPath: string, args: string[]): Promise<void> {
+    const commandDirectory = await this.resolveExistingPath(directoryPath);
+    const rootRealpath = await this.getWorkspaceRootRealpath();
+    for (const argument of args) {
+      const argumentPath = extractCommandArgumentPath(argument);
+      if (!argumentPath) {
+        continue;
+      }
+      const candidatePath = path.resolve(commandDirectory, argumentPath);
+      if (!isInsidePath(rootRealpath, candidatePath)) {
+        throw new Error(`Command argument escapes workspace root: ${argument}`);
+      }
+      const resolvedPath = await resolvePathOrNearestParent(candidatePath);
+      if (!isInsidePath(rootRealpath, resolvedPath)) {
+        throw new Error(`Command argument escapes workspace root: ${argument}`);
+      }
+    }
+  }
+
   private async resolveExistingPath(inputPath: string): Promise<string> {
     const candidatePath = this.resolveRelativePath(inputPath);
     const rootRealpath = await this.getWorkspaceRootRealpath();
@@ -156,6 +175,34 @@ function countOccurrences(content: string, search: string): number {
     index += search.length;
   }
   return count;
+}
+
+function extractCommandArgumentPath(argument: string): string | undefined {
+  if (!argument || (argument.startsWith("-") && !argument.includes("="))) {
+    return undefined;
+  }
+  const value = argument.includes("=")
+    ? argument.slice(argument.indexOf("=") + 1)
+    : argument;
+  return value || undefined;
+}
+
+async function resolvePathOrNearestParent(candidatePath: string): Promise<string> {
+  let currentPath = candidatePath;
+  while (true) {
+    try {
+      return await realpath(currentPath);
+    } catch (error) {
+      if (!isNodeError(error, "ENOENT")) {
+        throw error;
+      }
+      const parentPath = path.dirname(currentPath);
+      if (parentPath === currentPath) {
+        throw error;
+      }
+      currentPath = parentPath;
+    }
+  }
 }
 
 function isInsidePath(rootPath: string, candidatePath: string): boolean {

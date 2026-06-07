@@ -14,6 +14,7 @@
   "dependencies": {
     "@story-forge/agent-core": "workspace:*",
     "@story-forge/model-gateway": "workspace:*",
+    "@story-forge/shared": "workspace:*",
     "@story-forge/tools": "workspace:*",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",

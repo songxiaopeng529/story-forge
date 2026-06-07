@@ -97,6 +97,10 @@ export class AgentCoordinator {
         .finally(() => {
           this.activeTurns.delete(turnId);
           this.reservedSessions.delete(input.sessionId);
+          const cleanup = setTimeout(() => {
+            this.turnPromises.delete(turnId);
+          }, 60_000);
+          cleanup.unref?.();
         });
       this.turnPromises.set(turnId, promise);
       void promise.catch(() => undefined);
