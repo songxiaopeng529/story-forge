@@ -163,11 +163,20 @@ export class ProviderConfigStore {
     if (!this.crypto.isEncryptionAvailable()) {
       throw new Error("Secure credential storage is unavailable");
     }
+    let apiKey: string;
+    try {
+      apiKey = this.crypto.decryptString(Buffer.from(encryptedSecret, "base64"));
+    } catch (error) {
+      throw new Error(
+        `Stored API key for ${PROVIDER_PRESETS[providerId].displayName} cannot be decrypted. Re-enter and save the API key in Models settings.`,
+        { cause: error },
+      );
+    }
     return {
       providerId,
       baseUrl: provider.baseUrl,
       model: provider.model,
-      apiKey: this.crypto.decryptString(Buffer.from(encryptedSecret, "base64")),
+      apiKey,
     };
   }
 

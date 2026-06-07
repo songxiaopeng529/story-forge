@@ -48,4 +48,13 @@ describe("desktop entry configuration", () => {
       "corepack pnpm --filter @story-forge/desktop dev",
     );
   });
+
+  it("sets a stable application name before safe storage is initialized", () => {
+    const mainSource = readFileSync(resolve(process.cwd(), "src/main/main.ts"), "utf8");
+
+    expect(mainSource).toContain('app.setName("@story-forge/desktop")');
+    expect(mainSource.indexOf('app.setName("@story-forge/desktop")')).toBeLessThan(
+      mainSource.indexOf("app.whenReady()"),
+    );
+  });
 });

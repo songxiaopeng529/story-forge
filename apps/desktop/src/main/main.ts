@@ -15,6 +15,8 @@ import { ProviderService } from "./provider-service";
 import { SessionRepository } from "./session-repository";
 import { WorkspaceRepository } from "./workspace-repository";
 
+app.setName("@story-forge/desktop");
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1320,

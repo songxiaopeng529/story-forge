@@ -81,6 +81,31 @@ describe("ProviderConfigStore", () => {
       }),
     ).rejects.toThrow("Secure credential storage is unavailable");
   });
+
+  it("reports an actionable error when a stored key belongs to another encryption identity", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-provider-"));
+    const store = new ProviderConfigStore({
+      rootDir,
+      crypto: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value) => Buffer.from(`current:${value}`),
+        decryptString: () => {
+          throw new Error("Error while decrypting the ciphertext provided");
+        },
+      },
+    });
+
+    await store.save({
+      providerId: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+      apiKey: "legacy-secret",
+    });
+
+    await expect(store.resolve("deepseek")).rejects.toThrow(
+      "Stored API key for DeepSeek cannot be decrypted. Re-enter and save the API key in Models settings.",
+    );
+  });
 });
 
 function fakeCrypto() {
