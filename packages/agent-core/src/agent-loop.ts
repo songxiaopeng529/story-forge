@@ -56,6 +56,19 @@ type EventSink = {
   onEvent?: ((event: AgentEvent) => void | Promise<void>) | undefined;
 };
 
+class StreamingResponseError extends Error {
+  readonly emittedLiveContent: boolean;
+
+  constructor(error: unknown, emittedLiveContent: boolean) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = "StreamingResponseError";
+    this.emittedLiveContent = emittedLiveContent;
+    if (error instanceof Error && error.stack) {
+      this.stack = error.stack;
+    }
+  }
+}
+
 export class AgentLoop {
   private readonly provider: ModelProvider;
   private readonly tools: ToolRegistry;
@@ -257,7 +270,12 @@ export class AgentLoop {
       return await this.requestStreamingResponse(input);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (input.responseMode === "auto") {
+      if (
+        input.responseMode === "auto"
+        && error instanceof StreamingResponseError
+        && !error.emittedLiveContent
+        && !input.options.signal.aborted
+      ) {
         await emit(input, {
           type: "response.fallback",
           sessionId: input.sessionId,
@@ -295,15 +313,26 @@ export class AgentLoop {
     options: { signal: AbortSignal };
   } & EventSink): Promise<ChatResponse> {
     let response: ChatResponse | undefined;
-    const stream = this.provider.streamChat?.(input.request, input.options) ?? [];
-    for await (const event of stream) {
-      await this.handleStreamEvent(event, input);
-      if (event.type === "done") {
-        response = event.response;
+    let emittedLiveContent = false;
+    try {
+      const stream = this.provider.streamChat?.(input.request, input.options) ?? [];
+      for await (const event of stream) {
+        if (event.type === "content.delta") {
+          emittedLiveContent = true;
+        }
+        await this.handleStreamEvent(event, input);
+        if (event.type === "done") {
+          response = event.response;
+        }
       }
+    } catch (error) {
+      throw new StreamingResponseError(error, emittedLiveContent);
     }
     if (!response) {
-      throw new Error("Streaming response ended before a final response was received");
+      throw new StreamingResponseError(
+        new Error("Streaming response ended before a final response was received"),
+        emittedLiveContent,
+      );
     }
     return response;
   }
