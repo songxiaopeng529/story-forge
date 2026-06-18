@@ -1,7 +1,7 @@
 import { Bot, KeyRound, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type Page = "agent" | "models";
+export type Page = "agent" | "models" | "settings";
 
 export function PrimaryNavigation(props: {
   page: Page;
@@ -32,10 +32,12 @@ export function PrimaryNavigation(props: {
           onClick={() => props.onChange("models")}
         />
         <div className="mt-6 border-t border-white/10 pt-4">
-          <div className="flex h-10 items-center gap-3 px-3 text-sm text-slate-400">
-            <Settings size={17} aria-hidden="true" />
-            Settings
-          </div>
+          <NavButton
+            active={props.page === "settings"}
+            icon={<Settings size={17} />}
+            label="Settings"
+            onClick={() => props.onChange("settings")}
+          />
         </div>
       </nav>
     </aside>

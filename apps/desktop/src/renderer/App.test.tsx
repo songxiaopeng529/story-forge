@@ -7,7 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import type { AgentEvent } from "@story-forge/shared";
+import type { AgentEvent, AppSettingsView } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ProviderView,
@@ -138,9 +138,24 @@ describe("App", () => {
       model: "deepseek-v4-pro",
     });
   });
+
+  it("loads and saves the global response mode from Settings", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "auto" } });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Smooth" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      responseMode: "smooth",
+    }));
+    expect(screen.getByRole("button", { name: "Smooth" })).toHaveAttribute("aria-pressed", "true");
+  });
 });
 
-function installApi() {
+function installApi(options: { settings?: AppSettingsView } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
     displayName: "DeepSeek",
@@ -187,6 +202,11 @@ function installApi() {
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
+  const settings = options.settings ?? {
+    schemaVersion: 1 as const,
+    responseMode: "auto" as const,
+  };
+  const saveSettings = vi.fn(async (input) => ({ ...settings, ...input }));
   const saveProvider = vi.fn(async (input) => ({
     ...provider,
     baseUrl: input.baseUrl,
@@ -196,8 +216,8 @@ function installApi() {
   const api = {
     version: "0.1.0",
     settings: {
-      get: vi.fn(async () => ({ schemaVersion: 1, responseMode: "auto" })),
-      save: vi.fn(async (input) => ({ schemaVersion: 1, ...input })),
+      get: vi.fn(async () => settings),
+      save: saveSettings,
     },
     providers: {
       list: vi.fn(async () => [provider]),
@@ -238,6 +258,7 @@ function installApi() {
     start,
     stop,
     getSession,
+    saveSettings,
     saveProvider,
     emit: (event: AgentEvent) => eventListener?.(event),
   };
