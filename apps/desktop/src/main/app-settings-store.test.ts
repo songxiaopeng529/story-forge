@@ -14,6 +14,7 @@ describe("AppSettingsStore", () => {
     await expect(store.get()).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "auto",
+      developerMode: false,
     });
   });
 
@@ -24,13 +25,31 @@ describe("AppSettingsStore", () => {
     await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "smooth",
+      developerMode: false,
     });
     await expect(new AppSettingsStore({ rootDir }).get()).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "smooth",
+      developerMode: false,
     });
     await expect(readFile(join(rootDir, "settings.json"), "utf8")).resolves.toContain(
       "\"responseMode\": \"smooth\"",
     );
+  });
+
+  it("persists developer mode without changing the response mode", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
+    const store = new AppSettingsStore({ rootDir });
+
+    await expect(store.save({ developerMode: true })).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: true,
+    });
+    await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "smooth",
+      developerMode: true,
+    });
   });
 });

@@ -50,16 +50,28 @@ describe("registerIpcHandlers", () => {
     await expect(fixture.invoke(IPC_CHANNELS.settingsGet)).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "auto",
+      developerMode: false,
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
     ).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "smooth",
+      developerMode: false,
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: true,
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "unsupported" }),
     ).rejects.toThrow();
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: "yes" }),
+    ).rejects.toThrow("Invalid IPC payload");
   });
 });
 
@@ -115,9 +127,12 @@ function createFixture() {
     get: vi.fn(async () => ({
       schemaVersion: 1 as const,
       responseMode: "auto" as const,
+      developerMode: false,
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
+      responseMode: "auto" as const,
+      developerMode: false,
       ...input,
     })),
   } as unknown as AppSettingsStore;

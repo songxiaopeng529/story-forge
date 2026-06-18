@@ -96,7 +96,9 @@ describe("App", () => {
   });
 
   it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "live" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "live", developerMode: false },
+    });
     render(<App />);
     const input = await screen.findByPlaceholderText(
       "Ask StoryForge to inspect, explain, or change code...",
@@ -140,7 +142,9 @@ describe("App", () => {
   });
 
   it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "smooth" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "smooth", developerMode: false },
+    });
     render(<App />);
     const input = await screen.findByPlaceholderText(
       "Ask StoryForge to inspect, explain, or change code...",
@@ -214,7 +218,9 @@ describe("App", () => {
   });
 
   it("loads and saves the global response mode from Settings", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "auto" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+    });
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -239,7 +245,7 @@ describe("App", () => {
 
   it("rolls back the response mode and shows an error when saving fails", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto" },
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
       saveSettings: vi.fn(async () => {
         throw new Error("Unable to save settings");
       }),
@@ -265,7 +271,7 @@ describe("App", () => {
   it("disables response mode choices while settings are saving", async () => {
     const pendingSave = createDeferred<AppSettingsView>();
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto" },
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
       saveSettings: vi.fn(async (input) => ({
         ...(await pendingSave.promise),
         ...input,
@@ -287,7 +293,7 @@ describe("App", () => {
     expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
 
     await act(async () => {
-      pendingSave.resolve({ schemaVersion: 1, responseMode: "live" });
+      pendingSave.resolve({ schemaVersion: 1, responseMode: "live", developerMode: false });
     });
     await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
       .not.toBeDisabled());
@@ -347,6 +353,7 @@ function installApi(options: {
   const settings = options.settings ?? {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
+    developerMode: false,
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
