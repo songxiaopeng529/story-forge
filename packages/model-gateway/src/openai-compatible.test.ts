@@ -1,6 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 
+function streamResponse(chunks: string[]): Response {
+  const encoder = new TextEncoder();
+
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const chunk of chunks) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        controller.close();
+      },
+    }),
+    {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    },
+  );
+}
+
 describe("OpenAICompatibleProvider", () => {
   it("exposes the canonical provider id and capabilities", () => {
     const provider = new OpenAICompatibleProvider({
@@ -13,7 +32,7 @@ describe("OpenAICompatibleProvider", () => {
     expect(provider.id).toBe("openai-compatible:story-forge-small");
     expect(provider.capabilities).toEqual({
       toolCalling: true,
-      streaming: false,
+      streaming: true,
       jsonSchema: true,
       contextWindowTokens: 128_000,
     });
@@ -519,6 +538,114 @@ describe("OpenAICompatibleProvider", () => {
       content: "done",
       reasoningContent: "verified the result",
       toolCalls: [],
+    });
+  });
+
+  it("streams content deltas and returns the accumulated response", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"lo","reasoning_content":"thinking"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+      headers: { "x-provider": "story-forge" },
+      extraBody: { reasoning_effort: "high", stream: false },
+    });
+    const controller = new AbortController();
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat(
+      {
+        messages: [{ role: "user", content: "Say hello" }],
+      },
+      { signal: controller.signal },
+    )) {
+      events.push(event);
+    }
+
+    const [, requestInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(requestInit.signal).toBe(controller.signal);
+    expect(requestInit.headers).toMatchObject({
+      authorization: "Bearer sf_test_key",
+      "content-type": "application/json",
+      "x-provider": "story-forge",
+    });
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: "story-forge-small",
+      messages: [{ role: "user", content: "Say hello" }],
+      reasoning_effort: "high",
+      stream: true,
+    });
+    expect(events).toEqual([
+      { type: "content.delta", content: "Hel" },
+      { type: "content.delta", content: "lo" },
+      { type: "reasoning.delta", content: "thinking" },
+      {
+        type: "done",
+        response: {
+          content: "Hello",
+          reasoningContent: "thinking",
+          toolCalls: [],
+        },
+      },
+    ]);
+  });
+
+  it("reconstructs streamed tool calls from argument chunks", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"workspace_readFile","arguments":"{\\"path\\":"}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"README.md\\"}"}}]}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Read" }],
+      tools: [
+        {
+          name: "workspace.readFile",
+          description: "Read a workspace file",
+          parameters: { type: "object" },
+        },
+      ],
+    })) {
+      events.push(event);
+    }
+
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      response: {
+        content: "",
+        toolCalls: [
+          {
+            id: "call_1",
+            name: "workspace.readFile",
+            input: { path: "README.md" },
+          },
+        ],
+      },
+    });
+    expect(events).toContainEqual({
+      type: "tool.call",
+      toolCall: {
+        id: "call_1",
+        name: "workspace.readFile",
+        input: { path: "README.md" },
+      },
     });
   });
 });

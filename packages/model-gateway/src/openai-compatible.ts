@@ -3,6 +3,7 @@ import type {
   ChatOptions,
   ChatRequest,
   ChatResponse,
+  ChatStreamEvent,
   ModelCapabilities,
   ModelProvider,
   ToolSchema,
@@ -44,6 +45,30 @@ type OpenAICompatibleChatCompletion = {
   }>;
 };
 
+type OpenAICompatibleStreamDelta = {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>;
+    };
+  }>;
+};
+
+type StreamingToolCallAccumulator = {
+  id?: string;
+  name?: string;
+  argumentsText: string;
+};
+
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   readonly capabilities: ModelCapabilities;
@@ -65,7 +90,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.capabilities = {
       toolCalling: options.capabilities?.toolCalling ?? true,
-      streaming: options.capabilities?.streaming ?? false,
+      streaming: options.capabilities?.streaming ?? true,
       jsonSchema: options.capabilities?.jsonSchema ?? true,
       contextWindowTokens: options.capabilities?.contextWindowTokens ?? 128_000,
     };
@@ -107,6 +132,35 @@ export class OpenAICompatibleProvider implements ModelProvider {
       result.reasoningContent = message.reasoning_content;
     }
     return result;
+  }
+
+  async *streamChat(request: ChatRequest, options: ChatOptions = {}): AsyncIterable<ChatStreamEvent> {
+    const toolNameMap = createToolNameMap(request.tools ?? []);
+    const response = await this.fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: request.messages.map((message) => toOpenAICompatibleMessage(message, toolNameMap)),
+        ...(request.tools ? { tools: request.tools.map((tool) => toOpenAICompatibleTool(tool, toolNameMap)) } : {}),
+        ...this.extraBody,
+        stream: true,
+      }),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+
+    if (!response.ok) {
+      throw new Error(await createProviderError(response));
+    }
+    if (!response.body) {
+      throw new Error("OpenAI-compatible provider returned an invalid stream: missing body");
+    }
+
+    yield* parseOpenAICompatibleStream(response.body, toolNameMap);
   }
 }
 
@@ -230,6 +284,103 @@ function parseToolArguments(toolCallId: string, argumentsText: string | undefine
 
   throw new Error(
     `OpenAI-compatible provider returned invalid tool arguments for call ${toolCallId}: expected JSON object arguments`,
+  );
+}
+
+async function* parseOpenAICompatibleStream(
+  body: ReadableStream<Uint8Array>,
+  toolNameMap: Map<string, string>,
+): AsyncIterable<ChatStreamEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls = new Map<number, StreamingToolCallAccumulator>();
+  let buffer = "";
+  let content = "";
+  let reasoningContent = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data:")) {
+        continue;
+      }
+
+      const data = line.slice("data:".length).trim();
+      if (!data || data === "[DONE]") {
+        continue;
+      }
+
+      const payload = JSON.parse(data) as OpenAICompatibleStreamDelta;
+      const delta = payload.choices?.[0]?.delta;
+      if (!delta) {
+        continue;
+      }
+
+      if (delta.content) {
+        content += delta.content;
+        yield { type: "content.delta", content: delta.content };
+      }
+
+      if (delta.reasoning_content) {
+        reasoningContent += delta.reasoning_content;
+        yield { type: "reasoning.delta", content: delta.reasoning_content };
+      }
+
+      for (const toolCallDelta of delta.tool_calls ?? []) {
+        const index = toolCallDelta.index ?? 0;
+        const current = toolCalls.get(index) ?? { argumentsText: "" };
+        if (toolCallDelta.id) {
+          current.id = toolCallDelta.id;
+        }
+        if (toolCallDelta.function?.name) {
+          current.name = toolCallDelta.function.name;
+        }
+        current.argumentsText += toolCallDelta.function?.arguments ?? "";
+        toolCalls.set(index, current);
+      }
+    }
+  }
+
+  const parsedToolCalls = [...toolCalls.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, toolCall]) => parseStreamingToolCall(toolCall, toolNameMap));
+
+  for (const toolCall of parsedToolCalls) {
+    yield { type: "tool.call", toolCall };
+  }
+
+  yield {
+    type: "done",
+    response: {
+      content,
+      ...(reasoningContent ? { reasoningContent } : {}),
+      toolCalls: parsedToolCalls,
+    },
+  };
+}
+
+function parseStreamingToolCall(
+  toolCall: StreamingToolCallAccumulator,
+  toolNameMap: Map<string, string>,
+): ReturnType<typeof parseToolCall> {
+  return parseToolCall(
+    {
+      ...(toolCall.id ? { id: toolCall.id } : {}),
+      type: "function",
+      function: {
+        ...(toolCall.name ? { name: toolCall.name } : {}),
+        arguments: toolCall.argumentsText,
+      },
+    },
+    toolNameMap,
   );
 }
 
