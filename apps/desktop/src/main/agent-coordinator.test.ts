@@ -1,6 +1,7 @@
 // @vitest-environment node
 
 import type { ModelProvider } from "@story-forge/model-gateway";
+import type { AgentEvent } from "@story-forge/shared";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,94 @@ import { SessionRepository } from "./session-repository";
 import { WorkspaceRepository } from "./workspace-repository";
 
 describe("AgentCoordinator", () => {
+  it("passes the current response mode into the agent loop", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => ({
+          id: "streaming-provider",
+          capabilities: {
+            toolCalling: true,
+            streaming: true,
+            jsonSchema: true,
+            contextWindowTokens: 1000,
+          },
+          chat: async () => {
+            throw new Error("chat should not be used");
+          },
+          async *streamChat() {
+            yield { type: "content.delta" as const, content: "Hi" };
+            yield {
+              type: "done" as const,
+              response: { content: "Hi", toolCalls: [] },
+            };
+          },
+        }),
+      },
+      getResponseMode: async () => "live",
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      content: "Hi",
+      delivery: "live",
+    }));
+  });
+
+  it("defaults response mode lookup to auto when not provided", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => ({
+          id: "streaming-provider",
+          capabilities: {
+            toolCalling: true,
+            streaming: true,
+            jsonSchema: true,
+            contextWindowTokens: 1000,
+          },
+          chat: async () => ({ content: "fallback", toolCalls: [] }),
+          async *streamChat() {
+            yield { type: "content.delta" as const, content: "Auto" };
+            yield {
+              type: "done" as const,
+              response: { content: "Auto", toolCalls: [] },
+            };
+          },
+        }),
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Auto" }),
+      ]),
+    });
+  });
+
   it("persists a multi-step tool turn and emits correlated events", async () => {
     const fixture = await createFixture();
     await writeFile(join(fixture.workspace.path, "README.md"), "workspace contents");

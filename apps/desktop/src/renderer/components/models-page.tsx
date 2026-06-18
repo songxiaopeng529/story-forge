@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderView } from "../../shared/story-forge-api";
 import { formatError } from "../renderer-utils";
 
+const SAVED_API_KEY_MASK = "************";
+
 export function ModelsPage(props: {
   providers: ProviderView[];
   selectedProvider: ProviderView | undefined;
@@ -15,6 +17,7 @@ export function ModelsPage(props: {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -22,10 +25,11 @@ export function ModelsPage(props: {
   useEffect(() => {
     setBaseUrl(props.selectedProvider?.baseUrl ?? "");
     setModel(props.selectedProvider?.model ?? "");
-    setApiKey("");
+    setApiKey(props.selectedProvider?.hasSecret ? SAVED_API_KEY_MASK : "");
+    setApiKeyDirty(false);
     setModels(props.selectedProvider?.recommendedModels ?? []);
     setNotice(undefined);
-  }, [props.selectedProvider?.providerId]);
+  }, [props.selectedProvider?.providerId, props.selectedProvider?.hasSecret]);
 
   const updateProvider = (provider: ProviderView) => {
     props.onProvidersChange(props.providers.map((candidate) =>
@@ -40,14 +44,16 @@ export function ModelsPage(props: {
     setBusy("save");
     props.onError(undefined);
     try {
+      const nextApiKey = apiKeyDirty ? apiKey.trim() : "";
       const saved = await window.storyForge.providers.save({
         providerId: props.selectedProvider.providerId,
         baseUrl,
         model,
-        ...(apiKey ? { apiKey } : {}),
+        ...(nextApiKey ? { apiKey: nextApiKey } : {}),
       });
       updateProvider(saved);
-      setApiKey("");
+      setApiKey(saved.hasSecret ? SAVED_API_KEY_MASK : "");
+      setApiKeyDirty(false);
       setNotice("Provider saved");
     } catch (saveError) {
       props.onError(formatError(saveError));
@@ -102,6 +108,7 @@ export function ModelsPage(props: {
       await window.storyForge.providers.clearSecret(props.selectedProvider.providerId);
       props.onProvidersChange(await window.storyForge.providers.list());
       setApiKey("");
+      setApiKeyDirty(false);
       setNotice("API key cleared");
     } catch (clearError) {
       props.onError(formatError(clearError));
@@ -202,8 +209,21 @@ export function ModelsPage(props: {
                   aria-label="API key"
                   autoComplete="off"
                   className="form-input"
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={props.selectedProvider.hasSecret ? "Configured" : "Enter API key"}
+                  onBlur={() => {
+                    if (!apiKeyDirty && props.selectedProvider?.hasSecret) {
+                      setApiKey(SAVED_API_KEY_MASK);
+                    }
+                  }}
+                  onChange={(event) => {
+                    setApiKey(event.target.value);
+                    setApiKeyDirty(true);
+                  }}
+                  onFocus={() => {
+                    if (!apiKeyDirty && apiKey === SAVED_API_KEY_MASK) {
+                      setApiKey("");
+                    }
+                  }}
+                  placeholder={props.selectedProvider.hasSecret ? "Saved key" : "Enter API key"}
                   type="password"
                   value={apiKey}
                 />

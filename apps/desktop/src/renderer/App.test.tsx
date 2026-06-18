@@ -6,8 +6,9 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
-import type { AgentEvent } from "@story-forge/shared";
+import type { AgentEvent, AppSettingsView } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ProviderView,
@@ -18,6 +19,7 @@ import type {
 import { App } from "./App";
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -89,19 +91,107 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByText("workspace.readFile")).toBeInTheDocument();
+    expect(await screen.findByText("Running workspace.readFile")).toBeInTheDocument();
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
   });
 
-  it("saves provider settings without reading back or retaining the plaintext key", async () => {
+  it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "live" } });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "Inspect README" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("Thinking...")).toBeInTheDocument();
+
+    await act(async () => {
+      fixture.emit({
+        type: "message.delta",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        content: "Reading",
+        delivery: "live",
+      });
+      fixture.emit({
+        type: "tool.call",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_readme",
+        name: "workspace.readFile",
+        input: { path: "README.md" },
+      });
+      fixture.emit({
+        type: "tool.result",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_readme",
+        name: "workspace.readFile",
+        ok: true,
+        output: "README content",
+      });
+    });
+
+    expect(screen.getByText("Reading")).toBeInTheDocument();
+    expect(screen.getByText("Running workspace.readFile")).toBeInTheDocument();
+    expect(screen.getByText("Completed workspace.readFile")).toBeInTheDocument();
+  });
+
+  it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "smooth" } });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "Explain" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fixture.start).toHaveBeenCalled());
+    vi.useFakeTimers();
+    await act(async () => {
+      fixture.emit({
+        type: "message.delta",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        content: "Smooth answer",
+        delivery: "smooth",
+      });
+    });
+
+    expect(screen.queryByText("Smooth answer")).not.toBeInTheDocument();
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(screen.getByText("Smooth answer")).toBeInTheDocument();
+  });
+
+  it("keeps the app shell fixed while only the conversation pane scrolls", async () => {
+    installApi();
+    render(<App />);
+
+    expect(await screen.findByText("Previous question")).toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveClass("h-screen", "overflow-hidden");
+    expect(screen.getByTestId("agent-layout")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("agent-workspace")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("agent-header")).not.toHaveClass("overflow-y-auto");
+    expect(screen.getByTestId("agent-message-scroll")).toHaveClass("overflow-y-auto");
+  });
+
+  it("saves provider settings and shows a saved-key indicator without exposing plaintext", async () => {
     const fixture = installApi();
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Models" }));
     const keyInput = await screen.findByLabelText("API key");
 
     expect(keyInput).toHaveAttribute("type", "password");
-    expect(keyInput).toHaveAttribute("placeholder", "Configured");
+    expect(keyInput).toHaveValue("************");
+    fireEvent.focus(keyInput);
     expect(keyInput).toHaveValue("");
+    fireEvent.blur(keyInput);
+    expect(keyInput).toHaveValue("************");
+    fireEvent.focus(keyInput);
     fireEvent.change(keyInput, { target: { value: "new-local-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
 
@@ -111,12 +201,103 @@ describe("App", () => {
       model: "deepseek-v4-pro",
       apiKey: "new-local-secret",
     }));
-    expect(keyInput).toHaveValue("");
+    await waitFor(() => expect(keyInput).toHaveValue("************"));
     expect(screen.queryByDisplayValue("new-local-secret")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
+    await waitFor(() => expect(fixture.saveProvider).toHaveBeenCalledTimes(2));
+    expect(fixture.saveProvider.mock.calls[1]?.[0]).toEqual({
+      providerId: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+    });
+  });
+
+  it("loads and saves the global response mode from Settings", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "auto" } });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAccessibleDescription(
+        "Show waiting status, then play back completed responses.",
+      );
+
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      responseMode: "smooth",
+    }));
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("rolls back the response mode and shows an error when saving fails", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto" },
+      saveSettings: vi.fn(async () => {
+        throw new Error("Unable to save settings");
+      }),
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      responseMode: "smooth",
+    }));
+    expect(await screen.findByText("Unable to save settings")).toBeInTheDocument();
+    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAttribute("aria-checked", "false");
+  });
+
+  it("disables response mode choices while settings are saving", async () => {
+    const pendingSave = createDeferred<AppSettingsView>();
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto" },
+      saveSettings: vi.fn(async (input) => ({
+        ...(await pendingSave.promise),
+        ...input,
+      })),
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Live" }));
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
+    expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toBeDisabled());
+    expect(within(responseModeGroup).getByRole("radio", { name: "Live" })).toBeDisabled();
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
+
+    await act(async () => {
+      pendingSave.resolve({ schemaVersion: 1, responseMode: "live" });
+    });
+    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
+      .not.toBeDisabled());
   });
 });
 
-function installApi() {
+function installApi(options: {
+  settings?: AppSettingsView;
+  saveSettings?: StoryForgeApi["settings"]["save"];
+} = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
     displayName: "DeepSeek",
@@ -163,6 +344,13 @@ function installApi() {
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
+  const settings = options.settings ?? {
+    schemaVersion: 1 as const,
+    responseMode: "auto" as const,
+  };
+  const saveSettings = options.saveSettings
+    ? vi.mocked(options.saveSettings)
+    : vi.fn(async (input) => ({ ...settings, ...input }));
   const saveProvider = vi.fn(async (input) => ({
     ...provider,
     baseUrl: input.baseUrl,
@@ -171,6 +359,10 @@ function installApi() {
   }));
   const api = {
     version: "0.1.0",
+    settings: {
+      get: vi.fn(async () => settings),
+      save: saveSettings,
+    },
     providers: {
       list: vi.fn(async () => [provider]),
       save: saveProvider,
@@ -210,7 +402,18 @@ function installApi() {
     start,
     stop,
     getSession,
+    saveSettings,
     saveProvider,
     emit: (event: AgentEvent) => eventListener?.(event),
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
 }

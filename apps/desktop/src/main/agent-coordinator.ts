@@ -9,6 +9,7 @@ import {
   createTurnId,
   type AgentEvent,
   type AgentStopReason,
+  type ResponseMode,
   type SessionId,
   type TurnId,
 } from "@story-forge/shared";
@@ -36,6 +37,7 @@ export type AgentCoordinatorOptions = {
   sessionRepository: SessionRepository;
   workspaceRepository: WorkspaceRepository;
   providerFactory: ProviderFactory;
+  getResponseMode?: () => Promise<ResponseMode>;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -51,6 +53,7 @@ export class AgentCoordinator {
   private readonly sessionRepository: SessionRepository;
   private readonly workspaceRepository: WorkspaceRepository;
   private readonly providerFactory: ProviderFactory;
+  private readonly getResponseMode: () => Promise<ResponseMode>;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
@@ -63,6 +66,7 @@ export class AgentCoordinator {
     this.sessionRepository = options.sessionRepository;
     this.workspaceRepository = options.workspaceRepository;
     this.providerFactory = options.providerFactory;
+    this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
@@ -160,9 +164,11 @@ export class AgentCoordinator {
         ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
         ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
       });
+      const responseMode = await this.getResponseMode();
       const result = await loop.run({
         sessionId: session.id,
         turnId,
+        responseMode,
         signal,
         messages: [
           {

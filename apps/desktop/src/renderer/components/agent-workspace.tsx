@@ -1,11 +1,12 @@
 import type { AgentEvent, TurnId } from "@story-forge/shared";
-import { ChevronRight, CircleStop, FolderOpen, Play, Trash2 } from "lucide-react";
+import { CircleStop, FolderOpen, Play, Trash2 } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent } from "react";
 import type {
-  PersistedMessageView,
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
+import { buildTimeline } from "../timeline";
+import { ConversationTimeline } from "./conversation-timeline";
 
 export function AgentWorkspace(props: {
   loading: boolean;
@@ -54,9 +55,21 @@ export function AgentWorkspace(props: {
     );
   }
 
+  const timelineItems = buildTimeline({
+    session: props.session,
+    activities: props.activities,
+    activeTurnId: props.activeTurnId,
+  });
+
   return (
-    <section className="flex min-w-0 flex-col">
-      <header className="flex h-16 items-center gap-3 border-b border-forge-line bg-white px-5">
+    <section
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+      data-testid="agent-workspace"
+    >
+      <header
+        className="flex h-16 flex-none items-center gap-3 border-b border-forge-line bg-white px-5"
+        data-testid="agent-header"
+      >
         <div className="min-w-0 flex-1">
           {props.session ? (
             <input
@@ -93,48 +106,21 @@ export function AgentWorkspace(props: {
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="agent-message-scroll">
         {!props.session ? (
           <div className="mx-auto max-w-xl rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600">
             Create a session from the workspace sidebar to begin.
           </div>
-        ) : (
-          <div className="mx-auto max-w-3xl space-y-4">
-            {props.session.messages.length === 0 ? (
-              <div className="rounded-lg bg-white p-5 text-sm text-slate-600 shadow-sm">
-                Ask StoryForge to inspect code, edit workspace files, or run an allowed development command.
-              </div>
-            ) : null}
-            {props.session.messages.map((message) => (
-              <Message key={message.id} message={message} />
-            ))}
-            {props.session.stopReason && props.session.status !== "completed" ? (
-              <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-                <summary className="cursor-pointer font-medium text-amber-800">
-                  Session {props.session.status}
-                </summary>
-                <div className="mt-2 text-xs text-amber-700">
-                  Stop reason: {props.session.stopReason}
-                </div>
-              </details>
-            ) : null}
-            {props.activities.length > 0 ? (
-              <details className="rounded-lg border border-forge-line bg-white p-3 text-sm">
-                <summary className="cursor-pointer font-medium text-slate-700">
-                  Activity ({props.activities.length})
-                </summary>
-                <div className="mt-3 space-y-2">
-                  {props.activities.map((event, index) => (
-                    <Activity event={event} key={`${event.turnId}-${event.type}-${index}`} />
-                  ))}
-                </div>
-              </details>
-            ) : null}
+        ) : props.session.messages.length === 0 && timelineItems.length === 0 ? (
+          <div className="mx-auto max-w-3xl rounded-lg bg-white p-5 text-sm text-slate-600 shadow-sm">
+            Ask StoryForge to inspect code, edit workspace files, or run an allowed development command.
           </div>
+        ) : (
+          <ConversationTimeline items={timelineItems} />
         )}
       </div>
 
-      <footer className="border-t border-forge-line bg-white p-4">
+      <footer className="flex-none border-t border-forge-line bg-white p-4">
         <div className="mx-auto max-w-3xl">
           {props.error ? (
             <div className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -180,77 +166,4 @@ export function AgentWorkspace(props: {
       </footer>
     </section>
   );
-}
-
-function Message({ message }: { message: PersistedMessageView }) {
-  if (message.role === "tool") {
-    return (
-      <details className="rounded-lg border border-forge-line bg-slate-50 px-4 py-3 text-sm">
-        <summary className="cursor-pointer font-medium">
-          {message.ok ? "Completed" : "Failed"}: {message.name}
-        </summary>
-        <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs text-slate-600">
-          {message.content}
-        </pre>
-      </details>
-    );
-  }
-  const isUser = message.role === "user";
-  return (
-    <article className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-      <div className={`max-w-[82%] rounded-xl px-4 py-3 text-sm leading-6 ${
-        isUser ? "bg-forge-ink text-white" : "border border-forge-line bg-white"
-      }`}>
-        <div className="whitespace-pre-wrap">{message.content}</div>
-        {message.role === "assistant" && message.reasoningContent ? (
-          <details className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
-            <summary className="cursor-pointer font-medium">Reasoning</summary>
-            <div className="mt-2 whitespace-pre-wrap">{message.reasoningContent}</div>
-          </details>
-        ) : null}
-        {message.role === "assistant" && message.toolCalls?.length ? (
-          <details className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
-            <summary className="cursor-pointer font-medium">
-              Tool requests ({message.toolCalls.length})
-            </summary>
-            {message.toolCalls.map((toolCall) => (
-              <div className="mt-2" key={toolCall.id}>{toolCall.name}</div>
-            ))}
-          </details>
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
-function Activity({ event }: { event: AgentEvent }) {
-  if (event.type === "tool.call") {
-    return (
-      <div className="rounded-md bg-slate-50 p-2">
-        <div className="font-medium">{event.name}</div>
-        <pre className="mt-1 overflow-auto text-xs text-slate-500">
-          {JSON.stringify(event.input, null, 2)}
-        </pre>
-      </div>
-    );
-  }
-  if (event.type === "tool.result") {
-    return (
-      <div className="flex items-center gap-2 text-xs text-slate-600">
-        <ChevronRight size={13} />
-        {event.name}: {event.ok ? "completed" : "failed"}
-      </div>
-    );
-  }
-  if (event.type === "runtime.error") {
-    return <div className="text-xs text-red-700">{event.message}</div>;
-  }
-  if (event.type === "runtime.completed") {
-    return (
-      <div className="text-xs text-slate-600">
-        Stopped: {event.stopReason ?? "completed"} · {event.steps ?? 0} steps
-      </div>
-    );
-  }
-  return <div className="text-xs text-slate-500">{event.type}</div>;
 }

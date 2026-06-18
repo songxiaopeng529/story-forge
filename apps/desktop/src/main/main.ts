@@ -9,6 +9,7 @@ import {
 import { join } from "node:path";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import { AgentCoordinator } from "./agent-coordinator";
+import { AppSettingsStore } from "./app-settings-store";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { ProviderConfigStore } from "./provider-config-store";
 import { ProviderService } from "./provider-service";
@@ -40,6 +41,7 @@ function createWindow(): BrowserWindow {
 
 async function initializeApplication(): Promise<void> {
   const rootDir = app.getPath("userData");
+  const settingsStore = new AppSettingsStore({ rootDir });
   const providerStore = new ProviderConfigStore({
     rootDir,
     crypto: {
@@ -58,6 +60,7 @@ async function initializeApplication(): Promise<void> {
     sessionRepository,
     workspaceRepository,
     providerFactory: registry,
+    getResponseMode: async () => (await settingsStore.get()).responseMode,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);
@@ -70,6 +73,7 @@ async function initializeApplication(): Promise<void> {
     providers: providerService,
     workspaces: workspaceRepository,
     sessions: sessionRepository,
+    settings: settingsStore,
     coordinator,
     selectWorkspace: async () => {
       const result = await dialog.showOpenDialog({

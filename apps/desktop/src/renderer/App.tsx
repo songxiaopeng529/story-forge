@@ -1,5 +1,5 @@
 import type { ProviderId } from "@story-forge/model-gateway";
-import type { AgentEvent, SessionId, TurnId } from "@story-forge/shared";
+import type { AgentEvent, ResponseMode, SessionId, TurnId } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   PersistedMessageView,
@@ -10,6 +10,7 @@ import type {
 import { AgentWorkspace } from "./components/agent-workspace";
 import { ModelsPage } from "./components/models-page";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
+import { SettingsPage } from "./components/settings-page";
 import { SessionSidebar } from "./components/session-sidebar";
 import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
 
@@ -24,9 +25,13 @@ export function App() {
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
+  const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
+  const persistedResponseModeRef = useRef<ResponseMode>("auto");
+  const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
   const selectedWorkspace = workspaces.find(
@@ -62,7 +67,8 @@ export function App() {
 
     void (async () => {
       try {
-        const [nextProviders, nextWorkspaces, nextSessions] = await Promise.all([
+        const [nextSettings, nextProviders, nextWorkspaces, nextSessions] = await Promise.all([
+          window.storyForge.settings.get(),
           window.storyForge.providers.list(),
           window.storyForge.workspaces.list(),
           window.storyForge.sessions.list(),
@@ -70,6 +76,8 @@ export function App() {
         if (disposed) {
           return;
         }
+        persistedResponseModeRef.current = nextSettings.responseMode;
+        setResponseMode(nextSettings.responseMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
@@ -211,6 +219,33 @@ export function App() {
     }
   }
 
+  async function saveResponseMode(nextResponseMode: ResponseMode): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextResponseMode === persistedResponseModeRef.current
+    ) {
+      return;
+    }
+    const previousResponseMode = persistedResponseModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setResponseMode(nextResponseMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        responseMode: nextResponseMode,
+      });
+      persistedResponseModeRef.current = saved.responseMode;
+      setResponseMode(saved.responseMode);
+    } catch (settingsError) {
+      setResponseMode(previousResponseMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -260,9 +295,16 @@ export function App() {
   }
 
   return (
-    <main className="grid h-screen grid-cols-[220px_1fr] bg-forge-canvas text-forge-ink">
+    <main className="grid h-screen grid-cols-[220px_1fr] overflow-hidden bg-forge-canvas text-forge-ink">
       <PrimaryNavigation page={page} onChange={setPage} />
-      {page === "models" ? (
+      {page === "settings" ? (
+        <SettingsPage
+          responseMode={responseMode}
+          saving={settingsSaving}
+          error={error}
+          onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
+        />
+      ) : page === "models" ? (
         <ModelsPage
           providers={providers}
           selectedProvider={selectedProvider}
@@ -272,7 +314,10 @@ export function App() {
           error={error}
         />
       ) : (
-        <div className="grid min-w-0 grid-cols-[290px_1fr]">
+        <div
+          className="grid min-h-0 min-w-0 grid-cols-[290px_1fr] overflow-hidden"
+          data-testid="agent-layout"
+        >
           <SessionSidebar
             workspaces={workspaces}
             sessions={sessions}

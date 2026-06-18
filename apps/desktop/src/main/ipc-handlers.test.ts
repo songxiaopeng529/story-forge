@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import type { AgentCoordinator } from "./agent-coordinator";
+import type { AppSettingsStore } from "./app-settings-store";
 import { registerIpcHandlers, type IpcRegistrar } from "./ipc-handlers";
 import type { ProviderService } from "./provider-service";
 import type { SessionRepository } from "./session-repository";
@@ -40,6 +41,25 @@ describe("registerIpcHandlers", () => {
       providerId: "deepseek",
       model: "deepseek-v4-pro",
     });
+  });
+
+  it("registers settings APIs and validates response mode input", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.settingsGet)).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "smooth",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "unsupported" }),
+    ).rejects.toThrow();
   });
 });
 
@@ -91,6 +111,16 @@ function createFixture() {
     rename: vi.fn(),
     delete: vi.fn(),
   } as unknown as SessionRepository;
+  const settings = {
+    get: vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      responseMode: "auto" as const,
+    })),
+    save: vi.fn(async (input) => ({
+      schemaVersion: 1 as const,
+      ...input,
+    })),
+  } as unknown as AppSettingsStore;
   const coordinator = {
     start,
     stop: vi.fn(),
@@ -105,6 +135,7 @@ function createFixture() {
       providers,
       workspaces,
       sessions,
+      settings,
       coordinator,
       selectWorkspace: async () => undefined,
     },

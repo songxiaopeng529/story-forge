@@ -15,8 +15,8 @@ export function SessionSidebar(props: {
   onSelectSession: (sessionId: SessionId, workspaceId: string) => void;
 }) {
   return (
-    <aside className="min-h-0 border-r border-forge-line bg-white">
-      <div className="flex h-16 items-center justify-between border-b border-forge-line px-4">
+    <aside className="flex min-h-0 flex-col overflow-hidden border-r border-forge-line bg-white">
+      <div className="flex h-16 flex-none items-center justify-between border-b border-forge-line px-4">
         <div>
           <div className="text-sm font-semibold">Workspaces</div>
           <div className="text-xs text-slate-500">Persistent local sessions</div>
@@ -30,7 +30,7 @@ export function SessionSidebar(props: {
           <FolderOpen size={16} />
         </button>
       </div>
-      <div className="h-[calc(100vh-64px)] overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {props.workspaces.length === 0 ? (
           <button
             className="w-full rounded-lg border border-dashed border-slate-300 p-5 text-sm text-slate-600"

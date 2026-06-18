@@ -3,6 +3,7 @@ import type {
   ChatOptions,
   ChatRequest,
   ChatResponse,
+  ChatStreamEvent,
   ModelCapabilities,
   ModelProvider,
   ToolSchema,
@@ -44,6 +45,36 @@ type OpenAICompatibleChatCompletion = {
   }>;
 };
 
+type OpenAICompatibleStreamDelta = {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        type?: string;
+        function?: {
+          name?: string;
+          arguments?: string;
+        };
+      }>;
+    };
+  }>;
+};
+
+type StreamingToolCallAccumulator = {
+  id?: string;
+  name?: string;
+  argumentsText: string;
+};
+
+type StreamingParseState = {
+  content: string;
+  reasoningContent: string;
+  toolCalls: Map<number, StreamingToolCallAccumulator>;
+};
+
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   readonly capabilities: ModelCapabilities;
@@ -65,7 +96,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.capabilities = {
       toolCalling: options.capabilities?.toolCalling ?? true,
-      streaming: options.capabilities?.streaming ?? false,
+      streaming: options.capabilities?.streaming ?? true,
       jsonSchema: options.capabilities?.jsonSchema ?? true,
       contextWindowTokens: options.capabilities?.contextWindowTokens ?? 128_000,
     };
@@ -107,6 +138,35 @@ export class OpenAICompatibleProvider implements ModelProvider {
       result.reasoningContent = message.reasoning_content;
     }
     return result;
+  }
+
+  async *streamChat(request: ChatRequest, options: ChatOptions = {}): AsyncIterable<ChatStreamEvent> {
+    const toolNameMap = createToolNameMap(request.tools ?? []);
+    const response = await this.fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${this.apiKey}`,
+        "content-type": "application/json",
+        ...this.headers,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: request.messages.map((message) => toOpenAICompatibleMessage(message, toolNameMap)),
+        ...(request.tools ? { tools: request.tools.map((tool) => toOpenAICompatibleTool(tool, toolNameMap)) } : {}),
+        ...this.extraBody,
+        stream: true,
+      }),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+
+    if (!response.ok) {
+      throw new Error(await createProviderError(response));
+    }
+    if (!response.body) {
+      throw new Error("OpenAI-compatible provider returned an invalid stream: missing body");
+    }
+
+    yield* parseOpenAICompatibleStream(response.body, toolNameMap);
   }
 }
 
@@ -230,6 +290,181 @@ function parseToolArguments(toolCallId: string, argumentsText: string | undefine
 
   throw new Error(
     `OpenAI-compatible provider returned invalid tool arguments for call ${toolCallId}: expected JSON object arguments`,
+  );
+}
+
+async function* parseOpenAICompatibleStream(
+  body: ReadableStream<Uint8Array>,
+  toolNameMap: Map<string, string>,
+): AsyncIterable<ChatStreamEvent> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const state: StreamingParseState = {
+    content: "",
+    reasoningContent: "",
+    toolCalls: new Map<number, StreamingToolCallAccumulator>(),
+  };
+  let buffer = "";
+  let receivedDone = false;
+
+  readLoop: while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+
+    while (true) {
+      const separator = findSseFrameSeparator(buffer);
+      if (!separator) {
+        break;
+      }
+
+      const frame = buffer.slice(0, separator.index);
+      buffer = buffer.slice(separator.index + separator.length);
+      const result = processSseFrame(frame, state);
+      if (result.done) {
+        receivedDone = true;
+        buffer = "";
+        break readLoop;
+      }
+
+      yield* result.events;
+    }
+  }
+
+  if (!receivedDone) {
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const result = processSseFrame(buffer, state);
+      if (result.done) {
+        receivedDone = true;
+      } else {
+        yield* result.events;
+      }
+    }
+  }
+
+  if (!receivedDone) {
+    throw new Error("OpenAI-compatible provider returned an invalid stream: missing [DONE] marker");
+  }
+
+  const parsedToolCalls = [...state.toolCalls.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, toolCall]) => parseStreamingToolCall(toolCall, toolNameMap));
+
+  for (const toolCall of parsedToolCalls) {
+    yield { type: "tool.call", toolCall };
+  }
+
+  yield {
+    type: "done",
+    response: {
+      content: state.content,
+      ...(state.reasoningContent ? { reasoningContent: state.reasoningContent } : {}),
+      toolCalls: parsedToolCalls,
+    },
+  };
+}
+
+function findSseFrameSeparator(buffer: string): { index: number; length: number } | undefined {
+  const match = /\r?\n\r?\n/.exec(buffer);
+  if (!match || match.index === undefined) {
+    return undefined;
+  }
+
+  return {
+    index: match.index,
+    length: match[0].length,
+  };
+}
+
+function processSseFrame(
+  frame: string,
+  state: StreamingParseState,
+): { done: true } | { done: false; events: ChatStreamEvent[] } {
+  const data = parseSseFrameData(frame);
+  if (!data) {
+    return { done: false, events: [] };
+  }
+
+  const trimmedData = data.trim();
+  if (trimmedData === "[DONE]") {
+    return { done: true };
+  }
+
+  const events: ChatStreamEvent[] = [];
+  const payload = JSON.parse(trimmedData) as OpenAICompatibleStreamDelta;
+  const delta = payload.choices?.[0]?.delta;
+  if (!delta) {
+    return { done: false, events };
+  }
+
+  if (delta.content) {
+    state.content += delta.content;
+    events.push({ type: "content.delta", content: delta.content });
+  }
+
+  if (delta.reasoning_content) {
+    state.reasoningContent += delta.reasoning_content;
+    events.push({ type: "reasoning.delta", content: delta.reasoning_content });
+  }
+
+  for (const toolCallDelta of delta.tool_calls ?? []) {
+    const index = toolCallDelta.index ?? 0;
+    const current = state.toolCalls.get(index) ?? { argumentsText: "" };
+    if (toolCallDelta.id) {
+      current.id = toolCallDelta.id;
+    }
+    if (toolCallDelta.function?.name) {
+      current.name = toolCallDelta.function.name;
+    }
+    current.argumentsText += toolCallDelta.function?.arguments ?? "";
+    state.toolCalls.set(index, current);
+  }
+
+  return { done: false, events };
+}
+
+function parseSseFrameData(frame: string): string | undefined {
+  const dataLines: string[] = [];
+
+  for (const line of frame.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")) {
+    if (!line || line.startsWith(":")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(":");
+    const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex);
+    if (field !== "data") {
+      continue;
+    }
+
+    let value = separatorIndex === -1 ? "" : line.slice(separatorIndex + 1);
+    if (value.startsWith(" ")) {
+      value = value.slice(1);
+    }
+    dataLines.push(value);
+  }
+
+  return dataLines.length ? dataLines.join("\n") : undefined;
+}
+
+function parseStreamingToolCall(
+  toolCall: StreamingToolCallAccumulator,
+  toolNameMap: Map<string, string>,
+): ReturnType<typeof parseToolCall> {
+  return parseToolCall(
+    {
+      ...(toolCall.id ? { id: toolCall.id } : {}),
+      type: "function",
+      function: {
+        ...(toolCall.name ? { name: toolCall.name } : {}),
+        arguments: toolCall.argumentsText,
+      },
+    },
+    toolNameMap,
   );
 }
 

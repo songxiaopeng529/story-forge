@@ -1,5 +1,5 @@
-import type { ChatMessage, ModelProvider } from "@story-forge/model-gateway";
-import type { SessionId, TurnId } from "@story-forge/shared";
+import type { ChatMessage, ChatStreamEvent, ModelProvider } from "@story-forge/model-gateway";
+import type { AgentEvent, SessionId, TurnId } from "@story-forge/shared";
 import { ToolRegistry } from "@story-forge/tools";
 import { describe, expect, it } from "vitest";
 import { AgentLoop, trimMessagesToContext } from "./agent-loop";
@@ -8,6 +8,243 @@ const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
 
 describe("AgentLoop", () => {
+  it("uses chat in smooth mode and ignores streamChat when available", async () => {
+    const events: AgentEvent[] = [];
+    let chatCalls = 0;
+    let streamCalls = 0;
+    const provider: ModelProvider = {
+      id: "smooth-fake",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        jsonSchema: false,
+        contextWindowTokens: 1000,
+      },
+      chat: async () => {
+        chatCalls += 1;
+        return { content: "Smooth answer", toolCalls: [] };
+      },
+      async *streamChat() {
+        streamCalls += 1;
+        yield { type: "done", response: { content: "unexpected", toolCalls: [] } };
+      },
+    };
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "smooth",
+      messages: [{ role: "user", content: "Use smooth" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(chatCalls).toBe(1);
+    expect(streamCalls).toBe(0);
+    expect(events).toContainEqual({
+      type: "message.delta",
+      sessionId,
+      turnId,
+      content: "Smooth answer",
+      delivery: "smooth",
+    });
+    expect(result.messages.at(-1)).toEqual({ role: "assistant", content: "Smooth answer" });
+  });
+
+  it("uses streamChat in live mode and emits live deltas", async () => {
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop({
+      provider: streamingProvider([
+        { type: "content.delta", content: "Hel" },
+        { type: "content.delta", content: "lo" },
+        { type: "done", response: { content: "Hello", toolCalls: [] } },
+      ]),
+      tools: new ToolRegistry(),
+    }).run({
+      sessionId,
+      turnId,
+      responseMode: "live",
+      messages: [{ role: "user", content: "Say hello" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: "message.delta",
+      sessionId,
+      turnId,
+      content: "Hel",
+      delivery: "live",
+    });
+    expect(events).toContainEqual({
+      type: "message.delta",
+      sessionId,
+      turnId,
+      content: "lo",
+      delivery: "live",
+    });
+    expect(result.messages.at(-1)).toEqual({ role: "assistant", content: "Hello" });
+  });
+
+  it("reports auto streaming errors after live content without smooth fallback", async () => {
+    const events: AgentEvent[] = [];
+    let chatCalls = 0;
+    const provider: ModelProvider = {
+      id: "partial-stream-fake",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        jsonSchema: false,
+        contextWindowTokens: 1000,
+      },
+      chat: async () => {
+        chatCalls += 1;
+        return { content: "Smooth answer", toolCalls: [] };
+      },
+      async *streamChat() {
+        yield { type: "content.delta", content: "Partial" };
+        throw new Error("stream failed after content");
+      },
+    };
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "auto",
+      messages: [{ role: "user", content: "Recover carefully" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(chatCalls).toBe(0);
+    expect(result.stopReason).toBe("unrecoverable-error");
+    expect(events).toContainEqual({
+      type: "message.delta",
+      sessionId,
+      turnId,
+      content: "Partial",
+      delivery: "live",
+    });
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "response.fallback" }));
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      delivery: "smooth",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "runtime.error",
+      message: "stream failed after content",
+    }));
+  });
+
+  it("falls back from auto streaming to smooth chat before content arrives", async () => {
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      id: "fallback-fake",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        jsonSchema: false,
+        contextWindowTokens: 1000,
+      },
+      chat: async () => ({ content: "Smooth answer", toolCalls: [] }),
+      async *streamChat() {
+        throw new Error("network stream failed");
+      },
+    };
+
+    await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "auto",
+      messages: [{ role: "user", content: "Recover" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events).toContainEqual({
+      type: "response.fallback",
+      sessionId,
+      turnId,
+      from: "live",
+      to: "smooth",
+      reason: "network stream failed",
+    });
+    expect(events).toContainEqual({
+      type: "message.delta",
+      sessionId,
+      turnId,
+      content: "Smooth answer",
+      delivery: "smooth",
+    });
+  });
+
+  it("does not fall back from auto streaming when the turn is aborted", async () => {
+    const controller = new AbortController();
+    const events: AgentEvent[] = [];
+    let chatCalls = 0;
+    const provider: ModelProvider = {
+      id: "aborted-stream-fake",
+      capabilities: {
+        toolCalling: true,
+        streaming: true,
+        jsonSchema: false,
+        contextWindowTokens: 1000,
+      },
+      chat: async () => {
+        chatCalls += 1;
+        return { content: "Smooth answer", toolCalls: [] };
+      },
+      async *streamChat() {
+        controller.abort();
+        throw new Error("stream aborted");
+      },
+    };
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "auto",
+      messages: [{ role: "user", content: "Abort" }],
+      signal: controller.signal,
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(chatCalls).toBe(0);
+    expect(result.stopReason).toBe("user-stopped");
+    expect(events).not.toContainEqual(expect.objectContaining({ type: "response.fallback" }));
+    expect(events).not.toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      delivery: "smooth",
+    }));
+  });
+
+  it("reports unsupported live streaming as an unrecoverable live-mode error", async () => {
+    const provider = fakeProvider(async () => ({ content: "unexpected", toolCalls: [] }));
+    const events: AgentEvent[] = [];
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "live",
+      messages: [{ role: "user", content: "Live only" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(result.stopReason).toBe("unrecoverable-error");
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "runtime.error",
+      message: "Live streaming is not available for fake.",
+    }));
+  });
+
   it("sends existing multi-turn history and appends the final assistant response", async () => {
     const requests: ChatMessage[][] = [];
     const provider = fakeProvider(async (messages) => {
@@ -243,5 +480,25 @@ function fakeProvider(
       contextWindowTokens: 1000,
     },
     chat: ({ messages }) => response(messages),
+  };
+}
+
+function streamingProvider(events: ChatStreamEvent[]): ModelProvider {
+  return {
+    id: "streaming-fake",
+    capabilities: {
+      toolCalling: true,
+      streaming: true,
+      jsonSchema: false,
+      contextWindowTokens: 1000,
+    },
+    chat: async () => {
+      throw new Error("chat should not be called");
+    },
+    async *streamChat() {
+      for (const event of events) {
+        yield event;
+      }
+    },
   };
 }

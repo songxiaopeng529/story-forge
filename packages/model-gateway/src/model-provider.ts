@@ -53,6 +53,12 @@ export type ChatResponse = {
   toolCalls: ToolCall[];
 };
 
+export type ChatStreamEvent =
+  | { type: "content.delta"; content: string }
+  | { type: "reasoning.delta"; content: string }
+  | { type: "tool.call"; toolCall: ToolCall }
+  | { type: "done"; response: ChatResponse };
+
 export type ChatOptions = {
   signal?: AbortSignal;
 };
@@ -69,4 +75,5 @@ export interface ModelProvider {
   readonly capabilities: ModelCapabilities;
 
   chat(request: ChatRequest, options?: ChatOptions): Promise<ChatResponse>;
+  streamChat?(request: ChatRequest, options?: ChatOptions): AsyncIterable<ChatStreamEvent>;
 }
