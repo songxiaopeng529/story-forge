@@ -19,6 +19,7 @@ import type {
 import { App } from "./App";
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
 });
 
@@ -90,8 +91,80 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByText("workspace.readFile")).toBeInTheDocument();
+    expect(await screen.findByText("Running workspace.readFile")).toBeInTheDocument();
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
+  });
+
+  it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "live" } });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "Inspect README" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("Thinking...")).toBeInTheDocument();
+
+    await act(async () => {
+      fixture.emit({
+        type: "message.delta",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        content: "Reading",
+        delivery: "live",
+      });
+      fixture.emit({
+        type: "tool.call",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_readme",
+        name: "workspace.readFile",
+        input: { path: "README.md" },
+      });
+      fixture.emit({
+        type: "tool.result",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_readme",
+        name: "workspace.readFile",
+        ok: true,
+        output: "README content",
+      });
+    });
+
+    expect(screen.getByText("Reading")).toBeInTheDocument();
+    expect(screen.getByText("Running workspace.readFile")).toBeInTheDocument();
+    expect(screen.getByText("Completed workspace.readFile")).toBeInTheDocument();
+  });
+
+  it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
+    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "smooth" } });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "Explain" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fixture.start).toHaveBeenCalled());
+    vi.useFakeTimers();
+    await act(async () => {
+      fixture.emit({
+        type: "message.delta",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        content: "Smooth answer",
+        delivery: "smooth",
+      });
+    });
+
+    expect(screen.queryByText("Smooth answer")).not.toBeInTheDocument();
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(screen.getByText("Smooth answer")).toBeInTheDocument();
   });
 
   it("keeps the app shell fixed while only the conversation pane scrolls", async () => {
