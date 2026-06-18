@@ -7,6 +7,10 @@ import {
 
 const api = {
   version: "0.1.0",
+  settings: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.settingsSave, input),
+  },
   providers: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.providersList),
     save: (input) => ipcRenderer.invoke(IPC_CHANNELS.providersSave, input),

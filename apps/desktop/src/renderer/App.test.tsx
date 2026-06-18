@@ -195,6 +195,10 @@ function installApi() {
   }));
   const api = {
     version: "0.1.0",
+    settings: {
+      get: vi.fn(async () => ({ schemaVersion: 1, responseMode: "auto" })),
+      save: vi.fn(async (input) => ({ schemaVersion: 1, ...input })),
+    },
     providers: {
       list: vi.fn(async () => [provider]),
       save: saveProvider,

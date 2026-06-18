@@ -3,6 +3,7 @@ import type { SessionId, TurnId } from "@story-forge/shared";
 import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import type { AgentCoordinator } from "./agent-coordinator";
+import type { AppSettingsStore } from "./app-settings-store";
 import type { ProviderService } from "./provider-service";
 import type { SessionRepository } from "./session-repository";
 import type { WorkspaceRepository } from "./workspace-repository";
@@ -19,10 +20,12 @@ export type IpcHandlerOptions = {
   providers: ProviderService;
   workspaces: WorkspaceRepository;
   sessions: SessionRepository;
+  settings: AppSettingsStore;
   coordinator: AgentCoordinator;
   selectWorkspace: () => Promise<string | undefined>;
 };
 
+const responseModeSchema = z.enum(["auto", "live", "smooth"]);
 const providerIdSchema = z.enum([
   "deepseek",
   "openai",
@@ -41,6 +44,15 @@ const turnIdSchema = z.custom<TurnId>(
 const workspaceIdSchema = z.string().min(1);
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {
+  handle(options.ipc, IPC_CHANNELS.settingsGet, z.undefined(), () =>
+    options.settings.get()
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.settingsSave,
+    z.object({ responseMode: responseModeSchema }),
+    (input) => options.settings.save(input),
+  );
   handle(options.ipc, IPC_CHANNELS.providersList, z.undefined(), () =>
     options.providers.list()
   );

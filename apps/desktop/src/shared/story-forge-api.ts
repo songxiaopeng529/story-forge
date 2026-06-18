@@ -2,11 +2,15 @@ import type { ProviderId, ToolCall } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AgentStopReason,
+  AppSettingsView,
+  ResponseMode,
   SessionId,
   TurnId,
 } from "@story-forge/shared";
 
 export const IPC_CHANNELS = {
+  settingsGet: "story-forge:settings:get",
+  settingsSave: "story-forge:settings:save",
   providersList: "story-forge:providers:list",
   providersSave: "story-forge:providers:save",
   providersTest: "story-forge:providers:test",
@@ -89,6 +93,10 @@ export type SessionView = {
 
 export type StoryForgeApi = {
   version: string;
+  settings: {
+    get(): Promise<AppSettingsView>;
+    save(input: { responseMode: ResponseMode }): Promise<AppSettingsView>;
+  };
   providers: {
     list(): Promise<ProviderView[]>;
     save(input: {
