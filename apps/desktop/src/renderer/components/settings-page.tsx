@@ -39,7 +39,9 @@ export function SettingsPage(props: {
         <div className="mt-7 rounded-lg border border-forge-line bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-sm font-semibold">Response mode</h3>
+              <h3 className="text-sm font-semibold" id="response-mode-label">
+                Response mode
+              </h3>
               <p className="mt-1 text-sm text-slate-500">
                 Choose how model responses appear while an agent turn is running.
               </p>
@@ -47,24 +49,39 @@ export function SettingsPage(props: {
             {props.saving ? <span className="text-xs text-slate-500">Saving...</span> : null}
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            {responseModes.map((mode) => (
-              <button
-                aria-label={mode.label}
-                aria-pressed={props.responseMode === mode.value}
-                className={`rounded-md border px-3 py-3 text-left ${
-                  props.responseMode === mode.value
-                    ? "border-forge-ember bg-orange-50 text-forge-ember"
-                    : "border-forge-line hover:bg-slate-50"
-                }`}
-                key={mode.value}
-                onClick={() => props.onResponseModeChange(mode.value)}
-                type="button"
-              >
-                <span className="block text-sm font-medium">{mode.label}</span>
-                <span className="mt-1 block text-xs text-slate-500">{mode.description}</span>
-              </button>
-            ))}
+          <div
+            aria-labelledby="response-mode-label"
+            className="mt-4 grid gap-2 sm:grid-cols-3"
+            role="radiogroup"
+          >
+            {responseModes.map((mode) => {
+              const descriptionId = `response-mode-${mode.value}-description`;
+              return (
+                <button
+                  aria-checked={props.responseMode === mode.value}
+                  aria-describedby={descriptionId}
+                  aria-label={mode.label}
+                  className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
+                    props.responseMode === mode.value
+                      ? "border-forge-ember bg-orange-50 text-forge-ember"
+                      : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
+                  }`}
+                  disabled={props.saving}
+                  key={mode.value}
+                  onClick={() => props.onResponseModeChange(mode.value)}
+                  role="radio"
+                  type="button"
+                >
+                  <span className="block text-sm font-medium">{mode.label}</span>
+                  <span
+                    className="mt-1 block text-xs text-slate-500"
+                    id={descriptionId}
+                  >
+                    {mode.description}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {props.error ? (

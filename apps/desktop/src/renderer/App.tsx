@@ -30,6 +30,8 @@ export function App() {
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
+  const persistedResponseModeRef = useRef<ResponseMode>("auto");
+  const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
   const selectedWorkspace = workspaces.find(
@@ -74,6 +76,7 @@ export function App() {
         if (disposed) {
           return;
         }
+        persistedResponseModeRef.current = nextSettings.responseMode;
         setResponseMode(nextSettings.responseMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
@@ -217,6 +220,14 @@ export function App() {
   }
 
   async function saveResponseMode(nextResponseMode: ResponseMode): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextResponseMode === persistedResponseModeRef.current
+    ) {
+      return;
+    }
+    const previousResponseMode = persistedResponseModeRef.current;
+    settingsSaveInFlightRef.current = true;
     setResponseMode(nextResponseMode);
     setSettingsSaving(true);
     setError(undefined);
@@ -224,10 +235,13 @@ export function App() {
       const saved = await window.storyForge.settings.save({
         responseMode: nextResponseMode,
       });
+      persistedResponseModeRef.current = saved.responseMode;
       setResponseMode(saved.responseMode);
     } catch (settingsError) {
+      setResponseMode(previousResponseMode);
       setError(formatError(settingsError));
     } finally {
+      settingsSaveInFlightRef.current = false;
       setSettingsSaving(false);
     }
   }

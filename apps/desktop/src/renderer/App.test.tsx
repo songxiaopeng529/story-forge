@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { AgentEvent, AppSettingsView } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -144,18 +145,86 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    expect(await screen.findByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAccessibleDescription(
+        "Show waiting status, then play back completed responses.",
+      );
 
-    fireEvent.click(screen.getByRole("button", { name: "Smooth" }));
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
 
     await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
       responseMode: "smooth",
     }));
-    expect(screen.getByRole("button", { name: "Smooth" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("rolls back the response mode and shows an error when saving fails", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto" },
+      saveSettings: vi.fn(async () => {
+        throw new Error("Unable to save settings");
+      }),
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      responseMode: "smooth",
+    }));
+    expect(await screen.findByText("Unable to save settings")).toBeInTheDocument();
+    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
+      .toHaveAttribute("aria-checked", "false");
+  });
+
+  it("disables response mode choices while settings are saving", async () => {
+    const pendingSave = createDeferred<AppSettingsView>();
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto" },
+      saveSettings: vi.fn(async (input) => ({
+        ...(await pendingSave.promise),
+        ...input,
+      })),
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const responseModeGroup = await screen.findByRole("radiogroup", {
+      name: "Response mode",
+    });
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Live" }));
+    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
+    expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
+      .toBeDisabled());
+    expect(within(responseModeGroup).getByRole("radio", { name: "Live" })).toBeDisabled();
+    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
+
+    await act(async () => {
+      pendingSave.resolve({ schemaVersion: 1, responseMode: "live" });
+    });
+    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
+      .not.toBeDisabled());
   });
 });
 
-function installApi(options: { settings?: AppSettingsView } = {}) {
+function installApi(options: {
+  settings?: AppSettingsView;
+  saveSettings?: StoryForgeApi["settings"]["save"];
+} = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
     displayName: "DeepSeek",
@@ -206,7 +275,9 @@ function installApi(options: { settings?: AppSettingsView } = {}) {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
   };
-  const saveSettings = vi.fn(async (input) => ({ ...settings, ...input }));
+  const saveSettings = options.saveSettings
+    ? vi.mocked(options.saveSettings)
+    : vi.fn(async (input) => ({ ...settings, ...input }));
   const saveProvider = vi.fn(async (input) => ({
     ...provider,
     baseUrl: input.baseUrl,
@@ -262,4 +333,14 @@ function installApi(options: { settings?: AppSettingsView } = {}) {
     saveProvider,
     emit: (event: AgentEvent) => eventListener?.(event),
   };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
 }
