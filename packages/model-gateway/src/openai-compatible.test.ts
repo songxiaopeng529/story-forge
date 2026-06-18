@@ -648,4 +648,184 @@ describe("OpenAICompatibleProvider", () => {
       },
     });
   });
+
+  it("rejects streams that end without the DONE marker after deltas", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"partial"}}]}\n\n']),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    await expect(
+      (async () => {
+        for await (const event of provider.streamChat({
+          messages: [{ role: "user", content: "Say something" }],
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toThrow("OpenAI-compatible provider returned an invalid stream: missing [DONE] marker");
+    expect(events).toEqual([{ type: "content.delta", content: "partial" }]);
+  });
+
+  it("ignores malformed stream data after DONE", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":[{"delta":{"content":"safe"}}]}\n\n',
+        "data: [DONE]\n\n",
+        "data: {not json}\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Say something" }],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "content.delta", content: "safe" },
+      {
+        type: "done",
+        response: {
+          content: "safe",
+          toolCalls: [],
+        },
+      },
+    ]);
+  });
+
+  it("parses valid SSE frames split across chunks", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":[{"delta":{"content":"split',
+        '"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Say something" }],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "content.delta", content: "split" },
+      {
+        type: "done",
+        response: {
+          content: "split",
+          toolCalls: [],
+        },
+      },
+    ]);
+  });
+
+  it("joins multi-line SSE data fields before parsing JSON", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":\n',
+        'data: [{"delta":{"content":"multi-line"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Say something" }],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "content.delta", content: "multi-line" },
+      {
+        type: "done",
+        response: {
+          content: "multi-line",
+          toolCalls: [],
+        },
+      },
+    ]);
+  });
+
+  it("accepts a final DONE frame without a trailing blank delimiter", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"final"}}]}\n\n', "data: [DONE]"]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Say something" }],
+    })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "content.delta", content: "final" },
+      {
+        type: "done",
+        response: {
+          content: "final",
+          toolCalls: [],
+        },
+      },
+    ]);
+  });
+
+  it("rejects a final non-DONE frame without a trailing blank delimiter", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"unterminated"}}]}']),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: unknown[] = [];
+    await expect(
+      (async () => {
+        for await (const event of provider.streamChat({
+          messages: [{ role: "user", content: "Say something" }],
+        })) {
+          events.push(event);
+        }
+      })(),
+    ).rejects.toThrow("OpenAI-compatible provider returned an invalid stream: missing [DONE] marker");
+    expect(events).toEqual([{ type: "content.delta", content: "unterminated" }]);
+  });
 });

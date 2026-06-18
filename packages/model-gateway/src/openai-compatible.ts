@@ -69,6 +69,12 @@ type StreamingToolCallAccumulator = {
   argumentsText: string;
 };
 
+type StreamingParseState = {
+  content: string;
+  reasoningContent: string;
+  toolCalls: Map<number, StreamingToolCallAccumulator>;
+};
+
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   readonly capabilities: ModelCapabilities;
@@ -293,63 +299,58 @@ async function* parseOpenAICompatibleStream(
 ): AsyncIterable<ChatStreamEvent> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  const toolCalls = new Map<number, StreamingToolCallAccumulator>();
+  const state: StreamingParseState = {
+    content: "",
+    reasoningContent: "",
+    toolCalls: new Map<number, StreamingToolCallAccumulator>(),
+  };
   let buffer = "";
-  let content = "";
-  let reasoningContent = "";
+  let receivedDone = false;
 
-  while (true) {
+  readLoop: while (true) {
     const { value, done } = await reader.read();
     if (done) {
       break;
     }
 
     buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
 
-    for (const line of lines) {
-      if (!line.startsWith("data:")) {
-        continue;
+    while (true) {
+      const separator = findSseFrameSeparator(buffer);
+      if (!separator) {
+        break;
       }
 
-      const data = line.slice("data:".length).trim();
-      if (!data || data === "[DONE]") {
-        continue;
+      const frame = buffer.slice(0, separator.index);
+      buffer = buffer.slice(separator.index + separator.length);
+      const result = processSseFrame(frame, state);
+      if (result.done) {
+        receivedDone = true;
+        buffer = "";
+        break readLoop;
       }
 
-      const payload = JSON.parse(data) as OpenAICompatibleStreamDelta;
-      const delta = payload.choices?.[0]?.delta;
-      if (!delta) {
-        continue;
-      }
+      yield* result.events;
+    }
+  }
 
-      if (delta.content) {
-        content += delta.content;
-        yield { type: "content.delta", content: delta.content };
-      }
-
-      if (delta.reasoning_content) {
-        reasoningContent += delta.reasoning_content;
-        yield { type: "reasoning.delta", content: delta.reasoning_content };
-      }
-
-      for (const toolCallDelta of delta.tool_calls ?? []) {
-        const index = toolCallDelta.index ?? 0;
-        const current = toolCalls.get(index) ?? { argumentsText: "" };
-        if (toolCallDelta.id) {
-          current.id = toolCallDelta.id;
-        }
-        if (toolCallDelta.function?.name) {
-          current.name = toolCallDelta.function.name;
-        }
-        current.argumentsText += toolCallDelta.function?.arguments ?? "";
-        toolCalls.set(index, current);
+  if (!receivedDone) {
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const result = processSseFrame(buffer, state);
+      if (result.done) {
+        receivedDone = true;
+      } else {
+        yield* result.events;
       }
     }
   }
 
-  const parsedToolCalls = [...toolCalls.entries()]
+  if (!receivedDone) {
+    throw new Error("OpenAI-compatible provider returned an invalid stream: missing [DONE] marker");
+  }
+
+  const parsedToolCalls = [...state.toolCalls.entries()]
     .sort(([left], [right]) => left - right)
     .map(([, toolCall]) => parseStreamingToolCall(toolCall, toolNameMap));
 
@@ -360,11 +361,94 @@ async function* parseOpenAICompatibleStream(
   yield {
     type: "done",
     response: {
-      content,
-      ...(reasoningContent ? { reasoningContent } : {}),
+      content: state.content,
+      ...(state.reasoningContent ? { reasoningContent: state.reasoningContent } : {}),
       toolCalls: parsedToolCalls,
     },
   };
+}
+
+function findSseFrameSeparator(buffer: string): { index: number; length: number } | undefined {
+  const match = /\r?\n\r?\n/.exec(buffer);
+  if (!match || match.index === undefined) {
+    return undefined;
+  }
+
+  return {
+    index: match.index,
+    length: match[0].length,
+  };
+}
+
+function processSseFrame(
+  frame: string,
+  state: StreamingParseState,
+): { done: true } | { done: false; events: ChatStreamEvent[] } {
+  const data = parseSseFrameData(frame);
+  if (!data) {
+    return { done: false, events: [] };
+  }
+
+  const trimmedData = data.trim();
+  if (trimmedData === "[DONE]") {
+    return { done: true };
+  }
+
+  const events: ChatStreamEvent[] = [];
+  const payload = JSON.parse(trimmedData) as OpenAICompatibleStreamDelta;
+  const delta = payload.choices?.[0]?.delta;
+  if (!delta) {
+    return { done: false, events };
+  }
+
+  if (delta.content) {
+    state.content += delta.content;
+    events.push({ type: "content.delta", content: delta.content });
+  }
+
+  if (delta.reasoning_content) {
+    state.reasoningContent += delta.reasoning_content;
+    events.push({ type: "reasoning.delta", content: delta.reasoning_content });
+  }
+
+  for (const toolCallDelta of delta.tool_calls ?? []) {
+    const index = toolCallDelta.index ?? 0;
+    const current = state.toolCalls.get(index) ?? { argumentsText: "" };
+    if (toolCallDelta.id) {
+      current.id = toolCallDelta.id;
+    }
+    if (toolCallDelta.function?.name) {
+      current.name = toolCallDelta.function.name;
+    }
+    current.argumentsText += toolCallDelta.function?.arguments ?? "";
+    state.toolCalls.set(index, current);
+  }
+
+  return { done: false, events };
+}
+
+function parseSseFrameData(frame: string): string | undefined {
+  const dataLines: string[] = [];
+
+  for (const line of frame.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")) {
+    if (!line || line.startsWith(":")) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf(":");
+    const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex);
+    if (field !== "data") {
+      continue;
+    }
+
+    let value = separatorIndex === -1 ? "" : line.slice(separatorIndex + 1);
+    if (value.startsWith(" ")) {
+      value = value.slice(1);
+    }
+    dataLines.push(value);
+  }
+
+  return dataLines.length ? dataLines.join("\n") : undefined;
 }
 
 function parseStreamingToolCall(
