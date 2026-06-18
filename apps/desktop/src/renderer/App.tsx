@@ -26,11 +26,13 @@ export function App() {
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
+  const [developerMode, setDeveloperMode] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
+  const persistedDeveloperModeRef = useRef(false);
   const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
@@ -77,7 +79,9 @@ export function App() {
           return;
         }
         persistedResponseModeRef.current = nextSettings.responseMode;
+        persistedDeveloperModeRef.current = nextSettings.developerMode;
         setResponseMode(nextSettings.responseMode);
+        setDeveloperMode(nextSettings.developerMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
@@ -246,6 +250,33 @@ export function App() {
     }
   }
 
+  async function saveDeveloperMode(nextDeveloperMode: boolean): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextDeveloperMode === persistedDeveloperModeRef.current
+    ) {
+      return;
+    }
+    const previousDeveloperMode = persistedDeveloperModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setDeveloperMode(nextDeveloperMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        developerMode: nextDeveloperMode,
+      });
+      persistedDeveloperModeRef.current = saved.developerMode;
+      setDeveloperMode(saved.developerMode);
+    } catch (settingsError) {
+      setDeveloperMode(previousDeveloperMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -300,9 +331,11 @@ export function App() {
       {page === "settings" ? (
         <SettingsPage
           responseMode={responseMode}
+          developerMode={developerMode}
           saving={settingsSaving}
           error={error}
           onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
+          onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
         />
       ) : page === "models" ? (
         <ModelsPage

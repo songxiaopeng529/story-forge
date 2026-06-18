@@ -24,9 +24,11 @@ const responseModes: Array<{
 
 export function SettingsPage(props: {
   responseMode: ResponseMode;
+  developerMode: boolean;
   saving: boolean;
   error: string | undefined;
   onResponseModeChange: (responseMode: ResponseMode) => void;
+  onDeveloperModeChange: (developerMode: boolean) => void;
 }) {
   return (
     <section className="min-h-0 min-w-0 overflow-y-auto p-8">
@@ -83,6 +85,24 @@ export function SettingsPage(props: {
               );
             })}
           </div>
+
+          <label className="mt-5 flex items-center justify-between gap-4 border-t border-forge-line pt-5">
+            <span>
+              <span className="block text-sm font-semibold">Developer mode</span>
+              <span className="mt-1 block text-sm text-slate-500">
+                Show model request messages in the chat inspector.
+              </span>
+            </span>
+            <input
+              aria-label="Developer mode"
+              checked={props.developerMode}
+              className="h-5 w-9 accent-forge-ember"
+              disabled={props.saving}
+              onChange={(event) => props.onDeveloperModeChange(event.currentTarget.checked)}
+              role="switch"
+              type="checkbox"
+            />
+          </label>
 
           {props.error ? (
             <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

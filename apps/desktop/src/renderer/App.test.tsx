@@ -243,6 +243,24 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
   });
 
+  it("loads and saves developer mode from Settings", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const developerMode = await screen.findByRole("switch", { name: "Developer mode" });
+    expect(developerMode).not.toBeChecked();
+
+    fireEvent.click(developerMode);
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      developerMode: true,
+    }));
+    expect(developerMode).toBeChecked();
+  });
+
   it("rolls back the response mode and shows an error when saving fails", async () => {
     const fixture = installApi({
       settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
