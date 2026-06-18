@@ -8,6 +8,7 @@ import {
   type SessionId,
   type TurnId,
 } from "./events";
+import type { ResponseMode } from "./settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
@@ -37,6 +38,23 @@ const messageDeltaEvent = {
   sessionId,
   turnId,
   content: "hello",
+} satisfies AgentEvent;
+
+const liveMessageDeltaEvent = {
+  type: "message.delta",
+  sessionId,
+  turnId,
+  content: "hello",
+  delivery: "live",
+} satisfies AgentEvent;
+
+const responseFallbackEvent = {
+  type: "response.fallback",
+  sessionId,
+  turnId,
+  from: "live",
+  to: "smooth",
+  reason: "stream unavailable",
 } satisfies AgentEvent;
 
 const toolCallEvent = {
@@ -79,6 +97,8 @@ const agentEventFixtures = [
   runtimeCompletedEvent,
   runtimeErrorEvent,
   messageDeltaEvent,
+  liveMessageDeltaEvent,
+  responseFallbackEvent,
   toolCallEvent,
   toolResultEvent,
   permissionRequestEvent,
@@ -94,6 +114,23 @@ describe("createSessionId", () => {
 describe("createTurnId", () => {
   it("returns a StoryForge turn id", () => {
     expect(createTurnId()).toMatch(/^sf_turn_[a-z0-9]+$/);
+  });
+});
+
+describe("settings types", () => {
+  it("accepts the three global response modes", () => {
+    const modes: ResponseMode[] = ["auto", "live", "smooth"];
+
+    expect(modes).toEqual(["auto", "live", "smooth"]);
+  });
+});
+
+describe("AgentEvent", () => {
+  it("allows delivery metadata and fallback notices without marking them terminal", () => {
+    expect(liveMessageDeltaEvent.delivery).toBe("live");
+    expect(responseFallbackEvent.to).toBe("smooth");
+    expect(isTerminalAgentEvent(liveMessageDeltaEvent)).toBe(false);
+    expect(isTerminalAgentEvent(responseFallbackEvent)).toBe(false);
   });
 });
 

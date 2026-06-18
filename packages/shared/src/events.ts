@@ -1,3 +1,5 @@
+import type { MessageDeliveryMode } from "./settings";
+
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
 export type AgentStopReason =
@@ -38,6 +40,7 @@ export type MessageDeltaEvent = {
   sessionId: SessionId;
   turnId: TurnId;
   content: string;
+  delivery?: MessageDeliveryMode;
 };
 
 export type ToolCallEvent = {
@@ -75,6 +78,15 @@ export type MemoryWriteEvent = {
   value: string;
 };
 
+export type ResponseFallbackEvent = {
+  type: "response.fallback";
+  sessionId: SessionId;
+  turnId: TurnId;
+  from: "live";
+  to: "smooth";
+  reason: string;
+};
+
 export type AgentEvent =
   | RuntimeStartedEvent
   | RuntimeCompletedEvent
@@ -83,7 +95,8 @@ export type AgentEvent =
   | ToolCallEvent
   | ToolResultEvent
   | PermissionRequestEvent
-  | MemoryWriteEvent;
+  | MemoryWriteEvent
+  | ResponseFallbackEvent;
 
 export function createSessionId(): SessionId {
   const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
