@@ -61,6 +61,7 @@ async function initializeApplication(): Promise<void> {
     workspaceRepository,
     providerFactory: registry,
     getResponseMode: async () => (await settingsStore.get()).responseMode,
+    getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);

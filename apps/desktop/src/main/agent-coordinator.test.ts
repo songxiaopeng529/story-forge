@@ -100,6 +100,61 @@ describe("AgentCoordinator", () => {
     });
   });
 
+  it("passes developer mode inspection into the agent loop", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      },
+      getResponseMode: async () => "smooth",
+      getDeveloperMode: async () => true,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "model.request",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    }));
+  });
+
+  it("does not emit model request events when developer mode is disabled", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      },
+      getDeveloperMode: async () => false,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events.some((event) => event.type === "model.request")).toBe(false);
+  });
+
   it("persists a multi-step tool turn and emits correlated events", async () => {
     const fixture = await createFixture();
     await writeFile(join(fixture.workspace.path, "README.md"), "workspace contents");
