@@ -8,6 +8,57 @@ const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
 
 describe("AgentLoop", () => {
+  it("emits model request events before chat when inspection is enabled", async () => {
+    const events: AgentEvent[] = [];
+    let chatCalls = 0;
+    const provider = fakeProvider(async () => {
+      chatCalls += 1;
+      return { content: "Done", toolCalls: [] };
+    });
+
+    await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      responseMode: "smooth",
+      inspectModelRequests: {
+        enabled: true,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+      },
+      messages: [{ role: "user", content: "Hello" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(chatCalls).toBe(1);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "model.request",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      responseMode: "smooth",
+      messages: [{ role: "user", content: "Hello" }],
+    }));
+  });
+
+  it("does not emit model request events when inspection is disabled", async () => {
+    const events: AgentEvent[] = [];
+
+    await new AgentLoop({
+      provider: fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      tools: new ToolRegistry(),
+    }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Hello" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events.some((event) => event.type === "model.request")).toBe(false);
+  });
+
   it("uses chat in smooth mode and ignores streamChat when available", async () => {
     const events: AgentEvent[] = [];
     let chatCalls = 0;
@@ -270,6 +321,7 @@ describe("AgentLoop", () => {
   });
 
   it("executes tool calls sequentially and replays reasoning and results to the model", async () => {
+    const events: AgentEvent[] = [];
     const requests: ChatMessage[][] = [];
     let requestCount = 0;
     const provider = fakeProvider(async (messages) => {
@@ -304,7 +356,15 @@ describe("AgentLoop", () => {
     const result = await new AgentLoop({ provider, tools }).run({
       sessionId,
       turnId,
+      inspectModelRequests: {
+        enabled: true,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+      },
       messages: [{ role: "user", content: "Run both tools" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
       onCheckpoint: (messages) => {
         checkpoints.push(messages);
       },
@@ -327,6 +387,7 @@ describe("AgentLoop", () => {
       content: JSON.stringify({ value: 1 }),
     });
     expect(checkpoints[0]?.filter((message) => message.role === "tool")).toHaveLength(2);
+    expect(events.filter((event) => event.type === "model.request")).toHaveLength(2);
     expect(result).toMatchObject({ stopReason: "completed", steps: 4 });
   });
 

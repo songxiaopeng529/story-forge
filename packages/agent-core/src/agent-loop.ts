@@ -9,6 +9,7 @@ import type {
 import type {
   AgentEvent,
   AgentStopReason,
+  InspectableModelMessage,
   MessageDeliveryMode,
   ResponseMode,
   SessionId,
@@ -33,6 +34,11 @@ export type AgentLoopRunInput = {
   sessionId: SessionId;
   turnId: TurnId;
   responseMode?: ResponseMode;
+  inspectModelRequests?: {
+    enabled: boolean;
+    providerId: string;
+    model: string;
+  };
   messages: ChatMessage[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
@@ -75,6 +81,7 @@ export class AgentLoop {
   private readonly maxSteps: number;
   private readonly maxDurationMs: number;
   private readonly now: () => number;
+  private nextModelRequestIndex = 1;
 
   constructor(options: AgentLoopOptions) {
     this.provider = options.provider;
@@ -127,16 +134,19 @@ export class AgentLoop {
         }
 
         steps += 1;
+        const responseMode = input.responseMode ?? "auto";
+        const request: ModelRequest = {
+          messages: trimMessagesToContext(
+            messages,
+            Math.floor(this.provider.capabilities.contextWindowTokens * 0.8),
+          ),
+          tools: this.tools.schemas(),
+        };
+        await this.emitModelRequest({ runInput: input, request, responseMode });
         const response = await this.requestModelResponse({
-          request: {
-            messages: trimMessagesToContext(
-              messages,
-              Math.floor(this.provider.capabilities.contextWindowTokens * 0.8),
-            ),
-            tools: this.tools.schemas(),
-          },
+          request,
           options: { signal: abort.signal },
-          responseMode: input.responseMode ?? "auto",
+          responseMode,
           sessionId: input.sessionId,
           turnId: input.turnId,
           onEvent: input.onEvent,
@@ -249,6 +259,32 @@ export class AgentLoop {
       });
       return { messages, stopReason, steps };
     }
+  }
+
+  private async emitModelRequest(input: {
+    runInput: AgentLoopRunInput;
+    request: ModelRequest;
+    responseMode: ResponseMode;
+  }): Promise<void> {
+    const inspect = input.runInput.inspectModelRequests;
+    if (!inspect?.enabled) {
+      return;
+    }
+    await emit(input.runInput, {
+      type: "model.request",
+      sessionId: input.runInput.sessionId,
+      turnId: input.runInput.turnId,
+      requestId: `model-request-${this.nextModelRequestIndex++}`,
+      providerId: inspect.providerId,
+      model: inspect.model,
+      responseMode: input.responseMode,
+      messages: input.request.messages.map(toInspectableMessage),
+      tools: input.request.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      })),
+    });
   }
 
   private async requestModelResponse(input: {
@@ -396,6 +432,39 @@ function groupConversationRounds(messages: ChatMessage[]): ChatMessage[][] {
 
 function estimateMessageTokens(message: ChatMessage): number {
   return Math.ceil(JSON.stringify(message).length / 4);
+}
+
+function toInspectableMessage(message: ChatMessage): InspectableModelMessage {
+  if (message.role === "assistant") {
+    return {
+      role: "assistant",
+      content: message.content,
+      ...(message.reasoningContent === undefined
+        ? {}
+        : { reasoningContent: message.reasoningContent }),
+      ...(message.toolCalls === undefined
+        ? {}
+        : {
+            toolCalls: message.toolCalls.map((toolCall) => ({
+              id: toolCall.id,
+              name: toolCall.name,
+              input: toolCall.input,
+            })),
+          }),
+    };
+  }
+  if (message.role === "tool") {
+    return {
+      role: "tool",
+      content: message.content,
+      name: message.name,
+      toolCallId: message.toolCallId,
+    };
+  }
+  return {
+    role: message.role,
+    content: message.content,
+  };
 }
 
 function createToolSignature(toolCall: ToolCall): string {
