@@ -260,7 +260,7 @@ export function App() {
   }
 
   return (
-    <main className="grid h-screen grid-cols-[220px_1fr] bg-forge-canvas text-forge-ink">
+    <main className="grid h-screen grid-cols-[220px_1fr] overflow-hidden bg-forge-canvas text-forge-ink">
       <PrimaryNavigation page={page} onChange={setPage} />
       {page === "models" ? (
         <ModelsPage
@@ -272,7 +272,10 @@ export function App() {
           error={error}
         />
       ) : (
-        <div className="grid min-w-0 grid-cols-[290px_1fr]">
+        <div
+          className="grid min-h-0 min-w-0 grid-cols-[290px_1fr] overflow-hidden"
+          data-testid="agent-layout"
+        >
           <SessionSidebar
             workspaces={workspaces}
             sessions={sessions}

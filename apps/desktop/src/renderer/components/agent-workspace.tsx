@@ -55,8 +55,14 @@ export function AgentWorkspace(props: {
   }
 
   return (
-    <section className="flex min-w-0 flex-col">
-      <header className="flex h-16 items-center gap-3 border-b border-forge-line bg-white px-5">
+    <section
+      className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+      data-testid="agent-workspace"
+    >
+      <header
+        className="flex h-16 flex-none items-center gap-3 border-b border-forge-line bg-white px-5"
+        data-testid="agent-header"
+      >
         <div className="min-w-0 flex-1">
           {props.session ? (
             <input
@@ -93,7 +99,7 @@ export function AgentWorkspace(props: {
         ) : null}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="agent-message-scroll">
         {!props.session ? (
           <div className="mx-auto max-w-xl rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600">
             Create a session from the workspace sidebar to begin.
@@ -134,7 +140,7 @@ export function AgentWorkspace(props: {
         )}
       </div>
 
-      <footer className="border-t border-forge-line bg-white p-4">
+      <footer className="flex-none border-t border-forge-line bg-white p-4">
         <div className="mx-auto max-w-3xl">
           {props.error ? (
             <div className="mb-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

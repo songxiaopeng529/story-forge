@@ -93,15 +93,31 @@ describe("App", () => {
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
   });
 
-  it("saves provider settings without reading back or retaining the plaintext key", async () => {
+  it("keeps the app shell fixed while only the conversation pane scrolls", async () => {
+    installApi();
+    render(<App />);
+
+    expect(await screen.findByText("Previous question")).toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveClass("h-screen", "overflow-hidden");
+    expect(screen.getByTestId("agent-layout")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("agent-workspace")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("agent-header")).not.toHaveClass("overflow-y-auto");
+    expect(screen.getByTestId("agent-message-scroll")).toHaveClass("overflow-y-auto");
+  });
+
+  it("saves provider settings and shows a saved-key indicator without exposing plaintext", async () => {
     const fixture = installApi();
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Models" }));
     const keyInput = await screen.findByLabelText("API key");
 
     expect(keyInput).toHaveAttribute("type", "password");
-    expect(keyInput).toHaveAttribute("placeholder", "Configured");
+    expect(keyInput).toHaveValue("************");
+    fireEvent.focus(keyInput);
     expect(keyInput).toHaveValue("");
+    fireEvent.blur(keyInput);
+    expect(keyInput).toHaveValue("************");
+    fireEvent.focus(keyInput);
     fireEvent.change(keyInput, { target: { value: "new-local-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
 
@@ -111,8 +127,16 @@ describe("App", () => {
       model: "deepseek-v4-pro",
       apiKey: "new-local-secret",
     }));
-    expect(keyInput).toHaveValue("");
+    await waitFor(() => expect(keyInput).toHaveValue("************"));
     expect(screen.queryByDisplayValue("new-local-secret")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
+    await waitFor(() => expect(fixture.saveProvider).toHaveBeenCalledTimes(2));
+    expect(fixture.saveProvider.mock.calls[1]?.[0]).toEqual({
+      providerId: "deepseek",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+    });
   });
 });
 
