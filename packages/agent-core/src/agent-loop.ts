@@ -1,12 +1,16 @@
 import type {
   AssistantChatMessage,
+  ChatResponse,
   ChatMessage,
+  ChatStreamEvent,
   ModelProvider,
   ToolCall,
 } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AgentStopReason,
+  MessageDeliveryMode,
+  ResponseMode,
   SessionId,
   TurnId,
 } from "@story-forge/shared";
@@ -28,6 +32,7 @@ export type AgentLoopOptions = {
 export type AgentLoopRunInput = {
   sessionId: SessionId;
   turnId: TurnId;
+  responseMode?: ResponseMode;
   messages: ChatMessage[];
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
@@ -38,6 +43,17 @@ export type AgentLoopResult = {
   messages: ChatMessage[];
   stopReason: AgentStopReason;
   steps: number;
+};
+
+type ModelRequest = {
+  messages: ChatMessage[];
+  tools: ReturnType<ToolRegistry["schemas"]>;
+};
+
+type EventSink = {
+  sessionId: SessionId;
+  turnId: TurnId;
+  onEvent?: ((event: AgentEvent) => void | Promise<void>) | undefined;
 };
 
 export class AgentLoop {
@@ -98,16 +114,20 @@ export class AgentLoop {
         }
 
         steps += 1;
-        const response = await this.provider.chat(
-          {
+        const response = await this.requestModelResponse({
+          request: {
             messages: trimMessagesToContext(
               messages,
               Math.floor(this.provider.capabilities.contextWindowTokens * 0.8),
             ),
             tools: this.tools.schemas(),
           },
-          { signal: abort.signal },
-        );
+          options: { signal: abort.signal },
+          responseMode: input.responseMode ?? "auto",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          onEvent: input.onEvent,
+        });
         const assistantMessage: AssistantChatMessage = {
           role: "assistant",
           content: response.content,
@@ -118,14 +138,6 @@ export class AgentLoop {
 
         if (response.toolCalls.length === 0) {
           await checkpoint(input, messages);
-          if (response.content) {
-            await emit(input, {
-              type: "message.delta",
-              sessionId: input.sessionId,
-              turnId: input.turnId,
-              content: response.content,
-            });
-          }
           return await finish("completed");
         }
 
@@ -224,6 +236,89 @@ export class AgentLoop {
       });
       return { messages, stopReason, steps };
     }
+  }
+
+  private async requestModelResponse(input: {
+    request: ModelRequest;
+    options: { signal: AbortSignal };
+    responseMode: ResponseMode;
+  } & EventSink): Promise<ChatResponse> {
+    if (input.responseMode === "smooth") {
+      return this.requestSmoothResponse({ ...input, delivery: "smooth" });
+    }
+    if (!this.provider.streamChat) {
+      if (input.responseMode === "live") {
+        throw new Error(`Live streaming is not available for ${this.provider.id}.`);
+      }
+      return this.requestSmoothResponse({ ...input, delivery: "smooth" });
+    }
+
+    try {
+      return await this.requestStreamingResponse(input);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (input.responseMode === "auto") {
+        await emit(input, {
+          type: "response.fallback",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          from: "live",
+          to: "smooth",
+          reason: message,
+        });
+        return this.requestSmoothResponse({ ...input, delivery: "smooth" });
+      }
+      throw error;
+    }
+  }
+
+  private async requestSmoothResponse(input: {
+    request: ModelRequest;
+    options: { signal: AbortSignal };
+    delivery: MessageDeliveryMode;
+  } & EventSink): Promise<ChatResponse> {
+    const response = await this.provider.chat(input.request, input.options);
+    if (response.content) {
+      await emit(input, {
+        type: "message.delta",
+        sessionId: input.sessionId,
+        turnId: input.turnId,
+        content: response.content,
+        delivery: input.delivery,
+      });
+    }
+    return response;
+  }
+
+  private async requestStreamingResponse(input: {
+    request: ModelRequest;
+    options: { signal: AbortSignal };
+  } & EventSink): Promise<ChatResponse> {
+    let response: ChatResponse | undefined;
+    const stream = this.provider.streamChat?.(input.request, input.options) ?? [];
+    for await (const event of stream) {
+      await this.handleStreamEvent(event, input);
+      if (event.type === "done") {
+        response = event.response;
+      }
+    }
+    if (!response) {
+      throw new Error("Streaming response ended before a final response was received");
+    }
+    return response;
+  }
+
+  private async handleStreamEvent(event: ChatStreamEvent, input: EventSink): Promise<void> {
+    if (event.type !== "content.delta") {
+      return;
+    }
+    await emit(input, {
+      type: "message.delta",
+      sessionId: input.sessionId,
+      turnId: input.turnId,
+      content: event.content,
+      delivery: "live",
+    });
   }
 }
 
@@ -363,7 +458,7 @@ function createLoopAbort(externalSignal: AbortSignal | undefined, maxDurationMs:
   };
 }
 
-async function emit(input: AgentLoopRunInput, event: AgentEvent): Promise<void> {
+async function emit(input: EventSink, event: AgentEvent): Promise<void> {
   await input.onEvent?.(event);
 }
 
