@@ -1,5 +1,11 @@
 import type { ProviderId } from "@story-forge/model-gateway";
-import type { AgentEvent, ResponseMode, SessionId, TurnId } from "@story-forge/shared";
+import type {
+  AgentEvent,
+  ModelRequestEvent,
+  ResponseMode,
+  SessionId,
+  TurnId,
+} from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   PersistedMessageView,
@@ -23,6 +29,8 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
+  const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
@@ -54,6 +62,12 @@ export function App() {
         ...current,
         [event.sessionId]: [...(current[event.sessionId] ?? []), event],
       }));
+      if (event.type === "model.request") {
+        setModelRequests((current) => ({
+          ...current,
+          [event.sessionId]: [...(current[event.sessionId] ?? []), event],
+        }));
+      }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
       }
@@ -172,6 +186,7 @@ export function App() {
     setPrompt("");
     setError(undefined);
     setActivities((current) => ({ ...current, [session.id]: [] }));
+    setModelRequests((current) => ({ ...current, [session.id]: [] }));
     const optimisticMessage: PersistedMessageView = {
       id: `pending-${Date.now()}`,
       role: "user",
@@ -376,6 +391,9 @@ export function App() {
             workspace={selectedWorkspace}
             session={selectedSession}
             activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
+            developerMode={developerMode}
+            modelInspectorOpen={modelInspectorOpen}
             activeTurnId={activeTurnId}
             prompt={prompt}
             error={error}
@@ -392,6 +410,8 @@ export function App() {
             onRename={(title) => void renameSession(title)}
             onDelete={() => void deleteSession()}
             onOpenWorkspace={() => void openWorkspace()}
+            onModelInspectorOpen={() => setModelInspectorOpen(true)}
+            onModelInspectorClose={() => setModelInspectorOpen(false)}
           />
         </div>
       )}
