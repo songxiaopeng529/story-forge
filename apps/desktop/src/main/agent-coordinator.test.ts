@@ -269,6 +269,115 @@ describe("AgentCoordinator", () => {
     expect(messages).toEqual(["provider echoed [REDACTED]"]);
   });
 
+  it("injects an enabled slash-invoked skill as a system message", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "Reviewed", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        resolveInvocation: async (command) =>
+          command === "/code-review"
+            ? {
+                id: "code-review",
+                name: "Code Review",
+                description: "Review code",
+                invocationName: "/code-review",
+                enabled: true,
+                installedAt: "2026-06-19T00:00:00.000Z",
+                updatedAt: "2026-06-19T00:00:00.000Z",
+                rootDir: "/tmp/skill",
+                entrypointPath: "/tmp/skill/SKILL.md",
+                body: "Review regressions and missing tests.",
+                contentHash: "hash",
+              }
+            : undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/code-review focus on regressions",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Active StoryForge skill: Code Review"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "user",
+      content: "/code-review focus on regressions",
+    }));
+  });
+
+  it("rejects unknown slash skill invocations before appending a user message", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unexpected", toolCalls: [] })),
+      },
+      skillResolver: { resolveInvocation: async () => undefined },
+      emit: () => undefined,
+    });
+
+    await expect(coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/missing do work",
+    })).rejects.toThrow("Skill not found: /missing");
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      messages: [],
+    });
+  });
+
+  it("rejects disabled slash skill invocations with a distinct error", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unexpected", toolCalls: [] })),
+      },
+      skillResolver: {
+        resolveInvocation: async () => ({
+          id: "code-review",
+          name: "Code Review",
+          description: "Review code",
+          invocationName: "/code-review",
+          enabled: false,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+          rootDir: "/tmp/skill",
+          entrypointPath: "/tmp/skill/SKILL.md",
+          body: "Review regressions and missing tests.",
+          contentHash: "hash",
+        }),
+      },
+      emit: () => undefined,
+    });
+
+    await expect(coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/code-review focus on regressions",
+    })).rejects.toThrow("Skill is disabled: /code-review");
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      messages: [],
+    });
+  });
+
   it("rejects concurrent starts for the same persistent session", async () => {
     const fixture = await createFixture();
     const coordinator = new AgentCoordinator({

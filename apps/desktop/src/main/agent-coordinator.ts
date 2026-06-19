@@ -9,6 +9,7 @@ import {
   createTurnId,
   type AgentEvent,
   type AgentStopReason,
+  type InstalledSkillRecord,
   type ResponseMode,
   type SessionId,
   type TurnId,
@@ -32,11 +33,16 @@ export type ProviderFactory = {
   createProvider(config: ProviderConnectionConfig, apiKey: string): ModelProvider;
 };
 
+export type SkillInvocationResolver = {
+  resolveInvocation(command: string): Promise<InstalledSkillRecord | undefined>;
+};
+
 export type AgentCoordinatorOptions = {
   providerStore: ProviderConfigStore;
   sessionRepository: SessionRepository;
   workspaceRepository: WorkspaceRepository;
   providerFactory: ProviderFactory;
+  skillResolver?: SkillInvocationResolver;
   getResponseMode?: () => Promise<ResponseMode>;
   getDeveloperMode?: () => Promise<boolean>;
   emit: (event: AgentEvent) => void;
@@ -49,11 +55,17 @@ type ActiveTurn = {
   controller: AbortController;
 };
 
+type ActiveSkillInvocation = {
+  skill: InstalledSkillRecord;
+  argumentsText: string;
+};
+
 export class AgentCoordinator {
   private readonly providerStore: ProviderConfigStore;
   private readonly sessionRepository: SessionRepository;
   private readonly workspaceRepository: WorkspaceRepository;
   private readonly providerFactory: ProviderFactory;
+  private readonly skillResolver: SkillInvocationResolver | undefined;
   private readonly getResponseMode: () => Promise<ResponseMode>;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly emitEvent: (event: AgentEvent) => void;
@@ -68,6 +80,7 @@ export class AgentCoordinator {
     this.sessionRepository = options.sessionRepository;
     this.workspaceRepository = options.workspaceRepository;
     this.providerFactory = options.providerFactory;
+    this.skillResolver = options.skillResolver;
     this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.emitEvent = options.emit;
@@ -86,6 +99,7 @@ export class AgentCoordinator {
 
     try {
       let session = await this.sessionRepository.get(input.sessionId);
+      const skillInvocation = await this.resolveSkillInvocation(input.prompt);
       const turnId = createTurnId();
       session = await this.sessionRepository.appendMessage(input.sessionId, {
         id: createMessageId(),
@@ -100,7 +114,7 @@ export class AgentCoordinator {
 
       const controller = new AbortController();
       this.activeTurns.set(turnId, { sessionId: input.sessionId, controller });
-      const promise = this.executeTurn(session, turnId, controller.signal)
+      const promise = this.executeTurn(session, turnId, controller.signal, skillInvocation)
         .finally(() => {
           this.activeTurns.delete(turnId);
           this.reservedSessions.delete(input.sessionId);
@@ -138,6 +152,7 @@ export class AgentCoordinator {
     session: SessionRecord,
     turnId: TurnId,
     signal: AbortSignal,
+    skillInvocation: ActiveSkillInvocation | undefined,
   ): Promise<void> {
     let apiKey: string | undefined;
     try {
@@ -188,6 +203,7 @@ export class AgentCoordinator {
               `You are StoryForge, a local coding agent working in ${workspace.path}. `
               + "Inspect before editing, use workspace-relative paths, and run only necessary development commands.",
           },
+          ...(skillInvocation ? [createSkillSystemMessage(skillInvocation)] : []),
           ...persistedMessages.map(toChatMessage),
         ],
         onEvent: (event) => {
@@ -228,6 +244,46 @@ export class AgentCoordinator {
       });
     }
   }
+
+  private async resolveSkillInvocation(prompt: string): Promise<ActiveSkillInvocation | undefined> {
+    const trimmed = prompt.trim();
+    if (!trimmed.startsWith("/")) {
+      return undefined;
+    }
+
+    const [command = "", ...argumentParts] = trimmed.split(/\s+/);
+    if (!command || command === "/") {
+      return undefined;
+    }
+
+    const skill = await this.skillResolver?.resolveInvocation(command);
+    if (!skill) {
+      throw new Error(`Skill not found: ${command}`);
+    }
+    if (!skill.enabled) {
+      throw new Error(`Skill is disabled: ${command}`);
+    }
+    return {
+      skill,
+      argumentsText: argumentParts.join(" "),
+    };
+  }
+}
+
+function createSkillSystemMessage(invocation: ActiveSkillInvocation): ChatMessage {
+  return {
+    role: "system",
+    content: [
+      `Active StoryForge skill: ${invocation.skill.name}`,
+      "",
+      `Invocation: ${invocation.skill.invocationName}`,
+      `Arguments: ${invocation.argumentsText}`,
+      "",
+      "Follow this skill for the current turn. The skill instructions apply in addition to StoryForge's normal coding-agent rules. If the skill conflicts with higher-priority system instructions, follow the higher-priority instructions.",
+      "",
+      invocation.skill.body,
+    ].join("\n"),
+  };
 }
 
 function toChatMessage(message: PersistedMessage): ChatMessage {
