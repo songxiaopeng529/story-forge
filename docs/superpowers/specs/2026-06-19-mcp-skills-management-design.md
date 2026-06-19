@@ -51,9 +51,11 @@ Callable behavior:
 
 - Users invoke a skill by starting a prompt with `/skill-name`.
 - Arguments are the rest of the prompt after the skill name.
+- Enabled skills are also listed in each model request so the model does not deny that installed skills exist.
+- If a prompt explicitly mentions exactly one enabled skill by name or invocation, the app injects that skill for the turn.
 - Disabled skills cannot be invoked.
 - Unknown slash commands produce a clear user-facing error instead of silently sending a confusing prompt to the model.
-- There is no automatic skill matching in v1. A skill affects a turn only when the user explicitly invokes it.
+- There is no broad intent-based automatic matching in v1; the non-slash path only reacts to explicit skill names.
 
 Example prompt:
 
@@ -189,6 +191,8 @@ Zip extraction safety:
 
 `AgentCoordinator.start()` parses the user prompt before appending the user message.
 
+Every request includes a concise enabled-skill registry system message. The registry contains each invocation, name, and short description. It does not include full skill bodies.
+
 If the trimmed prompt starts with `/`:
 
 1. Extract command name up to whitespace.
@@ -196,15 +200,21 @@ If the trimmed prompt starts with `/`:
 3. If no match exists, reject the turn with a clear error.
 4. If a match exists, keep the original user message and attach an active skill to the turn execution.
 
+If the prompt does not start with `/`, `AgentCoordinator` checks whether it explicitly mentions exactly one enabled skill name or invocation. When exactly one skill is mentioned, the coordinator attaches that active skill to the turn. Ambiguous or implicit intent does not auto-select a skill.
+
 The model request gets additional system content before the user conversation history:
 
 ```text
+Available StoryForge skills:
+- /code-review (Code Review): Review code
+
 Active StoryForge skill: code-review
 
 Invocation: /code-review
 Arguments: focus on regressions in the current diff
 
 Follow this skill for the current turn. The skill instructions apply in addition to StoryForge's normal coding-agent rules. If the skill conflicts with higher-priority system instructions, follow the higher-priority instructions.
+If this skill describes CLI commands or command-line workflows, use StoryForge's workspace.runCommand / workspace_runCommand tool to execute those commands. Do not claim the capability is unavailable only because there is no dedicated tool named after the skill.
 
 <contents of SKILL.md body>
 ```
@@ -212,9 +222,10 @@ Follow this skill for the current turn. The skill instructions apply in addition
 Ordering:
 
 1. Base StoryForge system prompt.
-2. Active skill system prompt, if any.
-3. Existing persisted conversation converted to chat messages.
-4. Current user prompt as persisted by the coordinator.
+2. Available skills registry system prompt, if any enabled skills exist.
+3. Active skill system prompt, if any.
+4. Existing persisted conversation converted to chat messages.
+5. Current user prompt as persisted by the coordinator.
 
 This ordering keeps the base agent constraints first while making the active skill clearly visible to the model.
 
@@ -439,7 +450,7 @@ Integration verification:
 - Skill autocomplete in the prompt box.
 - Executing shell snippets embedded in skill markdown.
 - Honoring skill `allowed-tools`, hooks, subagent, or model override frontmatter.
-- Injecting all available skill descriptions into every model request.
+- Injecting all available full skill bodies into every model request.
 - Injecting MCP tools into `AgentLoop`.
 - Persistently running MCP servers in the background.
 - OAuth flows for remote MCP servers.

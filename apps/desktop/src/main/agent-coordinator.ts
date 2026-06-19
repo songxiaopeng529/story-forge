@@ -12,6 +12,7 @@ import {
   type InstalledSkillRecord,
   type ResponseMode,
   type SessionId,
+  type SkillView,
   type TurnId,
 } from "@story-forge/shared";
 import {
@@ -34,6 +35,7 @@ export type ProviderFactory = {
 };
 
 export type SkillInvocationResolver = {
+  list?(): Promise<SkillView[]>;
   resolveInvocation(command: string): Promise<InstalledSkillRecord | undefined>;
 };
 
@@ -182,9 +184,10 @@ export class AgentCoordinator {
         ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
         ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
       });
-      const [responseMode, developerMode] = await Promise.all([
+      const [responseMode, developerMode, availableSkills] = await Promise.all([
         this.getResponseMode(),
         this.getDeveloperMode(),
+        this.listEnabledSkills(),
       ]);
       const result = await loop.run({
         sessionId: session.id,
@@ -203,6 +206,9 @@ export class AgentCoordinator {
               `You are StoryForge, a local coding agent working in ${workspace.path}. `
               + "Inspect before editing, use workspace-relative paths, and run only necessary development commands.",
           },
+          ...(availableSkills.length > 0
+            ? [createAvailableSkillsSystemMessage(availableSkills)]
+            : []),
           ...(skillInvocation ? [createSkillSystemMessage(skillInvocation)] : []),
           ...persistedMessages.map(toChatMessage),
         ],
@@ -247,27 +253,71 @@ export class AgentCoordinator {
 
   private async resolveSkillInvocation(prompt: string): Promise<ActiveSkillInvocation | undefined> {
     const trimmed = prompt.trim();
-    if (!trimmed.startsWith("/")) {
+    const slashInvocation = parseSlashInvocation(trimmed);
+    const inferredInvocation = slashInvocation ?? await this.inferMentionedSkillInvocation(trimmed);
+
+    if (!inferredInvocation) {
       return undefined;
     }
 
-    const [command = "", ...argumentParts] = trimmed.split(/\s+/);
-    if (!command || command === "/") {
-      return undefined;
-    }
-
-    const skill = await this.skillResolver?.resolveInvocation(command);
+    const skill = await this.skillResolver?.resolveInvocation(inferredInvocation.command);
     if (!skill) {
-      throw new Error(`Skill not found: ${command}`);
+      if (slashInvocation) {
+        throw new Error(`Skill not found: ${inferredInvocation.command}`);
+      }
+      return undefined;
     }
     if (!skill.enabled) {
-      throw new Error(`Skill is disabled: ${command}`);
+      if (slashInvocation) {
+        throw new Error(`Skill is disabled: ${inferredInvocation.command}`);
+      }
+      return undefined;
     }
     return {
       skill,
-      argumentsText: argumentParts.join(" "),
+      argumentsText: inferredInvocation.argumentsText,
     };
   }
+
+  private async inferMentionedSkillInvocation(
+    prompt: string,
+  ): Promise<{ command: string; argumentsText: string } | undefined> {
+    const skills = await this.listEnabledSkills();
+    const matches = skills.filter((skill) => promptMentionsSkill(prompt, skill));
+    if (matches.length !== 1) {
+      return undefined;
+    }
+    const skill = matches[0];
+    if (!skill) {
+      return undefined;
+    }
+    return {
+      command: skill.invocationName,
+      argumentsText: prompt,
+    };
+  }
+
+  private async listEnabledSkills(): Promise<SkillView[]> {
+    const skills = (await this.skillResolver?.list?.()) ?? [];
+    return skills
+      .filter((skill) => skill.enabled)
+      .sort((left, right) => left.invocationName.localeCompare(right.invocationName));
+  }
+}
+
+function createAvailableSkillsSystemMessage(skills: SkillView[]): ChatMessage {
+  return {
+    role: "system",
+    content: [
+      "Available StoryForge skills:",
+      ...skills.map((skill) =>
+        `- ${skill.invocationName} (${skill.name}): ${singleLine(skill.description)}`
+      ),
+      "",
+      "These are installed and enabled skills. Do not deny that a listed skill exists just because there is no dedicated tool with the same name.",
+      "If the user explicitly invokes or mentions one of these skills, follow the matching active skill instructions when they are provided in this request.",
+    ].join("\n"),
+  };
 }
 
 function createSkillSystemMessage(invocation: ActiveSkillInvocation): ChatMessage {
@@ -280,10 +330,42 @@ function createSkillSystemMessage(invocation: ActiveSkillInvocation): ChatMessag
       `Arguments: ${invocation.argumentsText}`,
       "",
       "Follow this skill for the current turn. The skill instructions apply in addition to StoryForge's normal coding-agent rules. If the skill conflicts with higher-priority system instructions, follow the higher-priority instructions.",
+      "If this skill describes CLI commands or command-line workflows, use StoryForge's workspace.runCommand / workspace_runCommand tool to execute those commands. Do not claim the capability is unavailable only because there is no dedicated tool named after the skill.",
       "",
       invocation.skill.body,
     ].join("\n"),
   };
+}
+
+function parseSlashInvocation(prompt: string): { command: string; argumentsText: string } | undefined {
+  if (!prompt.startsWith("/")) {
+    return undefined;
+  }
+  const [command = "", ...argumentParts] = prompt.split(/\s+/);
+  if (!command || command === "/") {
+    return undefined;
+  }
+  return {
+    command,
+    argumentsText: argumentParts.join(" "),
+  };
+}
+
+function promptMentionsSkill(prompt: string, skill: SkillView): boolean {
+  return containsToken(prompt, skill.invocationName) || containsToken(prompt, skill.name);
+}
+
+function containsToken(value: string, token: string): boolean {
+  if (!token.trim()) {
+    return false;
+  }
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}_-])${escaped}($|[^\\p{L}\\p{N}_-])`, "iu")
+    .test(value);
+}
+
+function singleLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function toChatMessage(message: PersistedMessage): ChatMessage {

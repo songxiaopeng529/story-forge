@@ -284,6 +284,15 @@ describe("AgentCoordinator", () => {
           }),
       },
       skillResolver: {
+        list: async () => [{
+          id: "code-review",
+          name: "Code Review",
+          description: "Review code",
+          invocationName: "/code-review",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
         resolveInvocation: async (command) =>
           command === "/code-review"
             ? {
@@ -315,8 +324,117 @@ describe("AgentCoordinator", () => {
       content: expect.stringContaining("Active StoryForge skill: Code Review"),
     }));
     expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("workspace.runCommand / workspace_runCommand"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
       role: "user",
       content: "/code-review focus on regressions",
+    }));
+  });
+
+  it("lists enabled skills in every model request", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "I can use installed skills when requested.", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        list: async () => [{
+          id: "agent-browser",
+          name: "agent-browser",
+          description: "Browser automation CLI",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
+        resolveInvocation: async () => undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "你有 agent-browser 这个技能吗？",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Available StoryForge skills"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("/agent-browser"),
+    }));
+  });
+
+  it("injects an enabled skill when the prompt explicitly mentions its name", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "Yes, agent-browser is available.", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        list: async () => [{
+          id: "agent-browser",
+          name: "agent-browser",
+          description: "Browser automation CLI",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
+        resolveInvocation: async (command) =>
+          command === "/agent-browser"
+            ? {
+                id: "agent-browser",
+                name: "agent-browser",
+                description: "Browser automation CLI",
+                invocationName: "/agent-browser",
+                enabled: true,
+                installedAt: "2026-06-19T00:00:00.000Z",
+                updatedAt: "2026-06-19T00:00:00.000Z",
+                rootDir: "/tmp/skill",
+                entrypointPath: "/tmp/skill/SKILL.md",
+                body: "Use the agent-browser CLI to automate browser tasks.",
+                contentHash: "hash",
+              }
+            : undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "你有 agent-browser 这个技能吗？",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Active StoryForge skill: agent-browser"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Use the agent-browser CLI"),
     }));
   });
 
