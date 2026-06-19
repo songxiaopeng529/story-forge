@@ -84,6 +84,7 @@ describe("registerIpcHandlers", () => {
       schemaVersion: 1,
       responseMode: "auto",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
@@ -91,6 +92,7 @@ describe("registerIpcHandlers", () => {
       schemaVersion: 1,
       responseMode: "smooth",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
@@ -98,12 +100,46 @@ describe("registerIpcHandlers", () => {
       schemaVersion: 1,
       responseMode: "auto",
       developerMode: true,
+      commandExecutionMode: "sentinel",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "cruise" }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: false,
+      commandExecutionMode: "cruise",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "unsupported" }),
     ).rejects.toThrow();
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: "yes" }),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "chaos" }),
+    ).rejects.toThrow("Invalid IPC payload");
+  });
+
+  it("registers permission response IPC", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(
+      fixture.invoke(IPC_CHANNELS.permissionRespond, {
+        requestId: "permission_1",
+        approved: true,
+      }),
+    ).resolves.toBeUndefined();
+    expect(fixture.respondToPermission).toHaveBeenCalledWith({
+      requestId: "permission_1",
+      approved: true,
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.permissionRespond, {
+        requestId: "",
+        approved: true,
+      }),
     ).rejects.toThrow("Invalid IPC payload");
   });
 });
@@ -161,11 +197,13 @@ function createFixture() {
       schemaVersion: 1 as const,
       responseMode: "auto" as const,
       developerMode: false,
+      commandExecutionMode: "sentinel" as const,
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
       responseMode: "auto" as const,
       developerMode: false,
+      commandExecutionMode: "sentinel" as const,
       ...input,
     })),
   } as unknown as AppSettingsStore;
@@ -213,12 +251,14 @@ function createFixture() {
   const coordinator = {
     start,
     stop: vi.fn(),
+    respondToPermission: vi.fn(),
   } as unknown as AgentCoordinator;
 
   return {
     handlers,
     start,
     createSession,
+    respondToPermission: coordinator.respondToPermission,
     options: {
       ipc,
       providers,

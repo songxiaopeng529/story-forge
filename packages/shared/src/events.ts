@@ -1,4 +1,4 @@
-import type { MessageDeliveryMode, ResponseMode } from "./settings";
+import type { CommandExecutionMode, MessageDeliveryMode, ResponseMode } from "./settings";
 
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
@@ -68,6 +68,13 @@ export type PermissionRequestEvent = {
   turnId: TurnId;
   requestId: string;
   reason: string;
+  command: {
+    program: string;
+    args: string[];
+    cwd: string;
+  };
+  mode: CommandExecutionMode;
+  risk: "unknown" | "destructive" | "elevated";
 };
 
 export type MemoryWriteEvent = {

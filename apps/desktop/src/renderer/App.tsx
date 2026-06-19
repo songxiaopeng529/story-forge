@@ -1,7 +1,9 @@
 import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
+  CommandExecutionMode,
   ModelRequestEvent,
+  PermissionRequestEvent,
   ResponseMode,
   SessionId,
   TurnId,
@@ -16,6 +18,7 @@ import type {
 import { AgentWorkspace } from "./components/agent-workspace";
 import { McpSkillsPage } from "./components/mcp-skills-page";
 import { ModelsPage } from "./components/models-page";
+import { PermissionRequestPrompt } from "./components/permission-request-prompt";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
 import { SettingsPage } from "./components/settings-page";
 import { SessionSidebar } from "./components/session-sidebar";
@@ -36,12 +39,17 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
+  const [commandExecutionMode, setCommandExecutionMode] =
+    useState<CommandExecutionMode>("sentinel");
+  const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
+  const [permissionResponding, setPermissionResponding] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
   const persistedDeveloperModeRef = useRef(false);
+  const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
@@ -52,6 +60,7 @@ export function App() {
     (provider) => provider.providerId === selectedProviderId,
   );
   const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
+  const currentPermissionRequest = permissionRequests[0];
 
   useEffect(() => {
     let disposed = false;
@@ -69,6 +78,9 @@ export function App() {
           [event.sessionId]: [...(current[event.sessionId] ?? []), event],
         }));
       }
+      if (event.type === "permission.request") {
+        setPermissionRequests((current) => [...current, event]);
+      }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
       }
@@ -78,6 +90,9 @@ export function App() {
           delete next[event.sessionId];
           return next;
         });
+        setPermissionRequests((current) =>
+          current.filter((request) => request.sessionId !== event.sessionId)
+        );
         void refreshSession(event.sessionId);
       }
     });
@@ -95,8 +110,10 @@ export function App() {
         }
         persistedResponseModeRef.current = nextSettings.responseMode;
         persistedDeveloperModeRef.current = nextSettings.developerMode;
+        persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
         setResponseMode(nextSettings.responseMode);
         setDeveloperMode(nextSettings.developerMode);
+        setCommandExecutionMode(nextSettings.commandExecutionMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
@@ -293,6 +310,56 @@ export function App() {
     }
   }
 
+  async function saveCommandExecutionMode(
+    nextCommandExecutionMode: CommandExecutionMode,
+  ): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextCommandExecutionMode === persistedCommandExecutionModeRef.current
+    ) {
+      return;
+    }
+    const previousCommandExecutionMode = persistedCommandExecutionModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setCommandExecutionMode(nextCommandExecutionMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        commandExecutionMode: nextCommandExecutionMode,
+      });
+      persistedCommandExecutionModeRef.current = saved.commandExecutionMode;
+      setCommandExecutionMode(saved.commandExecutionMode);
+    } catch (settingsError) {
+      setCommandExecutionMode(previousCommandExecutionMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
+  async function respondToPermission(approved: boolean): Promise<void> {
+    if (!currentPermissionRequest || permissionResponding) {
+      return;
+    }
+    setPermissionResponding(true);
+    setError(undefined);
+    try {
+      await window.storyForge.permissions.respond({
+        requestId: currentPermissionRequest.requestId,
+        approved,
+      });
+      setPermissionRequests((current) =>
+        current.filter((request) => request.requestId !== currentPermissionRequest.requestId)
+      );
+    } catch (permissionError) {
+      setError(formatError(permissionError));
+    } finally {
+      setPermissionResponding(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -348,10 +415,13 @@ export function App() {
         <SettingsPage
           responseMode={responseMode}
           developerMode={developerMode}
+          commandExecutionMode={commandExecutionMode}
           saving={settingsSaving}
           error={error}
           onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
           onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
+          onCommandExecutionModeChange={(nextCommandExecutionMode) =>
+            void saveCommandExecutionMode(nextCommandExecutionMode)}
         />
       ) : page === "models" ? (
         <ModelsPage
@@ -421,6 +491,14 @@ export function App() {
           />
         </div>
       )}
+      {currentPermissionRequest ? (
+        <PermissionRequestPrompt
+          request={currentPermissionRequest}
+          responding={permissionResponding}
+          onApprove={() => void respondToPermission(true)}
+          onDeny={() => void respondToPermission(false)}
+        />
+      ) : null}
     </main>
   );
 }

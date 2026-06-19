@@ -15,6 +15,7 @@ describe("AppSettingsStore", () => {
       schemaVersion: 1,
       responseMode: "auto",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     });
   });
 
@@ -26,11 +27,13 @@ describe("AppSettingsStore", () => {
       schemaVersion: 1,
       responseMode: "smooth",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     });
     await expect(new AppSettingsStore({ rootDir }).get()).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "smooth",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     });
     await expect(readFile(join(rootDir, "settings.json"), "utf8")).resolves.toContain(
       "\"responseMode\": \"smooth\"",
@@ -45,11 +48,31 @@ describe("AppSettingsStore", () => {
       schemaVersion: 1,
       responseMode: "auto",
       developerMode: true,
+      commandExecutionMode: "sentinel",
     });
     await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
       schemaVersion: 1,
       responseMode: "smooth",
       developerMode: true,
+      commandExecutionMode: "sentinel",
+    });
+  });
+
+  it("persists command execution mode without changing other settings", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
+    const store = new AppSettingsStore({ rootDir });
+
+    await expect(store.save({ commandExecutionMode: "cruise" })).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: false,
+      commandExecutionMode: "cruise",
+    });
+    await expect(store.save({ developerMode: true })).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: true,
+      commandExecutionMode: "cruise",
     });
   });
 });

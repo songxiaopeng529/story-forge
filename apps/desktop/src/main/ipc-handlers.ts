@@ -34,6 +34,7 @@ export type IpcHandlerOptions = {
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
+const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const providerIdSchema = z.enum([
   "deepseek",
   "openai",
@@ -53,6 +54,11 @@ const workspaceIdSchema = z.string().min(1);
 const settingsSaveSchema = z.object({
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
+  commandExecutionMode: commandExecutionModeSchema.optional(),
+});
+const permissionResponseSchema = z.object({
+  requestId: z.string().min(1),
+  approved: z.boolean(),
 });
 const skillIdSchema = z.string().min(1);
 const skillEnabledSchema = z.object({
@@ -171,6 +177,12 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   );
   handle(options.ipc, IPC_CHANNELS.turnsStop, turnIdSchema, (turnId) =>
     options.coordinator.stop(turnId)
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.permissionRespond,
+    permissionResponseSchema,
+    (input) => options.coordinator.respondToPermission(input),
   );
   handle(options.ipc, IPC_CHANNELS.skillsList, z.undefined(), () =>
     options.skills.list()

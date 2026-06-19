@@ -8,7 +8,7 @@ import {
   type SessionId,
   type TurnId,
 } from "./events";
-import type { AppSettingsView, ResponseMode } from "./settings";
+import type { AppSettingsView, CommandExecutionMode, ResponseMode } from "./settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
@@ -81,7 +81,14 @@ const permissionRequestEvent = {
   sessionId,
   turnId,
   requestId: "permission_1",
-  reason: "Need to edit a workspace file.",
+  reason: "Command is outside the safe allowlist.",
+  command: {
+    program: "agent-browser",
+    args: ["screenshot"],
+    cwd: "/workspace/project",
+  },
+  mode: "sentinel",
+  risk: "unknown",
 } satisfies AgentEvent;
 
 const memoryWriteEvent = {
@@ -157,9 +164,16 @@ describe("settings types", () => {
       schemaVersion: 1,
       responseMode: "auto",
       developerMode: false,
+      commandExecutionMode: "sentinel",
     } satisfies AppSettingsView;
 
     expect(settings.developerMode).toBe(false);
+  });
+
+  it("accepts the three command execution modes", () => {
+    const modes: CommandExecutionMode[] = ["sentinel", "cruise", "unleashed"];
+
+    expect(modes).toEqual(["sentinel", "cruise", "unleashed"]);
   });
 });
 

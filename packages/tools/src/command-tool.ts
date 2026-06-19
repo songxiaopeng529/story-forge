@@ -1,29 +1,30 @@
 import { spawn } from "node:child_process";
-import path from "node:path";
+import {
+  classifyCommand,
+  type CommandExecutionMode,
+  type CommandPolicyDecision,
+} from "./command-policy";
 import type { ToolDefinition, ToolExecutionContext } from "./tool-registry";
 import type { WorkspaceSandbox } from "./workspace-sandbox";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
-const SAFE_SCRIPT_NAMES = /^(dev|start|test|build|typecheck|check|lint|format)(:.+)?$/;
-const SAFE_GIT_COMMANDS = new Set([
-  "status",
-  "diff",
-  "log",
-  "show",
-  "grep",
-  "ls-files",
-  "rev-parse",
-]);
-const SAFE_DIRECT_PROGRAMS = new Set([
-  "tsc",
-  "vitest",
-  "jest",
-  "eslint",
-  "prettier",
-  "pytest",
-]);
+
+export type WorkspaceCommandPermissionRequest = {
+  reason: string;
+  risk: Extract<CommandPolicyDecision, { action: "confirm" }>["risk"];
+  command: {
+    program: string;
+    args: string[];
+    cwd: string;
+  };
+};
+
+export type WorkspaceCommandToolOptions = {
+  mode?: CommandExecutionMode;
+  requestPermission?: (request: WorkspaceCommandPermissionRequest) => Promise<boolean>;
+};
 
 export type CommandResult = {
   exitCode: number | null;
@@ -35,11 +36,14 @@ export type CommandResult = {
   truncated: boolean;
 };
 
-export function createWorkspaceCommandTool(sandbox: WorkspaceSandbox): ToolDefinition {
+export function createWorkspaceCommandTool(
+  sandbox: WorkspaceSandbox,
+  options: WorkspaceCommandToolOptions = {},
+): ToolDefinition {
   return {
     name: "workspace.runCommand",
     description:
-      "Run an allowlisted development, test, build, formatting, lint, or read-only Git command.",
+      "Run a workspace command according to the configured StoryForge command execution mode.",
     parameters: {
       type: "object",
       properties: {
@@ -65,9 +69,25 @@ export function createWorkspaceCommandTool(sandbox: WorkspaceSandbox): ToolDefin
       const args = readArgs(input.args);
       const cwdInput = input.cwd === undefined ? "." : readCwd(input.cwd);
       const timeoutMs = readTimeout(input.timeoutMs);
-      validateCommand(program, args);
       const cwd = await sandbox.resolveDirectory(cwdInput);
-      await sandbox.assertCommandArgumentsInside(cwdInput, args);
+      const mode = options.mode ?? "sentinel";
+      const decision = classifyCommand({ mode, program, args });
+      if (decision.action === "deny") {
+        throw commandNotAllowed(program, args);
+      }
+      if (decision.action === "confirm") {
+        const approved = await options.requestPermission?.({
+          reason: decision.reason,
+          risk: decision.risk,
+          command: { program, args, cwd },
+        });
+        if (!approved) {
+          throw new Error(`Command denied: ${decision.reason}`);
+        }
+      }
+      if (mode !== "unleashed") {
+        await sandbox.assertCommandArgumentsInside(cwdInput, args);
+      }
       const result = await runCommand({ program, args, cwd, timeoutMs }, context);
       if (result.aborted || result.timedOut || result.exitCode !== 0) {
         throw new Error(`Command failed: ${JSON.stringify(result)}`);
@@ -78,57 +98,10 @@ export function createWorkspaceCommandTool(sandbox: WorkspaceSandbox): ToolDefin
 }
 
 export function validateCommand(program: string, args: string[]): void {
-  if (!program || /[\\/]/.test(program)) {
-    throw commandNotAllowed(program, args);
-  }
-  if (args.some((argument) => isUnsafeArgument(argument))) {
-    throw commandNotAllowed(program, args);
-  }
-
-  if (program === "git") {
-    if (!args[0] || !SAFE_GIT_COMMANDS.has(args[0])) {
-      throw commandNotAllowed(program, args);
-    }
+  if (classifyCommand({ mode: "sentinel", program, args }).action === "allow") {
     return;
   }
-
-  if (["npm", "pnpm", "yarn", "bun"].includes(program)) {
-    validatePackageManagerCommand(program, args);
-    return;
-  }
-
-  if (program === "corepack") {
-    const packageManager = args[0];
-    if (!packageManager || !["npm", "pnpm", "yarn"].includes(packageManager)) {
-      throw commandNotAllowed(program, args);
-    }
-    validatePackageManagerCommand(packageManager, args.slice(1));
-    return;
-  }
-
-  if (SAFE_DIRECT_PROGRAMS.has(program)) {
-    return;
-  }
-
-  if (program === "vite" && ["build", "dev"].includes(args[0] ?? "")) {
-    return;
-  }
-  if (program === "cargo" && ["test", "build", "check", "fmt", "clippy"].includes(args[0] ?? "")) {
-    return;
-  }
-  if (program === "go" && ["test", "build", "fmt", "vet"].includes(args[0] ?? "")) {
-    return;
-  }
-
   throw commandNotAllowed(program, args);
-}
-
-function validatePackageManagerCommand(program: string, args: string[]): void {
-  const command = args[0];
-  const script = command === "run" ? args[1] : command;
-  if (!script || !SAFE_SCRIPT_NAMES.test(script)) {
-    throw commandNotAllowed(program, args);
-  }
 }
 
 async function runCommand(
@@ -283,24 +256,4 @@ function readTimeout(value: unknown): number {
 
 function commandNotAllowed(program: string, args: string[]): Error {
   return new Error(`Command is not allowed: ${[program, ...args].join(" ")}`.trim());
-}
-
-function isUnsafeArgument(argument: string): boolean {
-  if (
-    ["--prefix", "--cwd", "--dir", "--global", "-C"].includes(argument)
-    || ["--prefix=", "--cwd=", "--dir=", "--global=", "-C"].some((prefix) =>
-      argument.startsWith(prefix)
-    )
-    || argument === "--ext-diff"
-    || argument.startsWith("--output")
-  ) {
-    return true;
-  }
-
-  const value = argument.includes("=") ? argument.slice(argument.indexOf("=") + 1) : argument;
-  return (
-    path.isAbsolute(value)
-    || /^[A-Za-z]:[\\/]/.test(value)
-    || value.split(/[\\/]+/).includes("..")
-  );
 }

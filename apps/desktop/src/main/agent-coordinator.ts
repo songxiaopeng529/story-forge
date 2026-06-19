@@ -9,6 +9,7 @@ import {
   createTurnId,
   type AgentEvent,
   type AgentStopReason,
+  type CommandExecutionMode,
   type InstalledSkillRecord,
   type ResponseMode,
   type SessionId,
@@ -18,6 +19,7 @@ import {
 import {
   createWorkspaceCommandTool,
   createWorkspaceFileTools,
+  type WorkspaceCommandPermissionRequest,
   ToolRegistry,
   WorkspaceSandbox,
 } from "@story-forge/tools";
@@ -47,6 +49,7 @@ export type AgentCoordinatorOptions = {
   skillResolver?: SkillInvocationResolver;
   getResponseMode?: () => Promise<ResponseMode>;
   getDeveloperMode?: () => Promise<boolean>;
+  getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -62,6 +65,8 @@ type ActiveSkillInvocation = {
   argumentsText: string;
 };
 
+const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
 export class AgentCoordinator {
   private readonly providerStore: ProviderConfigStore;
   private readonly sessionRepository: SessionRepository;
@@ -70,10 +75,12 @@ export class AgentCoordinator {
   private readonly skillResolver: SkillInvocationResolver | undefined;
   private readonly getResponseMode: () => Promise<ResponseMode>;
   private readonly getDeveloperMode: () => Promise<boolean>;
+  private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
+  private readonly pendingPermissions = new Map<string, (approved: boolean) => void>();
   private readonly reservedSessions = new Set<SessionId>();
   private readonly turnPromises = new Map<TurnId, Promise<void>>();
 
@@ -85,6 +92,7 @@ export class AgentCoordinator {
     this.skillResolver = options.skillResolver;
     this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
+    this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
@@ -150,6 +158,15 @@ export class AgentCoordinator {
     }
   }
 
+  respondToPermission(input: { requestId: string; approved: boolean }): void {
+    const resolve = this.pendingPermissions.get(input.requestId);
+    if (!resolve) {
+      return;
+    }
+    this.pendingPermissions.delete(input.requestId);
+    resolve(input.approved);
+  }
+
   private async executeTurn(
     session: SessionRecord,
     turnId: TurnId,
@@ -172,23 +189,34 @@ export class AgentCoordinator {
         resolvedProvider.apiKey,
       );
       const sandbox = new WorkspaceSandbox(workspace.path);
-      const tools = new ToolRegistry([
-        ...createWorkspaceFileTools(sandbox),
-        createWorkspaceCommandTool(sandbox),
-      ]);
       let persistedMessages = session.messages;
       const toolResults = new Map<string, boolean>();
+      const [responseMode, developerMode, commandExecutionMode, availableSkills] = await Promise.all([
+        this.getResponseMode(),
+        this.getDeveloperMode(),
+        this.getCommandExecutionMode(),
+        this.listEnabledSkills(),
+      ]);
+      const tools = new ToolRegistry([
+        ...createWorkspaceFileTools(sandbox),
+        createWorkspaceCommandTool(sandbox, {
+          mode: commandExecutionMode,
+          requestPermission: (request) =>
+            this.requestCommandPermission({
+              sessionId: session.id,
+              turnId,
+              mode: commandExecutionMode,
+              request,
+              signal,
+            }),
+        }),
+      ]);
       const loop = new AgentLoop({
         provider,
         tools,
         ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
         ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
       });
-      const [responseMode, developerMode, availableSkills] = await Promise.all([
-        this.getResponseMode(),
-        this.getDeveloperMode(),
-        this.listEnabledSkills(),
-      ]);
       const result = await loop.run({
         sessionId: session.id,
         turnId,
@@ -277,6 +305,49 @@ export class AgentCoordinator {
       skill,
       argumentsText: inferredInvocation.argumentsText,
     };
+  }
+
+  private requestCommandPermission(input: {
+    sessionId: SessionId;
+    turnId: TurnId;
+    mode: CommandExecutionMode;
+    request: WorkspaceCommandPermissionRequest;
+    signal: AbortSignal;
+  }): Promise<boolean> {
+    const requestId = createPermissionRequestId();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (approved: boolean) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        input.signal.removeEventListener("abort", onAbort);
+        this.pendingPermissions.delete(requestId);
+        resolve(approved);
+      };
+      const onAbort = () => finish(false);
+      const timeout = setTimeout(() => finish(false), PERMISSION_REQUEST_TIMEOUT_MS);
+      timeout.unref?.();
+      this.pendingPermissions.set(requestId, finish);
+      if (input.signal.aborted) {
+        finish(false);
+        return;
+      }
+      input.signal.addEventListener("abort", onAbort, { once: true });
+      this.emitEvent({
+        type: "permission.request",
+        sessionId: input.sessionId,
+        turnId: input.turnId,
+        requestId,
+        reason: input.request.reason,
+        command: input.request.command,
+        mode: input.mode,
+        risk: input.request.risk,
+      });
+    });
   }
 
   private async inferMentionedSkillInvocation(
@@ -450,6 +521,10 @@ function statusForStopReason(stopReason: AgentStopReason): SessionStatus {
 
 function createMessageId(): string {
   return `sf_message_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function createPermissionRequestId(): string {
+  return `sf_permission_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 }
 
 function redactSecret(message: string, secret: string | undefined): string {

@@ -1,8 +1,13 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
-import { createWorkspaceCommandTool, validateCommand } from "./command-tool";
+import { describe, expect, it, vi } from "vitest";
+import { classifyCommand } from "./command-policy";
+import {
+  createWorkspaceCommandTool,
+  validateCommand,
+  type WorkspaceCommandToolOptions,
+} from "./command-tool";
 import { ToolRegistry } from "./tool-registry";
 import { WorkspaceSandbox } from "./workspace-sandbox";
 
@@ -23,6 +28,48 @@ describe("validateCommand", () => {
     expect(() => validateCommand("git", ["checkout", "--", "file.txt"])).toThrow("Command is not allowed");
     expect(() => validateCommand("git", ["diff", "--output=/tmp/leak"])).toThrow("Command is not allowed");
     expect(() => validateCommand("prettier", ["--write", "../outside.ts"])).toThrow("Command is not allowed");
+  });
+});
+
+describe("classifyCommand", () => {
+  it("allows read-only discovery in sentinel mode", () => {
+    expect(classifyCommand({
+      mode: "sentinel",
+      program: "which",
+      args: ["agent-browser"],
+    })).toMatchObject({ action: "allow", risk: "safe" });
+  });
+
+  it("confirms unknown commands in sentinel mode", () => {
+    expect(classifyCommand({
+      mode: "sentinel",
+      program: "agent-browser",
+      args: ["screenshot"],
+    })).toMatchObject({ action: "confirm", risk: "unknown" });
+  });
+
+  it("allows non-destructive unknown commands in cruise mode", () => {
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "agent-browser",
+      args: ["screenshot"],
+    })).toMatchObject({ action: "allow", risk: "low" });
+  });
+
+  it("confirms destructive commands in cruise mode", () => {
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "rm",
+      args: ["-rf", "dist"],
+    })).toMatchObject({ action: "confirm", risk: "destructive" });
+  });
+
+  it("allows destructive commands in unleashed mode", () => {
+    expect(classifyCommand({
+      mode: "unleashed",
+      program: "rm",
+      args: ["-rf", "dist"],
+    })).toMatchObject({ action: "allow", risk: "low" });
   });
 });
 
@@ -132,6 +179,48 @@ describe("workspace.runCommand", () => {
     }
   });
 
+  it("runs a confirm-worthy command after permission approval", async () => {
+    const root = await createCommandWorkspace();
+    const resolvedRoot = await realpath(root);
+    const requestPermission = vi.fn(async () => true);
+    const result = await commandRegistry(root, { requestPermission }).execute("workspace.runCommand", {
+      program: "node",
+      args: ["-e", "console.log('approved')"],
+    });
+
+    expect(requestPermission).toHaveBeenCalledWith({
+      reason: "Command is outside the safe allowlist.",
+      risk: "unknown",
+      command: {
+        program: "node",
+        args: ["-e", "console.log('approved')"],
+        cwd: resolvedRoot,
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        exitCode: 0,
+        stdout: "approved\n",
+      },
+    });
+  });
+
+  it("fails a confirm-worthy command when permission is denied", async () => {
+    const root = await createCommandWorkspace();
+    const requestPermission = vi.fn(async () => false);
+    const result = await commandRegistry(root, { requestPermission }).execute("workspace.runCommand", {
+      program: "node",
+      args: ["-e", "console.log('denied')"],
+    });
+
+    expect(requestPermission).toHaveBeenCalledOnce();
+    expect(result).toEqual({
+      ok: false,
+      error: "Command denied: Command is outside the safe allowlist.",
+    });
+  });
+
   it("rejects command arguments whose nearest existing path escapes through a symlink", async () => {
     const root = await createCommandWorkspace();
     const outside = await mkdtemp(path.join(tmpdir(), "story-forge-command-outside-"));
@@ -148,9 +237,12 @@ describe("workspace.runCommand", () => {
   });
 });
 
-function commandRegistry(root: string): ToolRegistry {
+function commandRegistry(
+  root: string,
+  options: WorkspaceCommandToolOptions = {},
+): ToolRegistry {
   const sandbox = new WorkspaceSandbox(root);
-  return new ToolRegistry([createWorkspaceCommandTool(sandbox)]);
+  return new ToolRegistry([createWorkspaceCommandTool(sandbox, options)]);
 }
 
 async function createCommandWorkspace(): Promise<string> {

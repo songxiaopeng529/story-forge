@@ -97,7 +97,12 @@ describe("App", () => {
 
   it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "live", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "live",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
     const input = await screen.findByPlaceholderText(
@@ -143,7 +148,12 @@ describe("App", () => {
 
   it("renders failed tool steps before later assistant text in the active turn", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "live", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "live",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
     const input = await screen.findByPlaceholderText(
@@ -190,7 +200,12 @@ describe("App", () => {
 
   it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "smooth", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "smooth",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
     const input = await screen.findByPlaceholderText(
@@ -232,7 +247,12 @@ describe("App", () => {
 
   it("shows the model request drawer only when developer mode is enabled", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: true,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -266,7 +286,12 @@ describe("App", () => {
 
   it("hides the model request inspector when developer mode is disabled", async () => {
     installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -278,7 +303,12 @@ describe("App", () => {
 
   it("clears captured model requests when sending a new prompt", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: true,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -317,7 +347,12 @@ describe("App", () => {
       value: { writeText },
     });
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: true,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -441,7 +476,12 @@ describe("App", () => {
 
   it("loads and saves the global response mode from Settings", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -467,7 +507,12 @@ describe("App", () => {
 
   it("loads and saves developer mode from Settings", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
     });
     render(<App />);
 
@@ -483,9 +528,110 @@ describe("App", () => {
     expect(developerMode).toBeChecked();
   });
 
+  it("loads and saves command execution mode from Settings", async () => {
+    const fixture = installApi({
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const commandModeGroup = await screen.findByRole("radiogroup", {
+      name: "Command execution",
+    });
+    expect(within(commandModeGroup).getByRole("radio", { name: "哨兵模式" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(commandModeGroup).getByRole("radio", { name: "无缰模式" }))
+      .toHaveAccessibleDescription(
+        "完全放开。命令不会再弹出确认，请只在你信任当前 Agent 时使用。",
+      );
+
+    fireEvent.click(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      commandExecutionMode: "cruise",
+    }));
+    expect(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("responds to command permission requests", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "permission.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "permission_1",
+        reason: "Command is outside the safe allowlist.",
+        command: {
+          program: "agent-browser",
+          args: ["screenshot"],
+          cwd: "/tmp/project",
+        },
+        mode: "sentinel",
+        risk: "unknown",
+      });
+    });
+
+    expect(await screen.findByRole("dialog", { name: "Allow command?" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("agent-browser screenshot")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
+
+    await waitFor(() => expect(fixture.respondPermission).toHaveBeenCalledWith({
+      requestId: "permission_1",
+      approved: true,
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Allow command?" }))
+      .not.toBeInTheDocument());
+  });
+
+  it("denies command permission requests", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "permission.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "permission_2",
+        reason: "This command may modify or delete files.",
+        command: {
+          program: "rm",
+          args: ["-rf", "dist"],
+          cwd: "/tmp/project",
+        },
+        mode: "cruise",
+        risk: "destructive",
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Deny" }));
+
+    await waitFor(() => expect(fixture.respondPermission).toHaveBeenCalledWith({
+      requestId: "permission_2",
+      approved: false,
+    }));
+  });
+
   it("rolls back the response mode and shows an error when saving fails", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
       saveSettings: vi.fn(async () => {
         throw new Error("Unable to save settings");
       }),
@@ -511,7 +657,12 @@ describe("App", () => {
   it("disables response mode choices while settings are saving", async () => {
     const pendingSave = createDeferred<AppSettingsView>();
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
       saveSettings: vi.fn(async (input) => ({
         ...(await pendingSave.promise),
         ...input,
@@ -533,7 +684,12 @@ describe("App", () => {
     expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
 
     await act(async () => {
-      pendingSave.resolve({ schemaVersion: 1, responseMode: "live", developerMode: false });
+      pendingSave.resolve({
+        schemaVersion: 1,
+        responseMode: "live",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      });
     });
     await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
       .not.toBeDisabled());
@@ -591,11 +747,13 @@ function installApi(options: {
   let eventListener: ((event: AgentEvent) => void) | undefined;
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
+  const respondPermission = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
   const settings = options.settings ?? {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
     developerMode: false,
+    commandExecutionMode: "sentinel" as const,
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
@@ -688,6 +846,9 @@ function installApi(options: {
         };
       }),
     },
+    permissions: {
+      respond: respondPermission,
+    },
     skills: {
       list: vi.fn(async () => currentSkills),
       importZip: importSkill,
@@ -707,6 +868,7 @@ function installApi(options: {
   return {
     start,
     stop,
+    respondPermission,
     getSession,
     saveSettings,
     saveProvider,

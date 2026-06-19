@@ -67,6 +67,7 @@ async function initializeApplication(): Promise<void> {
     skillResolver: skillService,
     getResponseMode: async () => (await settingsStore.get()).responseMode,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
+    getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);

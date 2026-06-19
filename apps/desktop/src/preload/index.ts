@@ -53,6 +53,9 @@ const api = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.turnEvent, wrapped);
     },
   },
+  permissions: {
+    respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.permissionRespond, input),
+  },
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
     importZip: () => ipcRenderer.invoke(IPC_CHANNELS.skillsImportZip),

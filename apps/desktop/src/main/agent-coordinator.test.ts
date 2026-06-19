@@ -212,6 +212,73 @@ describe("AgentCoordinator", () => {
     )).toBe(true);
   });
 
+  it("emits command permission requests and continues after approval", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const provider = fakeProvider(async () => {
+      requestCount += 1;
+      return requestCount === 1
+        ? {
+            content: "",
+            toolCalls: [{
+              id: "call_command",
+              name: "workspace.runCommand",
+              input: {
+                program: "node",
+                args: ["-e", "console.log('allowed')"],
+              },
+            }],
+          }
+        : { content: "Command complete.", toolCalls: [] };
+    });
+    const events: AgentEvent[] = [];
+    let coordinator: AgentCoordinator;
+    coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: { createProvider: () => provider },
+      getCommandExecutionMode: async () => "sentinel",
+      emit: (event) => {
+        events.push(event);
+        if (event.type === "permission.request") {
+          coordinator.respondToPermission({
+            requestId: event.requestId,
+            approved: true,
+          });
+        }
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "Run a command",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "permission.request",
+      reason: "Command is outside the safe allowlist.",
+      command: expect.objectContaining({
+        program: "node",
+        args: ["-e", "console.log('allowed')"],
+      }),
+      mode: "sentinel",
+      risk: "unknown",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "workspace.runCommand",
+      ok: true,
+    }));
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      status: "completed",
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Command complete." }),
+      ]),
+    });
+  });
+
   it("aborts an active model request and marks the session stopped", async () => {
     const fixture = await createFixture();
     const provider = fakeProvider((_messages, signal) =>

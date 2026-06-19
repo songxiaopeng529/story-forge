@@ -3,6 +3,7 @@ import type {
   AgentEvent,
   AgentStopReason,
   AppSettingsView,
+  CommandExecutionMode,
   McpConfigView,
   McpServerView,
   ResponseMode,
@@ -31,6 +32,7 @@ export const IPC_CHANNELS = {
   turnsStart: "story-forge:turns:start",
   turnsStop: "story-forge:turns:stop",
   turnEvent: "story-forge:turns:event",
+  permissionRespond: "story-forge:permissions:respond",
   skillsList: "story-forge:skills:list",
   skillsImportZip: "story-forge:skills:import-zip",
   skillsSetEnabled: "story-forge:skills:set-enabled",
@@ -108,6 +110,7 @@ export type StoryForgeApi = {
     save(input: {
       responseMode?: ResponseMode;
       developerMode?: boolean;
+      commandExecutionMode?: CommandExecutionMode;
     }): Promise<AppSettingsView>;
   };
   providers: {
@@ -143,6 +146,9 @@ export type StoryForgeApi = {
     start(input: { sessionId: SessionId; prompt: string }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
     onEvent(listener: (event: AgentEvent) => void): () => void;
+  };
+  permissions: {
+    respond(input: { requestId: string; approved: boolean }): Promise<void>;
   };
   skills: {
     list(): Promise<SkillView[]>;
