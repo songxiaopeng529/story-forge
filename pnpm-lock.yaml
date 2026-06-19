@@ -32,15 +32,24 @@ importers:
       '@story-forge/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@story-forge/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@story-forge/model-gateway':
         specifier: workspace:*
         version: link:../../packages/model-gateway
       '@story-forge/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@story-forge/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@story-forge/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+      extract-zip:
+        specifier: ^2.0.1
+        version: 2.0.1
       lucide-react:
         specifier: ^1.17.0
         version: 1.17.0(react@19.2.7)
@@ -1791,6 +1800,7 @@ packages:
   tsconfck@3.1.6:
     resolution: {integrity: sha512-ks6Vjr/jEw0P1gmOVwutM3B7fWxoWBL2KRDb1JfqGVawBmO5UsvmWOQFGHBPl5yxYz4eERr19E6L7NMv+Fej4w==}
     engines: {node: ^18 || >=20}
+    deprecated: unmaintained
     hasBin: true
     peerDependencies:
       typescript: ^5.0.0
