@@ -14,6 +14,7 @@ import type {
   WorkspaceView,
 } from "../shared/story-forge-api";
 import { AgentWorkspace } from "./components/agent-workspace";
+import { McpSkillsPage } from "./components/mcp-skills-page";
 import { ModelsPage } from "./components/models-page";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
 import { SettingsPage } from "./components/settings-page";
@@ -360,6 +361,11 @@ export function App() {
           onSelect={setSelectedProviderId}
           onError={setError}
           error={error}
+        />
+      ) : page === "extensions" ? (
+        <McpSkillsPage
+          error={error}
+          onError={setError}
         />
       ) : (
         <div

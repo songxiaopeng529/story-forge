@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import type { AgentEvent, AppSettingsView } from "@story-forge/shared";
+import type { AgentEvent, AppSettingsView, McpConfigView, SkillView } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ProviderView,
@@ -331,6 +331,67 @@ describe("App", () => {
     });
   });
 
+  it("manages installed skills from the MCP and Skills page", async () => {
+    const fixture = installApi({
+      skills: [{
+        id: "code-review",
+        name: "Code Review",
+        description: "Review code",
+        invocationName: "/code-review",
+        enabled: true,
+        installedAt: "2026-06-19T00:00:00.000Z",
+        updatedAt: "2026-06-19T00:00:00.000Z",
+      }],
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "MCP & Skills" }));
+
+    expect(await screen.findByText("/code-review")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Enable Code Review" }));
+    await waitFor(() => expect(fixture.setSkillEnabled).toHaveBeenCalledWith({
+      skillId: "code-review",
+      enabled: false,
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Import Skill" }));
+    await waitFor(() => expect(fixture.importSkill).toHaveBeenCalled());
+    expect(await screen.findByText("/deploy")).toBeInTheDocument();
+  });
+
+  it("saves MCP JSON and tests a configured server", async () => {
+    const fixture = installApi({
+      mcpConfig: {
+        schemaVersion: 1,
+        rawJson: "{\"mcpServers\":{\"github\":{\"command\":\"node\"}}}",
+        servers: [{
+          name: "github",
+          transport: "stdio",
+          enabled: true,
+          status: "untested",
+          tools: [],
+        }],
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "MCP & Skills" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "MCP Servers" }));
+    const editor = await screen.findByLabelText("MCP configuration JSON");
+    fireEvent.change(editor, {
+      target: { value: "{\"mcpServers\":{\"github\":{\"command\":\"node\",\"args\":[\"server.js\"]}}}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save MCP config" }));
+
+    await waitFor(() => expect(fixture.saveMcp).toHaveBeenCalledWith({
+      rawJson: "{\"mcpServers\":{\"github\":{\"command\":\"node\",\"args\":[\"server.js\"]}}}",
+    }));
+    fireEvent.click(await screen.findByRole("button", { name: "Test github" }));
+
+    await waitFor(() => expect(fixture.testMcp).toHaveBeenCalledWith("github"));
+    expect(await screen.findByText("list_issues")).toBeInTheDocument();
+  });
+
   it("loads and saves the global response mode from Settings", async () => {
     const fixture = installApi({
       settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
@@ -435,6 +496,8 @@ describe("App", () => {
 function installApi(options: {
   settings?: AppSettingsView;
   saveSettings?: StoryForgeApi["settings"]["save"];
+  skills?: SkillView[];
+  mcpConfig?: McpConfigView;
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -496,6 +559,52 @@ function installApi(options: {
     model: input.model,
     hasSecret: provider.hasSecret || Boolean(input.apiKey),
   }));
+  let currentSkills = options.skills ?? [];
+  let currentMcpConfig = options.mcpConfig ?? {
+    schemaVersion: 1 as const,
+    rawJson: "{\"mcpServers\":{}}",
+    servers: [],
+  };
+  const importedSkill: SkillView = {
+    id: "deploy",
+    name: "Deploy",
+    description: "Deploy safely",
+    invocationName: "/deploy",
+    enabled: true,
+    installedAt: "2026-06-19T00:00:00.000Z",
+    updatedAt: "2026-06-19T00:00:00.000Z",
+  };
+  const importSkill = vi.fn(async () => {
+    currentSkills = [...currentSkills.filter((skill) => skill.id !== importedSkill.id), importedSkill];
+    return importedSkill;
+  });
+  const setSkillEnabled = vi.fn(async ({ skillId, enabled }) => {
+    const skill = currentSkills.find((candidate) => candidate.id === skillId) ?? importedSkill;
+    const updated = { ...skill, enabled };
+    currentSkills = currentSkills.map((candidate) => candidate.id === skillId ? updated : candidate);
+    return updated;
+  });
+  const saveMcp = vi.fn(async ({ rawJson }) => {
+    currentMcpConfig = { ...currentMcpConfig, rawJson };
+    return currentMcpConfig;
+  });
+  const testMcp = vi.fn(async (name: string) => {
+    const server = {
+      name,
+      transport: "stdio" as const,
+      enabled: true,
+      status: "success" as const,
+      lastTestedAt: "2026-06-19T00:00:00.000Z",
+      tools: [{ name: "list_issues", description: "List issues", inputSchema: { type: "object" } }],
+    };
+    currentMcpConfig = {
+      ...currentMcpConfig,
+      servers: currentMcpConfig.servers.map((candidate) =>
+        candidate.name === name ? server : candidate
+      ),
+    };
+    return server;
+  });
   const api = {
     version: "0.1.0",
     settings: {
@@ -533,37 +642,15 @@ function installApi(options: {
       }),
     },
     skills: {
-      list: vi.fn(async () => []),
-      importZip: vi.fn(async () => undefined),
-      setEnabled: vi.fn(async ({ skillId, enabled }) => ({
-        id: skillId,
-        name: "Code Review",
-        description: "Review code",
-        invocationName: "/code-review" as const,
-        enabled,
-        installedAt: "2026-06-19T00:00:00.000Z",
-        updatedAt: "2026-06-19T00:00:00.000Z",
-      })),
+      list: vi.fn(async () => currentSkills),
+      importZip: importSkill,
+      setEnabled: setSkillEnabled,
       remove: vi.fn(async () => undefined),
     },
     mcp: {
-      get: vi.fn(async () => ({
-        schemaVersion: 1 as const,
-        rawJson: "{\"mcpServers\":{}}",
-        servers: [],
-      })),
-      save: vi.fn(async ({ rawJson }) => ({
-        schemaVersion: 1 as const,
-        rawJson,
-        servers: [],
-      })),
-      testServer: vi.fn(async (name) => ({
-        name,
-        transport: "stdio" as const,
-        enabled: true,
-        status: "success" as const,
-        tools: [],
-      })),
+      get: vi.fn(async () => currentMcpConfig),
+      save: saveMcp,
+      testServer: testMcp,
     },
   } as StoryForgeApi;
   Object.defineProperty(window, "storyForge", {
@@ -576,6 +663,10 @@ function installApi(options: {
     getSession,
     saveSettings,
     saveProvider,
+    importSkill,
+    setSkillEnabled,
+    saveMcp,
+    testMcp,
     emit: (event: AgentEvent) => eventListener?.(event),
   };
 }
