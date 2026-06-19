@@ -1,6 +1,6 @@
 import type { AgentEvent, ModelRequestEvent, TurnId } from "@story-forge/shared";
 import { Braces, CircleStop, FolderOpen, Play, Trash2 } from "lucide-react";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   SessionView,
   WorkspaceView,
@@ -33,9 +33,32 @@ export function AgentWorkspace(props: {
   onModelInspectorClose: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const timelineItems = buildTimeline({
+    session: props.session,
+    activities: props.activities,
+    activeTurnId: props.activeTurnId,
+  });
+  const timelineFingerprint = timelineItems.map((item) => {
+    if (item.type === "assistant-message") {
+      return `${item.id}:${item.content.length}:${item.streaming ? "streaming" : "static"}`;
+    }
+    if (item.type === "tool-step") {
+      return `${item.id}:${item.status}`;
+    }
+    return item.id;
+  }).join("|");
+
   useEffect(() => {
     setTitle(props.session?.title ?? "");
   }, [props.session?.id, props.session?.title]);
+  useEffect(() => {
+    const element = messageScrollRef.current;
+    if (!element) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  }, [timelineFingerprint]);
 
   if (props.loading) {
     return <div className="flex items-center justify-center text-sm text-slate-500">Loading...</div>;
@@ -60,12 +83,6 @@ export function AgentWorkspace(props: {
       </div>
     );
   }
-
-  const timelineItems = buildTimeline({
-    session: props.session,
-    activities: props.activities,
-    activeTurnId: props.activeTurnId,
-  });
 
   return (
     <section
@@ -126,7 +143,11 @@ export function AgentWorkspace(props: {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="agent-message-scroll">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto p-6"
+            data-testid="agent-message-scroll"
+            ref={messageScrollRef}
+          >
             {!props.session ? (
               <div className="mx-auto max-w-xl rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600">
                 Create a session from the workspace sidebar to begin.

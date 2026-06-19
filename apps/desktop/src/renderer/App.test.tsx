@@ -91,8 +91,8 @@ describe("App", () => {
       });
     });
 
-    expect(await screen.findByText("Running workspace.readFile")).toBeInTheDocument();
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
+    expect(screen.queryByText("Running workspace.readFile")).not.toBeInTheDocument();
   });
 
   it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
@@ -137,8 +137,55 @@ describe("App", () => {
     });
 
     expect(screen.getByText("Reading")).toBeInTheDocument();
-    expect(screen.getByText("Running workspace.readFile")).toBeInTheDocument();
     expect(screen.getByText("Completed workspace.readFile")).toBeInTheDocument();
+    expect(screen.queryByText("Running workspace.readFile")).not.toBeInTheDocument();
+  });
+
+  it("renders failed tool steps before later assistant text in the active turn", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "live", developerMode: false },
+    });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "Check tools" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fixture.start).toHaveBeenCalled());
+
+    await act(async () => {
+      fixture.emit({
+        type: "tool.call",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_cmd",
+        name: "workspace.runCommand",
+        input: { command: "pnpm missing" },
+      });
+      fixture.emit({
+        type: "tool.result",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call_cmd",
+        name: "workspace.runCommand",
+        ok: false,
+        output: "command failed",
+      });
+      fixture.emit({
+        type: "message.delta",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        content: "I found the failure.",
+        delivery: "live",
+      });
+    });
+
+    const failedStep = screen.getByText("Failed workspace.runCommand");
+    const answer = screen.getByText("I found the failure.");
+    expect(
+      failedStep.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
