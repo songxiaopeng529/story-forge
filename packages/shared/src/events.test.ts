@@ -8,7 +8,7 @@ import {
   type SessionId,
   type TurnId,
 } from "./events";
-import type { ResponseMode } from "./settings";
+import type { AppSettingsView, ResponseMode } from "./settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
@@ -92,6 +92,33 @@ const memoryWriteEvent = {
   value: "Use pnpm.",
 } satisfies AgentEvent;
 
+const modelRequestEvent = {
+  type: "model.request",
+  sessionId,
+  turnId,
+  requestId: "model-request-1",
+  providerId: "deepseek",
+  model: "deepseek-v4-pro",
+  responseMode: "live",
+  messages: [
+    { role: "system", content: "You are StoryForge." },
+    { role: "user", content: "Inspect auth" },
+    {
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "call_1", name: "workspace.readFile", input: { path: "README.md" } }],
+    },
+    { role: "tool", content: "contents", name: "workspace.readFile", toolCallId: "call_1" },
+  ],
+  tools: [
+    {
+      name: "workspace.readFile",
+      description: "Read a file",
+      parameters: { type: "object" },
+    },
+  ],
+} satisfies AgentEvent;
+
 const agentEventFixtures = [
   runtimeStartedEvent,
   runtimeCompletedEvent,
@@ -103,6 +130,7 @@ const agentEventFixtures = [
   toolResultEvent,
   permissionRequestEvent,
   memoryWriteEvent,
+  modelRequestEvent,
 ] satisfies AgentEvent[];
 
 describe("createSessionId", () => {
@@ -123,6 +151,16 @@ describe("settings types", () => {
 
     expect(modes).toEqual(["auto", "live", "smooth"]);
   });
+
+  it("accepts the developer mode default shape", () => {
+    const settings = {
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: false,
+    } satisfies AppSettingsView;
+
+    expect(settings.developerMode).toBe(false);
+  });
 });
 
 describe("AgentEvent", () => {
@@ -131,6 +169,11 @@ describe("AgentEvent", () => {
     expect(responseFallbackEvent.to).toBe("smooth");
     expect(isTerminalAgentEvent(liveMessageDeltaEvent)).toBe(false);
     expect(isTerminalAgentEvent(responseFallbackEvent)).toBe(false);
+  });
+
+  it("allows model request inspection events without marking them terminal", () => {
+    expect(modelRequestEvent.messages[0]).toMatchObject({ role: "system" });
+    expect(isTerminalAgentEvent(modelRequestEvent)).toBe(false);
   });
 });
 

@@ -1,5 +1,11 @@
 import type { ProviderId } from "@story-forge/model-gateway";
-import type { AgentEvent, ResponseMode, SessionId, TurnId } from "@story-forge/shared";
+import type {
+  AgentEvent,
+  ModelRequestEvent,
+  ResponseMode,
+  SessionId,
+  TurnId,
+} from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   PersistedMessageView,
@@ -23,14 +29,18 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
+  const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
+  const [developerMode, setDeveloperMode] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
+  const persistedDeveloperModeRef = useRef(false);
   const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
@@ -52,6 +62,12 @@ export function App() {
         ...current,
         [event.sessionId]: [...(current[event.sessionId] ?? []), event],
       }));
+      if (event.type === "model.request") {
+        setModelRequests((current) => ({
+          ...current,
+          [event.sessionId]: [...(current[event.sessionId] ?? []), event],
+        }));
+      }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
       }
@@ -77,7 +93,9 @@ export function App() {
           return;
         }
         persistedResponseModeRef.current = nextSettings.responseMode;
+        persistedDeveloperModeRef.current = nextSettings.developerMode;
         setResponseMode(nextSettings.responseMode);
+        setDeveloperMode(nextSettings.developerMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
@@ -168,6 +186,7 @@ export function App() {
     setPrompt("");
     setError(undefined);
     setActivities((current) => ({ ...current, [session.id]: [] }));
+    setModelRequests((current) => ({ ...current, [session.id]: [] }));
     const optimisticMessage: PersistedMessageView = {
       id: `pending-${Date.now()}`,
       role: "user",
@@ -246,6 +265,33 @@ export function App() {
     }
   }
 
+  async function saveDeveloperMode(nextDeveloperMode: boolean): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextDeveloperMode === persistedDeveloperModeRef.current
+    ) {
+      return;
+    }
+    const previousDeveloperMode = persistedDeveloperModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setDeveloperMode(nextDeveloperMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        developerMode: nextDeveloperMode,
+      });
+      persistedDeveloperModeRef.current = saved.developerMode;
+      setDeveloperMode(saved.developerMode);
+    } catch (settingsError) {
+      setDeveloperMode(previousDeveloperMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -300,9 +346,11 @@ export function App() {
       {page === "settings" ? (
         <SettingsPage
           responseMode={responseMode}
+          developerMode={developerMode}
           saving={settingsSaving}
           error={error}
           onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
+          onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
         />
       ) : page === "models" ? (
         <ModelsPage
@@ -343,6 +391,9 @@ export function App() {
             workspace={selectedWorkspace}
             session={selectedSession}
             activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
+            developerMode={developerMode}
+            modelInspectorOpen={modelInspectorOpen}
             activeTurnId={activeTurnId}
             prompt={prompt}
             error={error}
@@ -359,6 +410,8 @@ export function App() {
             onRename={(title) => void renameSession(title)}
             onDelete={() => void deleteSession()}
             onOpenWorkspace={() => void openWorkspace()}
+            onModelInspectorOpen={() => setModelInspectorOpen(true)}
+            onModelInspectorClose={() => setModelInspectorOpen(false)}
           />
         </div>
       )}

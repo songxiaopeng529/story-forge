@@ -96,7 +96,9 @@ describe("App", () => {
   });
 
   it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "live" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "live", developerMode: false },
+    });
     render(<App />);
     const input = await screen.findByPlaceholderText(
       "Ask StoryForge to inspect, explain, or change code...",
@@ -140,7 +142,9 @@ describe("App", () => {
   });
 
   it("plays smooth deltas without exposing intermediate text as persisted messages", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "smooth" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "smooth", developerMode: false },
+    });
     render(<App />);
     const input = await screen.findByPlaceholderText(
       "Ask StoryForge to inspect, explain, or change code...",
@@ -179,6 +183,120 @@ describe("App", () => {
     expect(screen.getByTestId("agent-message-scroll")).toHaveClass("overflow-y-auto");
   });
 
+  it("shows the model request drawer only when developer mode is enabled", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+    });
+    render(<App />);
+
+    const button = await screen.findByRole("button", {
+      name: "Open model request inspector",
+    });
+    fireEvent.click(button);
+    expect(screen.getByText("No model requests captured yet.")).toBeInTheDocument();
+
+    await act(async () => {
+      fixture.emit({
+        type: "model.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "model-request-1",
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        responseMode: "auto",
+        messages: [
+          { role: "system", content: "You are StoryForge." },
+          { role: "user", content: "Inspect auth" },
+        ],
+        tools: [],
+      });
+    });
+
+    expect(screen.getByText("Model Request #1")).toBeInTheDocument();
+    expect(screen.getByText("system")).toBeInTheDocument();
+    expect(screen.getByText("You are StoryForge.")).toBeInTheDocument();
+  });
+
+  it("hides the model request inspector when developer mode is disabled", async () => {
+    installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Previous question")).toBeInTheDocument();
+    expect(screen.queryByRole("button", {
+      name: "Open model request inspector",
+    })).not.toBeInTheDocument();
+  });
+
+  it("clears captured model requests when sending a new prompt", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open model request inspector",
+    }));
+    await act(async () => {
+      fixture.emit({
+        type: "model.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "model-request-1",
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        responseMode: "auto",
+        messages: [{ role: "user", content: "Inspect auth" }],
+        tools: [],
+      });
+    });
+    expect(screen.getByText("Model Request #1")).toBeInTheDocument();
+
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+    fireEvent.change(input, { target: { value: "Next request" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalled());
+    expect(screen.getByText("No model requests captured yet.")).toBeInTheDocument();
+  });
+
+  it("copies the selected model request JSON", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: true },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Open model request inspector",
+    }));
+    await act(async () => {
+      fixture.emit({
+        type: "model.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "model-request-1",
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        responseMode: "auto",
+        messages: [{ role: "user", content: "Inspect auth" }],
+        tools: [],
+      });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Copy JSON" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("model-request-1"),
+    ));
+  });
+
   it("saves provider settings and shows a saved-key indicator without exposing plaintext", async () => {
     const fixture = installApi();
     render(<App />);
@@ -214,7 +332,9 @@ describe("App", () => {
   });
 
   it("loads and saves the global response mode from Settings", async () => {
-    const fixture = installApi({ settings: { schemaVersion: 1, responseMode: "auto" } });
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+    });
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
@@ -237,9 +357,27 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
   });
 
+  it("loads and saves developer mode from Settings", async () => {
+    const fixture = installApi({
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const developerMode = await screen.findByRole("switch", { name: "Developer mode" });
+    expect(developerMode).not.toBeChecked();
+
+    fireEvent.click(developerMode);
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      developerMode: true,
+    }));
+    expect(developerMode).toBeChecked();
+  });
+
   it("rolls back the response mode and shows an error when saving fails", async () => {
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto" },
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
       saveSettings: vi.fn(async () => {
         throw new Error("Unable to save settings");
       }),
@@ -265,7 +403,7 @@ describe("App", () => {
   it("disables response mode choices while settings are saving", async () => {
     const pendingSave = createDeferred<AppSettingsView>();
     const fixture = installApi({
-      settings: { schemaVersion: 1, responseMode: "auto" },
+      settings: { schemaVersion: 1, responseMode: "auto", developerMode: false },
       saveSettings: vi.fn(async (input) => ({
         ...(await pendingSave.promise),
         ...input,
@@ -287,7 +425,7 @@ describe("App", () => {
     expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
 
     await act(async () => {
-      pendingSave.resolve({ schemaVersion: 1, responseMode: "live" });
+      pendingSave.resolve({ schemaVersion: 1, responseMode: "live", developerMode: false });
     });
     await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
       .not.toBeDisabled());
@@ -347,6 +485,7 @@ function installApi(options: {
   const settings = options.settings ?? {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
+    developerMode: false,
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)

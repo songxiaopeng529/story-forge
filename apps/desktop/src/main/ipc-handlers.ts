@@ -42,6 +42,10 @@ const turnIdSchema = z.custom<TurnId>(
   { message: "Invalid turn id" },
 );
 const workspaceIdSchema = z.string().min(1);
+const settingsSaveSchema = z.object({
+  responseMode: responseModeSchema.optional(),
+  developerMode: z.boolean().optional(),
+});
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.settingsGet, z.undefined(), () =>
@@ -50,7 +54,7 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(
     options.ipc,
     IPC_CHANNELS.settingsSave,
-    z.object({ responseMode: responseModeSchema }),
+    settingsSaveSchema,
     (input) => options.settings.save(input),
   );
   handle(options.ipc, IPC_CHANNELS.providersList, z.undefined(), () =>
@@ -160,7 +164,13 @@ function handle<Schema extends z.ZodType>(
   listener: (input: z.infer<Schema>) => unknown,
 ): void {
   ipc.removeHandler?.(channel);
-  ipc.handle(channel, (_event, input) => listener(schema.parse(input)));
+  ipc.handle(channel, (_event, input) => {
+    const parsed = schema.safeParse(input);
+    if (!parsed.success) {
+      throw new Error("Invalid IPC payload");
+    }
+    return listener(parsed.data);
+  });
 }
 
 async function selectProvider(

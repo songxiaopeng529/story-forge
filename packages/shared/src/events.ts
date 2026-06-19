@@ -1,4 +1,4 @@
-import type { MessageDeliveryMode } from "./settings";
+import type { MessageDeliveryMode, ResponseMode } from "./settings";
 
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
@@ -87,6 +87,35 @@ export type ResponseFallbackEvent = {
   reason: string;
 };
 
+export type InspectableModelMessage =
+  | { role: "system"; content: string }
+  | { role: "user"; content: string }
+  | {
+      role: "assistant";
+      content: string;
+      reasoningContent?: string;
+      toolCalls?: Array<{ id: string; name: string; input: unknown }>;
+    }
+  | { role: "tool"; content: string; name: string; toolCallId: string };
+
+export type InspectableModelTool = {
+  name: string;
+  description: string;
+  parameters: unknown;
+};
+
+export type ModelRequestEvent = {
+  type: "model.request";
+  sessionId: SessionId;
+  turnId: TurnId;
+  requestId: string;
+  providerId: string;
+  model: string;
+  responseMode: ResponseMode;
+  messages: InspectableModelMessage[];
+  tools: InspectableModelTool[];
+};
+
 export type AgentEvent =
   | RuntimeStartedEvent
   | RuntimeCompletedEvent
@@ -96,7 +125,8 @@ export type AgentEvent =
   | ToolResultEvent
   | PermissionRequestEvent
   | MemoryWriteEvent
-  | ResponseFallbackEvent;
+  | ResponseFallbackEvent
+  | ModelRequestEvent;
 
 export function createSessionId(): SessionId {
   const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;

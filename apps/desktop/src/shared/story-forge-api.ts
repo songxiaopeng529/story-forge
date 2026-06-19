@@ -95,7 +95,10 @@ export type StoryForgeApi = {
   version: string;
   settings: {
     get(): Promise<AppSettingsView>;
-    save(input: { responseMode: ResponseMode }): Promise<AppSettingsView>;
+    save(input: {
+      responseMode?: ResponseMode;
+      developerMode?: boolean;
+    }): Promise<AppSettingsView>;
   };
   providers: {
     list(): Promise<ProviderView[]>;

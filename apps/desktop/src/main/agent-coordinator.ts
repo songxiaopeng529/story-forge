@@ -38,6 +38,7 @@ export type AgentCoordinatorOptions = {
   workspaceRepository: WorkspaceRepository;
   providerFactory: ProviderFactory;
   getResponseMode?: () => Promise<ResponseMode>;
+  getDeveloperMode?: () => Promise<boolean>;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -54,6 +55,7 @@ export class AgentCoordinator {
   private readonly workspaceRepository: WorkspaceRepository;
   private readonly providerFactory: ProviderFactory;
   private readonly getResponseMode: () => Promise<ResponseMode>;
+  private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
@@ -67,6 +69,7 @@ export class AgentCoordinator {
     this.workspaceRepository = options.workspaceRepository;
     this.providerFactory = options.providerFactory;
     this.getResponseMode = options.getResponseMode ?? (async () => "auto");
+    this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
@@ -164,11 +167,19 @@ export class AgentCoordinator {
         ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
         ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
       });
-      const responseMode = await this.getResponseMode();
+      const [responseMode, developerMode] = await Promise.all([
+        this.getResponseMode(),
+        this.getDeveloperMode(),
+      ]);
       const result = await loop.run({
         sessionId: session.id,
         turnId,
         responseMode,
+        inspectModelRequests: {
+          enabled: developerMode,
+          providerId: session.providerId,
+          model: session.model,
+        },
         signal,
         messages: [
           {
