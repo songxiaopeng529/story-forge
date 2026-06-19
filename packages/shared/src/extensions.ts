@@ -28,8 +28,8 @@ export type McpServerView = {
   transport: McpTransport;
   enabled: boolean;
   status: "untested" | "success" | "failed";
-  lastTestedAt?: string;
-  lastError?: string;
+  lastTestedAt?: string | undefined;
+  lastError?: string | undefined;
   tools: McpToolView[];
 };
 
