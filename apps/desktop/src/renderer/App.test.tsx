@@ -532,6 +532,39 @@ function installApi(options: {
         };
       }),
     },
+    skills: {
+      list: vi.fn(async () => []),
+      importZip: vi.fn(async () => undefined),
+      setEnabled: vi.fn(async ({ skillId, enabled }) => ({
+        id: skillId,
+        name: "Code Review",
+        description: "Review code",
+        invocationName: "/code-review" as const,
+        enabled,
+        installedAt: "2026-06-19T00:00:00.000Z",
+        updatedAt: "2026-06-19T00:00:00.000Z",
+      })),
+      remove: vi.fn(async () => undefined),
+    },
+    mcp: {
+      get: vi.fn(async () => ({
+        schemaVersion: 1 as const,
+        rawJson: "{\"mcpServers\":{}}",
+        servers: [],
+      })),
+      save: vi.fn(async ({ rawJson }) => ({
+        schemaVersion: 1 as const,
+        rawJson,
+        servers: [],
+      })),
+      testServer: vi.fn(async (name) => ({
+        name,
+        transport: "stdio" as const,
+        enabled: true,
+        status: "success" as const,
+        tools: [],
+      })),
+    },
   } as StoryForgeApi;
   Object.defineProperty(window, "storyForge", {
     configurable: true,

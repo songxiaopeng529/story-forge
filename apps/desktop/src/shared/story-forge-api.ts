@@ -3,8 +3,11 @@ import type {
   AgentEvent,
   AgentStopReason,
   AppSettingsView,
+  McpConfigView,
+  McpServerView,
   ResponseMode,
   SessionId,
+  SkillView,
   TurnId,
 } from "@story-forge/shared";
 
@@ -28,6 +31,13 @@ export const IPC_CHANNELS = {
   turnsStart: "story-forge:turns:start",
   turnsStop: "story-forge:turns:stop",
   turnEvent: "story-forge:turns:event",
+  skillsList: "story-forge:skills:list",
+  skillsImportZip: "story-forge:skills:import-zip",
+  skillsSetEnabled: "story-forge:skills:set-enabled",
+  skillsRemove: "story-forge:skills:remove",
+  mcpGet: "story-forge:mcp:get",
+  mcpSave: "story-forge:mcp:save",
+  mcpTestServer: "story-forge:mcp:test-server",
 } as const;
 
 export type ProviderView = {
@@ -133,6 +143,17 @@ export type StoryForgeApi = {
     start(input: { sessionId: SessionId; prompt: string }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
     onEvent(listener: (event: AgentEvent) => void): () => void;
+  };
+  skills: {
+    list(): Promise<SkillView[]>;
+    importZip(): Promise<SkillView | undefined>;
+    setEnabled(input: { skillId: string; enabled: boolean }): Promise<SkillView>;
+    remove(skillId: string): Promise<void>;
+  };
+  mcp: {
+    get(): Promise<McpConfigView>;
+    save(input: { rawJson: string }): Promise<McpConfigView>;
+    testServer(name: string): Promise<McpServerView>;
   };
 };
 

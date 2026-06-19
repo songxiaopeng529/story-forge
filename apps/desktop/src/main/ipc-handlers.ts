@@ -4,8 +4,10 @@ import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import type { AgentCoordinator } from "./agent-coordinator";
 import type { AppSettingsStore } from "./app-settings-store";
+import type { McpConfigService } from "./mcp-config-service";
 import type { ProviderService } from "./provider-service";
 import type { SessionRepository } from "./session-repository";
+import type { SkillService } from "./skill-service";
 import type { WorkspaceRepository } from "./workspace-repository";
 
 type IpcHandler = (event: unknown, input: unknown) => unknown;
@@ -15,6 +17,9 @@ export type IpcRegistrar = {
   removeHandler?(channel: string): void;
 };
 
+type SkillsIpcService = Pick<SkillService, "list" | "importZip" | "setEnabled" | "remove">;
+type McpIpcService = Pick<McpConfigService, "get" | "saveRawJson" | "testServer">;
+
 export type IpcHandlerOptions = {
   ipc: IpcRegistrar;
   providers: ProviderService;
@@ -23,6 +28,9 @@ export type IpcHandlerOptions = {
   settings: AppSettingsStore;
   coordinator: AgentCoordinator;
   selectWorkspace: () => Promise<string | undefined>;
+  skills: SkillsIpcService;
+  mcp: McpIpcService;
+  selectSkillArchive: () => Promise<string | undefined>;
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
@@ -46,6 +54,15 @@ const settingsSaveSchema = z.object({
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
 });
+const skillIdSchema = z.string().min(1);
+const skillEnabledSchema = z.object({
+  skillId: skillIdSchema,
+  enabled: z.boolean(),
+});
+const mcpSaveSchema = z.object({
+  rawJson: z.string().min(1),
+});
+const mcpServerNameSchema = z.string().min(1);
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.settingsGet, z.undefined(), () =>
@@ -154,6 +171,31 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   );
   handle(options.ipc, IPC_CHANNELS.turnsStop, turnIdSchema, (turnId) =>
     options.coordinator.stop(turnId)
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsList, z.undefined(), () =>
+    options.skills.list()
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsImportZip, z.undefined(), async () => {
+    const archivePath = await options.selectSkillArchive();
+    return archivePath ? options.skills.importZip(archivePath) : undefined;
+  });
+  handle(
+    options.ipc,
+    IPC_CHANNELS.skillsSetEnabled,
+    skillEnabledSchema,
+    (input) => options.skills.setEnabled(input.skillId, input.enabled),
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsRemove, skillIdSchema, (skillId) =>
+    options.skills.remove(skillId)
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpGet, z.undefined(), () =>
+    options.mcp.get()
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpSave, mcpSaveSchema, (input) =>
+    options.mcp.saveRawJson(input.rawJson)
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpTestServer, mcpServerNameSchema, (name) =>
+    options.mcp.testServer(name)
   );
 }
 

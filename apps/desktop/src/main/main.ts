@@ -11,9 +11,11 @@ import { IPC_CHANNELS } from "../shared/story-forge-api";
 import { AgentCoordinator } from "./agent-coordinator";
 import { AppSettingsStore } from "./app-settings-store";
 import { registerIpcHandlers } from "./ipc-handlers";
+import { McpConfigService } from "./mcp-config-service";
 import { ProviderConfigStore } from "./provider-config-store";
 import { ProviderService } from "./provider-service";
 import { SessionRepository } from "./session-repository";
+import { SkillService } from "./skill-service";
 import { WorkspaceRepository } from "./workspace-repository";
 
 function createWindow(): BrowserWindow {
@@ -52,6 +54,8 @@ async function initializeApplication(): Promise<void> {
   });
   const workspaceRepository = new WorkspaceRepository({ rootDir });
   const sessionRepository = new SessionRepository({ rootDir });
+  const skillService = new SkillService({ rootDir });
+  const mcpConfigService = new McpConfigService({ rootDir });
   await sessionRepository.recoverInterruptedSessions();
   const registry = new ProviderRegistry();
   const providerService = new ProviderService({ store: providerStore, registry });
@@ -60,6 +64,7 @@ async function initializeApplication(): Promise<void> {
     sessionRepository,
     workspaceRepository,
     providerFactory: registry,
+    skillResolver: skillService,
     getResponseMode: async () => (await settingsStore.get()).responseMode,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     emit: (event) => {
@@ -76,10 +81,20 @@ async function initializeApplication(): Promise<void> {
     sessions: sessionRepository,
     settings: settingsStore,
     coordinator,
+    skills: skillService,
+    mcp: mcpConfigService,
     selectWorkspace: async () => {
       const result = await dialog.showOpenDialog({
         properties: ["openDirectory", "createDirectory"],
         title: "Open StoryForge workspace",
+      });
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    selectSkillArchive: async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openFile"],
+        filters: [{ name: "Skill archives", extensions: ["zip"] }],
+        title: "Import StoryForge skill",
       });
       return result.canceled ? undefined : result.filePaths[0];
     },

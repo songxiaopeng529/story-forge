@@ -53,6 +53,17 @@ const api = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.turnEvent, wrapped);
     },
   },
+  skills: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
+    importZip: () => ipcRenderer.invoke(IPC_CHANNELS.skillsImportZip),
+    setEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.skillsSetEnabled, input),
+    remove: (skillId) => ipcRenderer.invoke(IPC_CHANNELS.skillsRemove, skillId),
+  },
+  mcp: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.mcpGet),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpSave, input),
+    testServer: (name) => ipcRenderer.invoke(IPC_CHANNELS.mcpTestServer, name),
+  },
 } satisfies StoryForgeApi;
 
 contextBridge.exposeInMainWorld("storyForge", api);

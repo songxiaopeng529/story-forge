@@ -16,6 +16,8 @@ describe("registerIpcHandlers", () => {
 
     expect(fixture.handlers.has(IPC_CHANNELS.providersList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.turnsStart)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.skillsList)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.mcpGet)).toBe(true);
     await expect(
       fixture.invoke(IPC_CHANNELS.turnsStart, {
         sessionId: "invalid",
@@ -26,6 +28,37 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.sessionsGet, "sf_session_../../providers"),
     ).rejects.toThrow();
     expect(fixture.start).not.toHaveBeenCalled();
+  });
+
+  it("registers Skills and MCP APIs with payload validation", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.skillsList)).resolves.toEqual([]);
+    await expect(fixture.invoke(IPC_CHANNELS.skillsImportZip)).resolves.toMatchObject({
+      invocationName: "/code-review",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.skillsSetEnabled, {
+      skillId: "code-review",
+      enabled: false,
+    })).resolves.toMatchObject({ enabled: false });
+    await expect(fixture.invoke(IPC_CHANNELS.skillsRemove, "code-review")).resolves.toBeUndefined();
+    await expect(fixture.invoke(IPC_CHANNELS.mcpGet)).resolves.toMatchObject({
+      schemaVersion: 1,
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.mcpSave, {
+      rawJson: "{\"mcpServers\":{}}",
+    })).resolves.toMatchObject({ schemaVersion: 1 });
+    await expect(fixture.invoke(IPC_CHANNELS.mcpTestServer, "github")).resolves.toMatchObject({
+      name: "github",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.skillsSetEnabled, {
+      skillId: "",
+      enabled: false,
+    })).rejects.toThrow("Invalid IPC payload");
+    await expect(fixture.invoke(IPC_CHANNELS.mcpSave, {
+      rawJson: "",
+    })).rejects.toThrow("Invalid IPC payload");
   });
 
   it("creates sessions with the current default provider without exposing its key", async () => {
@@ -136,6 +169,47 @@ function createFixture() {
       ...input,
     })),
   } as unknown as AppSettingsStore;
+  const skills = {
+    list: vi.fn(async () => []),
+    importZip: vi.fn(async () => ({
+      id: "code-review",
+      name: "Code Review",
+      description: "Review code",
+      invocationName: "/code-review" as const,
+      enabled: true,
+      installedAt: "2026-06-19T00:00:00.000Z",
+      updatedAt: "2026-06-19T00:00:00.000Z",
+    })),
+    setEnabled: vi.fn(async (skillId: string, enabled: boolean) => ({
+      id: skillId,
+      name: "Code Review",
+      description: "Review code",
+      invocationName: "/code-review" as const,
+      enabled,
+      installedAt: "2026-06-19T00:00:00.000Z",
+      updatedAt: "2026-06-19T00:00:00.000Z",
+    })),
+    remove: vi.fn(async () => undefined),
+  };
+  const mcp = {
+    get: vi.fn(async () => ({
+      schemaVersion: 1 as const,
+      rawJson: "{\"mcpServers\":{}}",
+      servers: [],
+    })),
+    saveRawJson: vi.fn(async (rawJson: string) => ({
+      schemaVersion: 1 as const,
+      rawJson,
+      servers: [],
+    })),
+    testServer: vi.fn(async (name: string) => ({
+      name,
+      transport: "stdio" as const,
+      enabled: true,
+      status: "success" as const,
+      tools: [],
+    })),
+  };
   const coordinator = {
     start,
     stop: vi.fn(),
@@ -153,6 +227,9 @@ function createFixture() {
       settings,
       coordinator,
       selectWorkspace: async () => undefined,
+      skills,
+      mcp,
+      selectSkillArchive: async () => "/tmp/skill.zip",
     },
     invoke: async (channel: string, input?: unknown) => {
       const handler = handlers.get(channel);
