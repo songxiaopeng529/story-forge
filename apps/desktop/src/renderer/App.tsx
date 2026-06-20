@@ -16,6 +16,7 @@ import type {
   WorkspaceView,
 } from "../shared/story-forge-api";
 import { AgentWorkspace } from "./components/agent-workspace";
+import { AutomationsPage } from "./components/automations-page";
 import { McpSkillsPage } from "./components/mcp-skills-page";
 import { ModelsPage } from "./components/models-page";
 import { PermissionRequestPrompt } from "./components/permission-request-prompt";
@@ -23,6 +24,7 @@ import { PrimaryNavigation, type Page } from "./components/primary-navigation";
 import { SettingsPage } from "./components/settings-page";
 import { SessionSidebar } from "./components/session-sidebar";
 import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
+import type { AutomationProposalTimelineState } from "./timeline";
 
 export function App() {
   const [page, setPage] = useState<Page>("agent");
@@ -33,6 +35,8 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [automationProposals, setAutomationProposals] =
+    useState<Record<string, AutomationProposalTimelineState[]>>({});
   const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
   const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
@@ -77,6 +81,25 @@ export function App() {
           ...current,
           [event.sessionId]: [...(current[event.sessionId] ?? []), event],
         }));
+      }
+      if (event.type === "automation.proposal") {
+        setAutomationProposals((current) => {
+          const proposals = current[event.sessionId] ?? [];
+          if (proposals.some((proposal) => proposal.proposalId === event.proposalId)) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: [
+              ...proposals,
+              {
+                proposalId: event.proposalId,
+                proposal: event.proposal,
+                status: "pending",
+              },
+            ],
+          };
+        });
       }
       if (event.type === "permission.request") {
         setPermissionRequests((current) => [...current, event]);
@@ -391,6 +414,57 @@ export function App() {
     }
   }
 
+  async function createAutomationFromProposal(proposalId: string): Promise<void> {
+    if (!selectedSessionId) {
+      return;
+    }
+    const item = automationProposals[selectedSessionId]
+      ?.find((proposal) => proposal.proposalId === proposalId);
+    if (!item || item.status === "created") {
+      return;
+    }
+
+    setError(undefined);
+    try {
+      const { proposal } = item;
+      await window.storyForge.automations.create({
+        name: proposal.name,
+        status: "active",
+        workspaceId: proposal.workspaceId,
+        providerId: proposal.providerId,
+        model: proposal.model,
+        schedule: {
+          sourceText: proposal.scheduleText,
+          cron: proposal.cron,
+          timezone: proposal.timezone,
+          summary: proposal.summary,
+        },
+        prompt: proposal.prompt,
+      });
+      setAutomationProposals((current) => ({
+        ...current,
+        [selectedSessionId]: (current[selectedSessionId] ?? []).map((proposal) =>
+          proposal.proposalId === proposalId
+            ? { ...proposal, status: "created" }
+            : proposal
+        ),
+      }));
+    } catch (createError) {
+      setError(formatError(createError));
+    }
+  }
+
+  function cancelAutomationProposal(proposalId: string): void {
+    if (!selectedSessionId) {
+      return;
+    }
+    setAutomationProposals((current) => ({
+      ...current,
+      [selectedSessionId]: (current[selectedSessionId] ?? [])
+        .filter((proposal) => proposal.proposalId !== proposalId),
+    }));
+  }
+
   async function removeWorkspace(workspaceId: string): Promise<void> {
     try {
       await window.storyForge.workspaces.remove(workspaceId);
@@ -437,6 +511,13 @@ export function App() {
           error={error}
           onError={setError}
         />
+      ) : page === "automations" ? (
+        <AutomationsPage
+          providers={providers}
+          workspaces={workspaces}
+          error={error}
+          onError={setError}
+        />
       ) : (
         <div
           className="grid min-h-0 min-w-0 grid-cols-[290px_1fr] overflow-hidden"
@@ -467,6 +548,9 @@ export function App() {
             workspace={selectedWorkspace}
             session={selectedSession}
             activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            automationProposals={
+              selectedSessionId ? automationProposals[selectedSessionId] ?? [] : []
+            }
             modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
             developerMode={developerMode}
             modelInspectorOpen={modelInspectorOpen}
@@ -488,6 +572,9 @@ export function App() {
             onOpenWorkspace={() => void openWorkspace()}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
+            onCreateAutomationProposal={(proposalId) =>
+              void createAutomationFromProposal(proposalId)}
+            onCancelAutomationProposal={cancelAutomationProposal}
           />
         </div>
       )}

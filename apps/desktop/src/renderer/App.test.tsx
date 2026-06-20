@@ -8,7 +8,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import type { AgentEvent, AppSettingsView, McpConfigView, SkillView } from "@story-forge/shared";
+import type {
+  AgentEvent,
+  AppSettingsView,
+  AutomationView,
+  McpConfigView,
+  SkillView,
+} from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ProviderView,
@@ -474,6 +480,156 @@ describe("App", () => {
     expect(await screen.findByText("list_issues")).toBeInTheDocument();
   });
 
+  it("creates an automation from the Automations page", async () => {
+    const fixture = installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Automations" }));
+    expect(await screen.findByRole("heading", { name: "Automations" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Automation name"), {
+      target: { value: "Daily risk audit" },
+    });
+    fireEvent.change(screen.getByLabelText("Schedule description"), {
+      target: { value: "每天早上 9 点" },
+    });
+    fireEvent.change(screen.getByLabelText("Automation prompt"), {
+      target: { value: "Review repository risk." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate schedule" }));
+
+    await waitFor(() => expect(fixture.interpretAutomationSchedule).toHaveBeenCalledWith({
+      scheduleText: "每天早上 9 点",
+      timezone: "Asia/Shanghai",
+    }));
+    expect(await screen.findByDisplayValue("0 9 * * *")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save automation" }));
+
+    await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith({
+      name: "Daily risk audit",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "每天早上 9 点",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Review repository risk.",
+    }));
+    expect(await screen.findByText("Daily risk audit")).toBeInTheDocument();
+  });
+
+  it("runs, pauses, resumes, and deletes automations", async () => {
+    const fixture = installApi({
+      automations: [sampleAutomation()],
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Automations" }));
+    expect(await screen.findByText("Daily risk audit")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Daily risk audit now" }));
+    await waitFor(() => expect(fixture.runAutomationNow).toHaveBeenCalledWith("sf_automation_daily"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause Daily risk audit" }));
+    await waitFor(() => expect(fixture.updateAutomation).toHaveBeenCalledWith({
+      automationId: "sf_automation_daily",
+      status: "paused",
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resume Daily risk audit" }));
+    await waitFor(() => expect(fixture.updateAutomation).toHaveBeenCalledWith({
+      automationId: "sf_automation_daily",
+      status: "active",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Daily risk audit" }));
+    await waitFor(() => expect(fixture.deleteAutomation).toHaveBeenCalledWith("sf_automation_daily"));
+    await waitFor(() => expect(screen.queryByText("Daily risk audit")).not.toBeInTheDocument());
+  });
+
+  it("creates an automation from a chat proposal card", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "automation.proposal",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        proposalId: "automation-proposal-1",
+        proposal: {
+          name: "Daily risk audit",
+          scheduleText: "每天早上 9 点",
+          cron: "0 9 * * *",
+          timezone: "Asia/Shanghai",
+          summary: "Every day at 09:00",
+          nextRuns: ["2026-06-20T01:00:00.000Z"],
+          prompt: "Review repository risk.",
+          workspaceId: "workspace-1",
+          providerId: "deepseek",
+          model: "deepseek-v4-pro",
+        },
+      });
+    });
+
+    expect(await screen.findByText("Automation proposal")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create automation Daily risk audit" }));
+
+    await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith({
+      name: "Daily risk audit",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "每天早上 9 点",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Review repository risk.",
+    }));
+    expect(await screen.findByText("Automation created")).toBeInTheDocument();
+  });
+
+  it("dismisses chat automation proposal cards locally", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "automation.proposal",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        proposalId: "automation-proposal-2",
+        proposal: {
+          name: "Daily risk audit",
+          scheduleText: "每天早上 9 点",
+          cron: "0 9 * * *",
+          timezone: "Asia/Shanghai",
+          summary: "Every day at 09:00",
+          nextRuns: ["2026-06-20T01:00:00.000Z"],
+          prompt: "Review repository risk.",
+          workspaceId: "workspace-1",
+          providerId: "deepseek",
+          model: "deepseek-v4-pro",
+        },
+      });
+    });
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "Cancel automation Daily risk audit",
+    }));
+
+    await waitFor(() => expect(screen.queryByText("Automation proposal")).not.toBeInTheDocument());
+  });
+
   it("loads and saves the global response mode from Settings", async () => {
     const fixture = installApi({
       settings: {
@@ -701,6 +857,7 @@ function installApi(options: {
   saveSettings?: StoryForgeApi["settings"]["save"];
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
+  automations?: AutomationView[];
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -770,6 +927,7 @@ function installApi(options: {
     rawJson: "{\"mcpServers\":{}}",
     servers: [],
   };
+  let currentAutomations = options.automations ?? [];
   const importedSkill: SkillView = {
     id: "deploy",
     name: "Deploy",
@@ -810,6 +968,60 @@ function installApi(options: {
     };
     return server;
   });
+  const interpretAutomationSchedule = vi.fn(async () => ({
+    ok: true as const,
+    cron: "0 9 * * *",
+    timezone: "Asia/Shanghai",
+    summary: "Every day at 09:00",
+    nextRuns: ["2026-06-20T01:00:00.000Z"],
+  }));
+  const validateAutomationSchedule = vi.fn(async () => ({
+    ok: true as const,
+    cron: "0 9 * * *",
+    timezone: "Asia/Shanghai",
+    summary: "Every day at 09:00",
+    nextRuns: ["2026-06-20T01:00:00.000Z"],
+  }));
+  const createAutomation = vi.fn(async (input) => {
+    const automation: AutomationView = {
+      schemaVersion: 1,
+      id: "sf_automation_created",
+      kind: "scheduled_chat",
+      ...input,
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      nextRunAt: "2026-06-20T01:00:00.000Z",
+    };
+    currentAutomations = [automation, ...currentAutomations];
+    return automation;
+  });
+  const updateAutomation = vi.fn(async (input) => {
+    const current = currentAutomations.find((automation) =>
+      automation.id === input.automationId
+    );
+    const updated: AutomationView = {
+      ...(current ?? sampleAutomation()),
+      ...input,
+      id: input.automationId,
+      updatedAt: "2026-06-20T00:00:01.000Z",
+    };
+    currentAutomations = currentAutomations.map((automation) =>
+      automation.id === input.automationId ? updated : automation
+    );
+    return updated;
+  });
+  const deleteAutomation = vi.fn(async (automationId: string) => {
+    currentAutomations = currentAutomations.filter((automation) => automation.id !== automationId);
+  });
+  const runAutomationNow = vi.fn(async (automationId: string) => ({
+    schemaVersion: 1 as const,
+    id: "sf_automation_run_now",
+    automationId,
+    status: "completed" as const,
+    scheduledFor: "2026-06-20T00:00:00.000Z",
+    startedAt: "2026-06-20T00:00:00.000Z",
+    completedAt: "2026-06-20T00:00:01.000Z",
+  }));
   const api = {
     version: "0.1.0",
     settings: {
@@ -860,6 +1072,16 @@ function installApi(options: {
       save: saveMcp,
       testServer: testMcp,
     },
+    automations: {
+      list: vi.fn(async () => currentAutomations),
+      getRuns: vi.fn(async () => []),
+      validateSchedule: validateAutomationSchedule,
+      interpretSchedule: interpretAutomationSchedule,
+      create: createAutomation,
+      update: updateAutomation,
+      delete: deleteAutomation,
+      runNow: runAutomationNow,
+    },
   } as StoryForgeApi;
   Object.defineProperty(window, "storyForge", {
     configurable: true,
@@ -876,7 +1098,36 @@ function installApi(options: {
     setSkillEnabled,
     saveMcp,
     testMcp,
+    interpretAutomationSchedule,
+    validateAutomationSchedule,
+    createAutomation,
+    updateAutomation,
+    deleteAutomation,
+    runAutomationNow,
     emit: (event: AgentEvent) => eventListener?.(event),
+  };
+}
+
+function sampleAutomation(): AutomationView {
+  return {
+    schemaVersion: 1,
+    id: "sf_automation_daily",
+    kind: "scheduled_chat",
+    name: "Daily risk audit",
+    status: "active",
+    workspaceId: "workspace-1",
+    providerId: "deepseek",
+    model: "deepseek-v4-pro",
+    schedule: {
+      sourceText: "每天早上 9 点",
+      cron: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      summary: "Every day at 09:00",
+    },
+    prompt: "Review repository risk.",
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    nextRunAt: "2026-06-20T01:00:00.000Z",
   };
 }
 

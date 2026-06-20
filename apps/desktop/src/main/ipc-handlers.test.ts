@@ -16,6 +16,7 @@ describe("registerIpcHandlers", () => {
 
     expect(fixture.handlers.has(IPC_CHANNELS.providersList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.turnsStart)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.automationsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.skillsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.mcpGet)).toBe(true);
     await expect(
@@ -142,6 +143,50 @@ describe("registerIpcHandlers", () => {
       }),
     ).rejects.toThrow("Invalid IPC payload");
   });
+
+  it("registers Automations APIs with payload validation", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.automationsList)).resolves.toEqual([]);
+    await expect(fixture.invoke(IPC_CHANNELS.automationsValidateSchedule, {
+      cron: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+    })).resolves.toMatchObject({ ok: true });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsInterpretSchedule, {
+      scheduleText: "每天上午 9 点",
+      timezone: "Asia/Shanghai",
+    })).resolves.toMatchObject({ ok: true });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsCreate, {
+      name: "Daily check",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "每天上午 9 点",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Check dependency risk.",
+    })).resolves.toMatchObject({
+      name: "Daily check",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsUpdate, {
+      automationId: "automation-1",
+      status: "paused",
+    })).resolves.toMatchObject({ status: "paused" });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsRunNow, "automation-1"))
+      .resolves.toMatchObject({ automationId: "automation-1" });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsGetRuns, "automation-1"))
+      .resolves.toEqual([]);
+    await expect(fixture.invoke(IPC_CHANNELS.automationsDelete, "automation-1"))
+      .resolves.toBeUndefined();
+    await expect(fixture.invoke(IPC_CHANNELS.automationsCreate, {
+      name: "",
+    })).rejects.toThrow("Invalid IPC payload");
+  });
 });
 
 function createFixture() {
@@ -248,6 +293,60 @@ function createFixture() {
       tools: [],
     })),
   };
+  const automations = {
+    list: vi.fn(async () => []),
+    getRuns: vi.fn(async () => []),
+    validateSchedule: vi.fn(async () => ({
+      ok: true as const,
+      cron: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      summary: "Every day at 09:00",
+      nextRuns: ["2026-06-20T01:00:00.000Z"],
+    })),
+    interpretSchedule: vi.fn(async () => ({
+      ok: true as const,
+      cron: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      summary: "Every day at 09:00",
+      nextRuns: ["2026-06-20T01:00:00.000Z"],
+    })),
+    create: vi.fn(async (input) => ({
+      schemaVersion: 1 as const,
+      id: "automation-1",
+      kind: "scheduled_chat" as const,
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      ...input,
+    })),
+    update: vi.fn(async (input) => ({
+      schemaVersion: 1 as const,
+      id: input.automationId,
+      kind: "scheduled_chat" as const,
+      name: "Daily check",
+      status: "active" as const,
+      workspaceId: "workspace-1",
+      providerId: "deepseek" as const,
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "每天上午 9 点",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Check dependency risk.",
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+      ...input,
+    })),
+    delete: vi.fn(async () => undefined),
+    runNow: vi.fn(async (automationId: string) => ({
+      schemaVersion: 1 as const,
+      id: "run-1",
+      automationId,
+      status: "scheduled" as const,
+      scheduledFor: "2026-06-20T00:00:00.000Z",
+    })),
+  };
   const coordinator = {
     start,
     stop: vi.fn(),
@@ -269,6 +368,7 @@ function createFixture() {
       selectWorkspace: async () => undefined,
       skills,
       mcp,
+      automations,
       selectSkillArchive: async () => "/tmp/skill.zip",
     },
     invoke: async (channel: string, input?: unknown) => {

@@ -1,4 +1,5 @@
 import type { CommandExecutionMode, MessageDeliveryMode, ResponseMode } from "./settings";
+import type { AutomationProposalView } from "./extensions";
 
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
@@ -123,6 +124,14 @@ export type ModelRequestEvent = {
   tools: InspectableModelTool[];
 };
 
+export type AutomationProposalEvent = {
+  type: "automation.proposal";
+  sessionId: SessionId;
+  turnId: TurnId;
+  proposalId: string;
+  proposal: AutomationProposalView;
+};
+
 export type AgentEvent =
   | RuntimeStartedEvent
   | RuntimeCompletedEvent
@@ -133,7 +142,8 @@ export type AgentEvent =
   | PermissionRequestEvent
   | MemoryWriteEvent
   | ResponseFallbackEvent
-  | ModelRequestEvent;
+  | ModelRequestEvent
+  | AutomationProposalEvent;
 
 export function createSessionId(): SessionId {
   const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;

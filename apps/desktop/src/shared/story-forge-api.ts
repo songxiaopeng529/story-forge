@@ -3,13 +3,18 @@ import type {
   AgentEvent,
   AgentStopReason,
   AppSettingsView,
+  AutomationRunView,
+  AutomationView,
   CommandExecutionMode,
+  CreateAutomationInput,
   McpConfigView,
   McpServerView,
   ResponseMode,
+  ScheduleValidationResult,
   SessionId,
   SkillView,
   TurnId,
+  UpdateAutomationInput,
 } from "@story-forge/shared";
 
 export const IPC_CHANNELS = {
@@ -33,6 +38,14 @@ export const IPC_CHANNELS = {
   turnsStop: "story-forge:turns:stop",
   turnEvent: "story-forge:turns:event",
   permissionRespond: "story-forge:permissions:respond",
+  automationsList: "story-forge:automations:list",
+  automationsGetRuns: "story-forge:automations:get-runs",
+  automationsValidateSchedule: "story-forge:automations:validate-schedule",
+  automationsInterpretSchedule: "story-forge:automations:interpret-schedule",
+  automationsCreate: "story-forge:automations:create",
+  automationsUpdate: "story-forge:automations:update",
+  automationsDelete: "story-forge:automations:delete",
+  automationsRunNow: "story-forge:automations:run-now",
   skillsList: "story-forge:skills:list",
   skillsImportZip: "story-forge:skills:import-zip",
   skillsSetEnabled: "story-forge:skills:set-enabled",
@@ -149,6 +162,22 @@ export type StoryForgeApi = {
   };
   permissions: {
     respond(input: { requestId: string; approved: boolean }): Promise<void>;
+  };
+  automations: {
+    list(): Promise<AutomationView[]>;
+    getRuns(automationId: string): Promise<AutomationRunView[]>;
+    validateSchedule(input: {
+      cron: string;
+      timezone: string;
+    }): Promise<ScheduleValidationResult>;
+    interpretSchedule(input: {
+      scheduleText: string;
+      timezone: string;
+    }): Promise<ScheduleValidationResult>;
+    create(input: CreateAutomationInput): Promise<AutomationView>;
+    update(input: UpdateAutomationInput): Promise<AutomationView>;
+    delete(automationId: string): Promise<void>;
+    runNow(automationId: string): Promise<AutomationRunView>;
   };
   skills: {
     list(): Promise<SkillView[]>;

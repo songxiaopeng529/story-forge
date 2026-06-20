@@ -197,4 +197,34 @@ describe("buildTimeline", () => {
 
     expect(items.map((item) => item.type)).toEqual(["user-message"]);
   });
+
+  it("keeps automation proposals as durable timeline items", () => {
+    const items = buildTimeline({
+      session: baseSession,
+      activities: [],
+      activeTurnId: undefined,
+      automationProposals: [{
+        proposalId: "automation-proposal-1",
+        status: "pending",
+        proposal: {
+          name: "Daily risk audit",
+          scheduleText: "每天早上 9 点",
+          cron: "0 9 * * *",
+          timezone: "Asia/Shanghai",
+          summary: "Every day at 09:00",
+          nextRuns: ["2026-06-20T01:00:00.000Z"],
+          prompt: "Review repository risk.",
+          workspaceId: "workspace",
+          providerId: "deepseek",
+          model: "deepseek-v4-pro",
+        },
+      }],
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "automation-proposal",
+      proposalId: "automation-proposal-1",
+      status: "pending",
+    }));
+  });
 });

@@ -56,6 +56,21 @@ const api = {
   permissions: {
     respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.permissionRespond, input),
   },
+  automations: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.automationsList),
+    getRuns: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsGetRuns, automationId),
+    validateSchedule: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsValidateSchedule, input),
+    interpretSchedule: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsInterpretSchedule, input),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationsCreate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationsUpdate, input),
+    delete: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsDelete, automationId),
+    runNow: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsRunNow, automationId),
+  },
   skills: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
     importZip: () => ipcRenderer.invoke(IPC_CHANNELS.skillsImportZip),

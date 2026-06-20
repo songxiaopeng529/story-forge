@@ -1,5 +1,16 @@
-import type { AgentEvent, MessageDeliveryMode, TurnId } from "@story-forge/shared";
+import type {
+  AgentEvent,
+  AutomationProposalView,
+  MessageDeliveryMode,
+  TurnId,
+} from "@story-forge/shared";
 import type { PersistedMessageView, SessionView } from "../shared/story-forge-api";
+
+export type AutomationProposalTimelineState = {
+  proposalId: string;
+  proposal: AutomationProposalView;
+  status: "pending" | "created";
+};
 
 export type TimelineItem =
   | { type: "user-message"; id: string; content: string }
@@ -20,6 +31,13 @@ export type TimelineItem =
       input?: unknown;
       output?: unknown;
     }
+  | {
+      type: "automation-proposal";
+      id: string;
+      proposalId: string;
+      proposal: AutomationProposalView;
+      status: "pending" | "created";
+    }
   | { type: "notice"; id: string; message: string }
   | { type: "error"; id: string; message: string };
 
@@ -27,6 +45,7 @@ export function buildTimeline(input: {
   session: SessionView | undefined;
   activities: AgentEvent[];
   activeTurnId: TurnId | undefined;
+  automationProposals?: AutomationProposalTimelineState[];
 }): TimelineItem[] {
   const items = buildPersistedItems(input.session?.messages ?? []);
   if (input.session?.stopReason && input.session.status !== "completed") {
@@ -49,6 +68,16 @@ export function buildTimeline(input: {
         delivery: "smooth",
       });
     }
+  }
+
+  for (const proposal of input.automationProposals ?? []) {
+    items.push({
+      type: "automation-proposal",
+      id: `automation-proposal-${proposal.proposalId}`,
+      proposalId: proposal.proposalId,
+      proposal: proposal.proposal,
+      status: proposal.status,
+    });
   }
 
   return items;

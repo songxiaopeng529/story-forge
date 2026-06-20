@@ -2,6 +2,7 @@ import { AgentLoop } from "@story-forge/agent-core";
 import type {
   ChatMessage,
   ModelProvider,
+  ProviderId,
   ProviderConnectionConfig,
   ToolCall,
 } from "@story-forge/model-gateway";
@@ -17,12 +18,15 @@ import {
   type TurnId,
 } from "@story-forge/shared";
 import {
+  createAutomationProposalTool,
   createWorkspaceCommandTool,
   createWorkspaceFileTools,
+  type AutomationProposalDraft,
   type WorkspaceCommandPermissionRequest,
   ToolRegistry,
   WorkspaceSandbox,
 } from "@story-forge/tools";
+import { validateSchedule } from "./automation-schedule";
 import type { ProviderConfigStore } from "./provider-config-store";
 import {
   type PersistedMessage,
@@ -142,6 +146,26 @@ export class AgentCoordinator {
     }
   }
 
+  async startAutomationRun(input: {
+    workspaceId: string;
+    providerId: ProviderId;
+    model: string;
+    prompt: string;
+    title?: string;
+  }): Promise<{ sessionId: SessionId; turnId: TurnId }> {
+    const session = await this.sessionRepository.create({
+      workspaceId: input.workspaceId,
+      providerId: input.providerId,
+      model: input.model,
+      ...(input.title ? { title: input.title } : {}),
+    });
+    const { turnId } = await this.start({
+      sessionId: session.id,
+      prompt: input.prompt,
+    });
+    return { sessionId: session.id, turnId };
+  }
+
   async stop(turnId: TurnId): Promise<void> {
     this.activeTurns.get(turnId)?.controller.abort();
   }
@@ -210,6 +234,29 @@ export class AgentCoordinator {
               signal,
             }),
         }),
+        createAutomationProposalTool({
+          validate: (draft) => validateAutomationProposal(draft),
+          emit: (proposal) => {
+            this.emitEvent({
+              type: "automation.proposal",
+              sessionId: session.id,
+              turnId,
+              proposalId: createAutomationProposalId(),
+              proposal: {
+                name: proposal.name,
+                scheduleText: proposal.scheduleText,
+                cron: proposal.cron,
+                timezone: proposal.timezone,
+                summary: proposal.summary,
+                nextRuns: proposal.nextRuns,
+                prompt: proposal.prompt,
+                workspaceId: workspace.id,
+                providerId: session.providerId,
+                model: session.model,
+              },
+            });
+          },
+        }),
       ]);
       const loop = new AgentLoop({
         provider,
@@ -232,7 +279,8 @@ export class AgentCoordinator {
             role: "system",
             content:
               `You are StoryForge, a local coding agent working in ${workspace.path}. `
-              + "Inspect before editing, use workspace-relative paths, and run only necessary development commands.",
+              + "Inspect before editing, use workspace-relative paths, and run only necessary development commands. "
+              + "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation. Never claim the automation is created until the user confirms it.",
           },
           ...(availableSkills.length > 0
             ? [createAvailableSkillsSystemMessage(availableSkills)]
@@ -525,6 +573,27 @@ function createMessageId(): string {
 
 function createPermissionRequestId(): string {
   return `sf_permission_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function createAutomationProposalId(): string {
+  return `sf_automation_proposal_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function validateAutomationProposal(draft: AutomationProposalDraft) {
+  const validation = validateSchedule({
+    cron: draft.cron,
+    timezone: draft.timezone,
+  });
+  if (!validation.ok) {
+    throw new Error(validation.error);
+  }
+  return {
+    ...draft,
+    cron: validation.cron,
+    timezone: validation.timezone,
+    summary: validation.summary,
+    nextRuns: validation.nextRuns,
+  };
 }
 
 function redactSecret(message: string, secret: string | undefined): string {

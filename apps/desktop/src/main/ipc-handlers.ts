@@ -19,6 +19,16 @@ export type IpcRegistrar = {
 
 type SkillsIpcService = Pick<SkillService, "list" | "importZip" | "setEnabled" | "remove">;
 type McpIpcService = Pick<McpConfigService, "get" | "saveRawJson" | "testServer">;
+type AutomationsIpcService = {
+  list(): unknown;
+  getRuns(automationId: string): unknown;
+  validateSchedule(input: { cron: string; timezone: string }): unknown;
+  interpretSchedule(input: { scheduleText: string; timezone: string }): unknown;
+  create(input: z.infer<typeof automationCreateSchema>): unknown;
+  update(input: z.infer<typeof automationUpdateSchema>): unknown;
+  delete(automationId: string): unknown;
+  runNow(automationId: string): unknown;
+};
 
 export type IpcHandlerOptions = {
   ipc: IpcRegistrar;
@@ -30,6 +40,7 @@ export type IpcHandlerOptions = {
   selectWorkspace: () => Promise<string | undefined>;
   skills: SkillsIpcService;
   mcp: McpIpcService;
+  automations: AutomationsIpcService;
   selectSkillArchive: () => Promise<string | undefined>;
 };
 
@@ -69,6 +80,42 @@ const mcpSaveSchema = z.object({
   rawJson: z.string().min(1),
 });
 const mcpServerNameSchema = z.string().min(1);
+const automationIdSchema = z.string().min(1);
+const automationStatusSchema = z.enum(["active", "paused"]);
+const automationProviderIdSchema = providerIdSchema;
+const automationScheduleSchema = z.object({
+  sourceText: z.string(),
+  cron: z.string().min(1),
+  timezone: z.string().min(1),
+  summary: z.string(),
+});
+const automationCreateSchema = z.object({
+  name: z.string().min(1),
+  status: automationStatusSchema,
+  workspaceId: workspaceIdSchema,
+  providerId: automationProviderIdSchema,
+  model: z.string().min(1),
+  schedule: automationScheduleSchema,
+  prompt: z.string().min(1),
+});
+const automationUpdateSchema = z.object({
+  automationId: automationIdSchema,
+  name: z.string().min(1).optional(),
+  status: automationStatusSchema.optional(),
+  workspaceId: workspaceIdSchema.optional(),
+  providerId: automationProviderIdSchema.optional(),
+  model: z.string().min(1).optional(),
+  schedule: automationScheduleSchema.optional(),
+  prompt: z.string().min(1).optional(),
+});
+const automationValidateScheduleSchema = z.object({
+  cron: z.string().min(1),
+  timezone: z.string().min(1),
+});
+const automationInterpretScheduleSchema = z.object({
+  scheduleText: z.string().min(1),
+  timezone: z.string().min(1),
+});
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.settingsGet, z.undefined(), () =>
@@ -183,6 +230,51 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     IPC_CHANNELS.permissionRespond,
     permissionResponseSchema,
     (input) => options.coordinator.respondToPermission(input),
+  );
+  handle(options.ipc, IPC_CHANNELS.automationsList, z.undefined(), () =>
+    options.automations.list()
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsGetRuns,
+    automationIdSchema,
+    (automationId) => options.automations.getRuns(automationId),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsValidateSchedule,
+    automationValidateScheduleSchema,
+    (input) => options.automations.validateSchedule(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsInterpretSchedule,
+    automationInterpretScheduleSchema,
+    (input) => options.automations.interpretSchedule(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsCreate,
+    automationCreateSchema,
+    (input) => options.automations.create(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsUpdate,
+    automationUpdateSchema,
+    (input) => options.automations.update(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsDelete,
+    automationIdSchema,
+    (automationId) => options.automations.delete(automationId),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsRunNow,
+    automationIdSchema,
+    (automationId) => options.automations.runNow(automationId),
   );
   handle(options.ipc, IPC_CHANNELS.skillsList, z.undefined(), () =>
     options.skills.list()

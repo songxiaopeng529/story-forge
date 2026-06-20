@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import { AgentCoordinator } from "./agent-coordinator";
 import { AppSettingsStore } from "./app-settings-store";
+import { AutomationRepository } from "./automation-repository";
+import { AutomationScheduler } from "./automation-scheduler";
+import { AutomationService } from "./automation-service";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { McpConfigService } from "./mcp-config-service";
 import { ProviderConfigStore } from "./provider-config-store";
@@ -56,7 +59,11 @@ async function initializeApplication(): Promise<void> {
   const sessionRepository = new SessionRepository({ rootDir });
   const skillService = new SkillService({ rootDir });
   const mcpConfigService = new McpConfigService({ rootDir });
+  const automationService = new AutomationService({
+    repository: new AutomationRepository({ rootDir }),
+  });
   await sessionRepository.recoverInterruptedSessions();
+  await automationService.recoverRunningRuns();
   const registry = new ProviderRegistry();
   const providerService = new ProviderService({ store: providerStore, registry });
   const coordinator = new AgentCoordinator({
@@ -74,6 +81,14 @@ async function initializeApplication(): Promise<void> {
       }
     },
   });
+  const automationScheduler = new AutomationScheduler({
+    service: automationService,
+    coordinator,
+    onError: (error) => {
+      console.error("Automation scheduler error", error);
+    },
+  });
+  automationScheduler.start();
 
   registerIpcHandlers({
     ipc: ipcMain,
@@ -84,6 +99,7 @@ async function initializeApplication(): Promise<void> {
     coordinator,
     skills: skillService,
     mcp: mcpConfigService,
+    automations: automationScheduler,
     selectWorkspace: async () => {
       const result = await dialog.showOpenDialog({
         properties: ["openDirectory", "createDirectory"],

@@ -505,6 +505,98 @@ describe("AgentCoordinator", () => {
     }));
   });
 
+  it("emits an automation proposal event when the model proposes a scheduled task", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_automation",
+                  name: "automation.proposeCreate",
+                  input: {
+                    name: "Daily risk audit",
+                    scheduleText: "每天早上 9 点",
+                    cron: "0 9 * * *",
+                    timezone: "Asia/Shanghai",
+                    prompt: "Review the repository risk.",
+                  },
+                }],
+              }
+            : { content: "I prepared the automation for confirmation.", toolCalls: [] };
+        }),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "每天早上 9 点帮我检查风险",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "automation.proposal",
+      sessionId: fixture.session.id,
+      turnId,
+      proposal: expect.objectContaining({
+        name: "Daily risk audit",
+        workspaceId: fixture.workspace.id,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "automation.proposeCreate",
+      ok: true,
+    }));
+  });
+
+  it("starts an automation run in a fresh session", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Automation done.", toolCalls: [] })),
+      },
+      emit: () => undefined,
+    });
+
+    const { sessionId, turnId } = await coordinator.startAutomationRun({
+      workspaceId: fixture.workspace.id,
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      title: "Automation: Daily audit",
+      prompt: "Review risk.",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    await expect(fixture.sessionRepository.get(sessionId)).resolves.toMatchObject({
+      workspaceId: fixture.workspace.id,
+      title: "Automation: Daily audit",
+      messages: [
+        expect.objectContaining({ role: "user", content: "Review risk." }),
+        expect.objectContaining({ role: "assistant", content: "Automation done." }),
+      ],
+    });
+  });
+
   it("rejects unknown slash skill invocations before appending a user message", async () => {
     const fixture = await createFixture();
     const coordinator = new AgentCoordinator({

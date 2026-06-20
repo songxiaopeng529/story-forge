@@ -8,6 +8,7 @@ import {
   type SessionId,
   type TurnId,
 } from "./events";
+import type { AutomationView, CreateAutomationInput } from "./extensions";
 import type { AppSettingsView, CommandExecutionMode, ResponseMode } from "./settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
@@ -126,6 +127,25 @@ const modelRequestEvent = {
   ],
 } satisfies AgentEvent;
 
+const automationProposalEvent = {
+  type: "automation.proposal",
+  sessionId,
+  turnId,
+  proposalId: "automation-proposal-1",
+  proposal: {
+    name: "Daily dependency risk check",
+    workspaceId: "workspace-1",
+    providerId: "deepseek",
+    model: "deepseek-v4-pro",
+    scheduleText: "每天上午 9 点",
+    cron: "0 9 * * *",
+    timezone: "Asia/Shanghai",
+    summary: "Every day at 09:00",
+    nextRuns: ["2026-06-20T01:00:00.000Z"],
+    prompt: "检查当前项目的依赖风险。",
+  },
+} satisfies AgentEvent;
+
 const agentEventFixtures = [
   runtimeStartedEvent,
   runtimeCompletedEvent,
@@ -138,6 +158,7 @@ const agentEventFixtures = [
   permissionRequestEvent,
   memoryWriteEvent,
   modelRequestEvent,
+  automationProposalEvent,
 ] satisfies AgentEvent[];
 
 describe("createSessionId", () => {
@@ -175,6 +196,39 @@ describe("settings types", () => {
 
     expect(modes).toEqual(["sentinel", "cruise", "unleashed"]);
   });
+
+  it("accepts automation view and create input shapes", () => {
+    const automation = {
+      schemaVersion: 1,
+      id: "sf_automation_daily",
+      kind: "scheduled_chat",
+      name: "Daily check",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "daily at 9",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Check dependency risk.",
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    } satisfies AutomationView;
+    const input = {
+      name: automation.name,
+      status: automation.status,
+      workspaceId: automation.workspaceId,
+      providerId: automation.providerId,
+      model: automation.model,
+      schedule: automation.schedule,
+      prompt: automation.prompt,
+    } satisfies CreateAutomationInput;
+
+    expect(input.schedule.cron).toBe("0 9 * * *");
+  });
 });
 
 describe("AgentEvent", () => {
@@ -188,6 +242,11 @@ describe("AgentEvent", () => {
   it("allows model request inspection events without marking them terminal", () => {
     expect(modelRequestEvent.messages[0]).toMatchObject({ role: "system" });
     expect(isTerminalAgentEvent(modelRequestEvent)).toBe(false);
+  });
+
+  it("allows automation proposal events without marking them terminal", () => {
+    expect(automationProposalEvent.proposal.cron).toBe("0 9 * * *");
+    expect(isTerminalAgentEvent(automationProposalEvent)).toBe(false);
   });
 });
 

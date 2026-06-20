@@ -5,7 +5,7 @@ import type {
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import { buildTimeline } from "../timeline";
+import { buildTimeline, type AutomationProposalTimelineState } from "../timeline";
 import { ConversationTimeline } from "./conversation-timeline";
 import { ModelRequestDrawer } from "./model-request-drawer";
 
@@ -14,6 +14,7 @@ export function AgentWorkspace(props: {
   workspace: WorkspaceView | undefined;
   session: SessionView | undefined;
   activities: AgentEvent[];
+  automationProposals: AutomationProposalTimelineState[];
   modelRequests: ModelRequestEvent[];
   developerMode: boolean;
   modelInspectorOpen: boolean;
@@ -31,6 +32,8 @@ export function AgentWorkspace(props: {
   onOpenWorkspace: () => void;
   onModelInspectorOpen: () => void;
   onModelInspectorClose: () => void;
+  onCreateAutomationProposal: (proposalId: string) => void;
+  onCancelAutomationProposal: (proposalId: string) => void;
 }) {
   const [title, setTitle] = useState("");
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
@@ -38,6 +41,7 @@ export function AgentWorkspace(props: {
     session: props.session,
     activities: props.activities,
     activeTurnId: props.activeTurnId,
+    automationProposals: props.automationProposals,
   });
   const timelineFingerprint = timelineItems.map((item) => {
     if (item.type === "assistant-message") {
@@ -157,7 +161,11 @@ export function AgentWorkspace(props: {
                 Ask StoryForge to inspect code, edit workspace files, or run an allowed development command.
               </div>
             ) : (
-              <ConversationTimeline items={timelineItems} />
+              <ConversationTimeline
+                items={timelineItems}
+                onCancelAutomationProposal={props.onCancelAutomationProposal}
+                onCreateAutomationProposal={props.onCreateAutomationProposal}
+              />
             )}
           </div>
 
