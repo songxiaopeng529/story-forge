@@ -90,6 +90,11 @@ function isValidTimezone(timezone: string): boolean {
 
 function cronFromNaturalLanguage(text: string): string | undefined {
   const normalized = text.toLowerCase();
+  const minuteInterval = parseMinuteInterval(normalized);
+  if (minuteInterval !== undefined) {
+    return minuteInterval === 1 ? "* * * * *" : `*/${minuteInterval} * * * *`;
+  }
+
   const time = parseTime(normalized);
 
   if (/(每小时|hourly|every hour)/i.test(text)) {
@@ -106,6 +111,32 @@ function cronFromNaturalLanguage(text: string): string | undefined {
   }
 
   return undefined;
+}
+
+function parseMinuteInterval(text: string): number | undefined {
+  if (/(每分钟|每隔一分钟|every minute)/i.test(text)) {
+    return 1;
+  }
+
+  const chineseMatch = text.match(/每(?:隔)?\s*(\d{1,2})\s*分钟/);
+  if (chineseMatch) {
+    return clampMinuteInterval(Number(chineseMatch[1]));
+  }
+
+  const englishMatch = text.match(/every\s+(\d{1,2})\s+minutes?/i);
+  if (englishMatch) {
+    return clampMinuteInterval(Number(englishMatch[1]));
+  }
+
+  return undefined;
+}
+
+function clampMinuteInterval(value: number): number | undefined {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  const interval = Math.trunc(value);
+  return interval >= 1 && interval <= 59 ? interval : undefined;
 }
 
 function parseTime(text: string): { hour: number; minute: number } {
@@ -157,6 +188,13 @@ function parseWeekday(text: string): number | undefined {
 
 function summarizeCron(cron: string): string {
   const [minute, hour, dayOfMonth, month, dayOfWeek] = cron.split(" ");
+  if (minute === "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return "Every minute";
+  }
+  const minuteInterval = minute?.match(/^\*\/(\d+)$/);
+  if (minuteInterval && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Every ${minuteInterval[1]} minutes`;
+  }
   if (minute === "0" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
     return "Every hour";
   }

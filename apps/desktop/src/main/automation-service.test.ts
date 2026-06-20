@@ -53,6 +53,34 @@ describe("AutomationService", () => {
     });
   });
 
+  it("interprets minute interval schedules from the current time", async () => {
+    const service = await createService();
+
+    expect(service.interpretSchedule({
+      scheduleText: "从今天现在此时此刻开始，每隔1分钟执行一次",
+      timezone: "Asia/Shanghai",
+    })).toEqual({
+      ok: true,
+      cron: "* * * * *",
+      timezone: "Asia/Shanghai",
+      summary: "Every minute (从今天现在此时此刻开始，每隔1分钟执行一次)",
+      nextRuns: [
+        "2026-06-20T00:01:00.000Z",
+        "2026-06-20T00:02:00.000Z",
+        "2026-06-20T00:03:00.000Z",
+      ],
+    });
+
+    expect(service.interpretSchedule({
+      scheduleText: "every 5 minutes",
+      timezone: "UTC",
+    })).toMatchObject({
+      ok: true,
+      cron: "*/5 * * * *",
+      summary: "Every 5 minutes (every 5 minutes)",
+    });
+  });
+
   it("creates, updates, pauses, deletes, and lists automations", async () => {
     const service = await createService();
     const created = await service.create({
