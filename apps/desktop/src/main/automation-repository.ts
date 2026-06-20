@@ -10,6 +10,11 @@ import { z } from "zod";
 import { readJson, writeJsonAtomic } from "./atomic-json";
 
 const providerIdSchema = z.enum(["deepseek", "openai", "anthropic", "openrouter", "volcano"]);
+const sessionIdSchema = z.custom<`sf_session_${string}`>(
+  (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
+  { message: "Invalid session id" },
+);
+const automationKindSchema = z.enum(["scheduled_chat", "thread_chat"]);
 const automationStatusSchema = z.enum(["active", "paused"]);
 const automationRunStatusSchema = z.enum(["scheduled", "running", "completed", "failed", "skipped"]);
 const automationScheduleSchema = z.object({
@@ -21,12 +26,13 @@ const automationScheduleSchema = z.object({
 const automationSchema: z.ZodType<AutomationView> = z.object({
   schemaVersion: z.literal(1),
   id: z.string().min(1),
-  kind: z.literal("scheduled_chat"),
+  kind: automationKindSchema,
   name: z.string().min(1),
   status: automationStatusSchema,
   workspaceId: z.string().min(1),
   providerId: providerIdSchema,
   model: z.string().min(1),
+  sessionId: sessionIdSchema.optional(),
   schedule: automationScheduleSchema,
   prompt: z.string().min(1),
   createdAt: z.string(),
@@ -43,10 +49,7 @@ const automationRunSchema: z.ZodType<AutomationRunView> = z.object({
   schemaVersion: z.literal(1),
   id: z.string().min(1),
   automationId: z.string().min(1),
-  sessionId: z.custom<`sf_session_${string}`>(
-    (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
-    { message: "Invalid session id" },
-  ).optional(),
+  sessionId: sessionIdSchema.optional(),
   status: automationRunStatusSchema,
   scheduledFor: z.string(),
   startedAt: z.string().optional(),
@@ -94,12 +97,13 @@ export class AutomationRepository {
     const automation: AutomationView = {
       schemaVersion: 1,
       id: createAutomationId(),
-      kind: "scheduled_chat",
+      kind: input.kind ?? "scheduled_chat",
       name: input.name.trim(),
       status: input.status,
       workspaceId: input.workspaceId,
       providerId: input.providerId,
       model: input.model.trim(),
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
       schedule: input.schedule,
       prompt: input.prompt.trim(),
       createdAt: now,
@@ -126,9 +130,11 @@ export class AutomationRepository {
       ...current,
       ...(input.name === undefined ? {} : { name: input.name.trim() }),
       ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.kind === undefined ? {} : { kind: input.kind }),
       ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
       ...(input.providerId === undefined ? {} : { providerId: input.providerId }),
       ...(input.model === undefined ? {} : { model: input.model.trim() }),
+      ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
       ...(input.prompt === undefined ? {} : { prompt: input.prompt.trim() }),
       updatedAt: new Date().toISOString(),

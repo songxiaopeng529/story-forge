@@ -551,6 +551,19 @@ describe("App", () => {
     await waitFor(() => expect(screen.queryByText("Daily risk audit")).not.toBeInTheDocument());
   });
 
+  it("shows automation scope labels for scheduled chats and session timers", async () => {
+    installApi({
+      automations: [sampleAutomation(), sampleThreadAutomation()],
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Automations" }));
+
+    expect(await screen.findByText("New session")).toBeInTheDocument();
+    expect(screen.getByText("Session timer")).toBeInTheDocument();
+    expect(screen.getByText("Session: Project session")).toBeInTheDocument();
+  });
+
   it("creates an automation from a chat proposal card", async () => {
     const fixture = installApi();
     render(<App />);
@@ -561,10 +574,11 @@ describe("App", () => {
         type: "automation.proposal",
         sessionId: "sf_session_existing",
         turnId: "sf_turn_active",
-        proposalId: "automation-proposal-1",
-        proposal: {
-          name: "Daily risk audit",
-          scheduleText: "每天早上 9 点",
+          proposalId: "automation-proposal-1",
+          proposal: {
+            kind: "scheduled_chat",
+            name: "Daily risk audit",
+            scheduleText: "每天早上 9 点",
           cron: "0 9 * * *",
           timezone: "Asia/Shanghai",
           summary: "Every day at 09:00",
@@ -581,6 +595,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create automation Daily risk audit" }));
 
     await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith({
+      kind: "scheduled_chat",
       name: "Daily risk audit",
       status: "active",
       workspaceId: "workspace-1",
@@ -607,10 +622,11 @@ describe("App", () => {
         type: "automation.proposal",
         sessionId: "sf_session_existing",
         turnId: "sf_turn_active",
-        proposalId: "automation-proposal-2",
-        proposal: {
-          name: "Daily risk audit",
-          scheduleText: "每天早上 9 点",
+          proposalId: "automation-proposal-2",
+          proposal: {
+            kind: "scheduled_chat",
+            name: "Daily risk audit",
+            scheduleText: "每天早上 9 点",
           cron: "0 9 * * *",
           timezone: "Asia/Shanghai",
           summary: "Every day at 09:00",
@@ -628,6 +644,96 @@ describe("App", () => {
     }));
 
     await waitFor(() => expect(screen.queryByText("Automation proposal")).not.toBeInTheDocument());
+  });
+
+  it("creates a thread timer from the chat header", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create session timer" }));
+    fireEvent.change(screen.getByLabelText("Schedule description"), {
+      target: { value: "每小时" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate schedule" }));
+    await waitFor(() => expect(fixture.interpretAutomationSchedule).toHaveBeenCalledWith({
+      scheduleText: "每小时",
+      timezone: expect.any(String),
+    }));
+    fireEvent.change(screen.getByLabelText("Timer name"), {
+      target: { value: "Thread follow-up" },
+    });
+    fireEvent.change(screen.getByLabelText("Timer prompt"), {
+      target: { value: "Continue the current investigation." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create timer" }));
+
+    await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith({
+      kind: "thread_chat",
+      name: "Thread follow-up",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "每小时",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      },
+      prompt: "Continue the current investigation.",
+    }));
+  });
+
+  it("creates a thread timer from a chat proposal card", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "automation.proposal",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        proposalId: "automation-proposal-thread",
+        proposal: {
+          kind: "thread_chat",
+          name: "Thread follow-up",
+          sessionId: "sf_session_existing",
+          scheduleText: "每小时",
+          cron: "0 * * * *",
+          timezone: "Asia/Shanghai",
+          summary: "Every hour",
+          nextRuns: ["2026-06-20T01:00:00.000Z"],
+          prompt: "Continue this session.",
+          workspaceId: "workspace-1",
+          providerId: "deepseek",
+          model: "deepseek-v4-pro",
+        },
+      });
+    });
+
+    expect(await screen.findByText("Thread timer proposal")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create timer Thread follow-up" }));
+
+    await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith({
+      kind: "thread_chat",
+      name: "Thread follow-up",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "每小时",
+        cron: "0 * * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every hour",
+      },
+      prompt: "Continue this session.",
+    }));
+    expect(await screen.findByText("Thread timer created")).toBeInTheDocument();
   });
 
   it("loads and saves the global response mode from Settings", async () => {
@@ -1125,6 +1231,30 @@ function sampleAutomation(): AutomationView {
       summary: "Every day at 09:00",
     },
     prompt: "Review repository risk.",
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    nextRunAt: "2026-06-20T01:00:00.000Z",
+  };
+}
+
+function sampleThreadAutomation(): AutomationView {
+  return {
+    schemaVersion: 1,
+    id: "sf_automation_thread",
+    kind: "thread_chat",
+    name: "Thread follow-up",
+    status: "active",
+    workspaceId: "workspace-1",
+    providerId: "deepseek",
+    model: "deepseek-v4-pro",
+    sessionId: "sf_session_existing",
+    schedule: {
+      sourceText: "每小时",
+      cron: "0 * * * *",
+      timezone: "Asia/Shanghai",
+      summary: "Every hour",
+    },
+    prompt: "Continue the current investigation.",
     createdAt: "2026-06-20T00:00:00.000Z",
     updatedAt: "2026-06-20T00:00:00.000Z",
     nextRunAt: "2026-06-20T01:00:00.000Z",

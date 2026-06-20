@@ -14,12 +14,14 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   ProviderView,
+  SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
 import { formatError } from "../renderer-utils";
 
 export function AutomationsPage(props: {
   providers: ProviderView[];
+  sessions: SessionView[];
   workspaces: WorkspaceView[];
   error: string | undefined;
   onError: (error: string | undefined) => void;
@@ -83,9 +85,14 @@ export function AutomationsPage(props: {
 
   async function generateSchedule(): Promise<void> {
     props.onError(undefined);
+    const trimmedScheduleText = scheduleText.trim();
+    if (!trimmedScheduleText) {
+      props.onError("Please enter a schedule description first");
+      return;
+    }
     try {
       const nextValidation = await window.storyForge.automations.interpretSchedule({
-        scheduleText,
+        scheduleText: trimmedScheduleText,
         timezone,
       });
       setValidation(nextValidation);
@@ -390,6 +397,7 @@ export function AutomationsPage(props: {
                   <AutomationRow
                     automation={automation}
                     key={automation.id}
+                    sessionTitle={getSessionTitle(automation, props.sessions)}
                     onDelete={() => void deleteAutomation(automation)}
                     onRunNow={() => void runNow(automation)}
                     onStatusChange={(status) => void updateStatus(automation, status)}
@@ -406,17 +414,22 @@ export function AutomationsPage(props: {
 
 function AutomationRow(props: {
   automation: AutomationView;
+  sessionTitle: string | undefined;
   onRunNow: () => void;
   onStatusChange: (status: AutomationView["status"]) => void;
   onDelete: () => void;
 }) {
   const isActive = props.automation.status === "active";
+  const threadTimer = props.automation.kind === "thread_chat";
   return (
     <div className="p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold">{props.automation.name}</h3>
+            <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-forge-ember">
+              {threadTimer ? "Session timer" : "New session"}
+            </span>
             <span
               className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
                 isActive
@@ -430,6 +443,11 @@ function AutomationRow(props: {
           <div className="mt-1 text-xs text-slate-500">
             {props.automation.schedule.summary} · {props.automation.schedule.timezone}
           </div>
+          {threadTimer ? (
+            <div className="mt-1 text-xs text-slate-500">
+              Session: {props.sessionTitle ?? props.automation.sessionId ?? "missing"}
+            </div>
+          ) : null}
           <div className="mt-2 text-sm text-slate-700 line-clamp-2">
             {props.automation.prompt}
           </div>
@@ -497,4 +515,14 @@ function formatDateTime(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function getSessionTitle(
+  automation: AutomationView,
+  sessions: SessionView[],
+): string | undefined {
+  if (automation.kind !== "thread_chat" || !automation.sessionId) {
+    return undefined;
+  }
+  return sessions.find((session) => session.id === automation.sessionId)?.title;
 }

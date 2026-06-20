@@ -82,7 +82,12 @@ const mcpSaveSchema = z.object({
 const mcpServerNameSchema = z.string().min(1);
 const automationIdSchema = z.string().min(1);
 const automationStatusSchema = z.enum(["active", "paused"]);
+const automationKindSchema = z.enum(["scheduled_chat", "thread_chat"]);
 const automationProviderIdSchema = providerIdSchema;
+const automationSessionIdSchema = z.custom<`sf_session_${string}`>(
+  (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
+  { message: "Invalid session id" },
+);
 const automationScheduleSchema = z.object({
   sourceText: z.string(),
   cron: z.string().min(1),
@@ -91,20 +96,24 @@ const automationScheduleSchema = z.object({
 });
 const automationCreateSchema = z.object({
   name: z.string().min(1),
+  kind: automationKindSchema.optional(),
   status: automationStatusSchema,
   workspaceId: workspaceIdSchema,
   providerId: automationProviderIdSchema,
   model: z.string().min(1),
+  sessionId: automationSessionIdSchema.optional(),
   schedule: automationScheduleSchema,
   prompt: z.string().min(1),
 });
 const automationUpdateSchema = z.object({
   automationId: automationIdSchema,
+  kind: automationKindSchema.optional(),
   name: z.string().min(1).optional(),
   status: automationStatusSchema.optional(),
   workspaceId: workspaceIdSchema.optional(),
   providerId: automationProviderIdSchema.optional(),
   model: z.string().min(1).optional(),
+  sessionId: automationSessionIdSchema.optional(),
   schedule: automationScheduleSchema.optional(),
   prompt: z.string().min(1).optional(),
 });

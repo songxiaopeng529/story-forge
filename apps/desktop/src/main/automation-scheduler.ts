@@ -11,6 +11,10 @@ import { createAutomationRun } from "./automation-repository";
 import type { AutomationService } from "./automation-service";
 
 type AutomationCoordinator = {
+  start(input: {
+    sessionId: SessionId;
+    prompt: string;
+  }): Promise<{ turnId: TurnId }>;
   startAutomationRun(input: {
     workspaceId: string;
     providerId: AutomationView["providerId"];
@@ -146,6 +150,9 @@ export class AutomationScheduler {
           scheduledFor,
           status: "skipped",
         }),
+        ...(automation.kind === "thread_chat" && automation.sessionId
+          ? { sessionId: automation.sessionId }
+          : {}),
         error: "previous-run-still-active",
       });
     }
@@ -157,17 +164,14 @@ export class AutomationScheduler {
         scheduledFor,
         status: "running",
       }),
+      ...(automation.kind === "thread_chat" && automation.sessionId
+        ? { sessionId: automation.sessionId }
+        : {}),
       startedAt: this.now().toISOString(),
     });
 
     try {
-      const { sessionId, turnId } = await this.coordinator.startAutomationRun({
-        workspaceId: automation.workspaceId,
-        providerId: automation.providerId,
-        model: automation.model,
-        title: `Automation: ${automation.name}`,
-        prompt: automation.prompt,
-      });
+      const { sessionId, turnId } = await this.startAutomationTurn(automation);
       run = await this.service.updateRun({
         ...run,
         sessionId,
@@ -179,11 +183,15 @@ export class AutomationScheduler {
         completedAt: this.now().toISOString(),
       });
     } catch (error) {
+      const message = formatRunError(error);
+      const status = message.startsWith("Session already has an active turn:")
+        ? "skipped"
+        : "failed";
       return await this.service.updateRun({
         ...run,
-        status: "failed",
+        status,
         completedAt: this.now().toISOString(),
-        error: formatRunError(error),
+        error: status === "skipped" ? "session-already-running" : message,
       });
     } finally {
       this.runningAutomationIds.delete(automation.id);
@@ -194,6 +202,32 @@ export class AutomationScheduler {
       }
       await this.refresh();
     }
+  }
+
+  private async startAutomationTurn(
+    automation: AutomationView,
+  ): Promise<{ sessionId: SessionId; turnId: TurnId }> {
+    if (automation.kind === "thread_chat") {
+      if (!automation.sessionId) {
+        throw new Error("session-not-found");
+      }
+      const { turnId } = await this.coordinator.start({
+        sessionId: automation.sessionId,
+        prompt: automation.prompt,
+      });
+      return {
+        sessionId: automation.sessionId,
+        turnId,
+      };
+    }
+
+    return this.coordinator.startAutomationRun({
+      workspaceId: automation.workspaceId,
+      providerId: automation.providerId,
+      model: automation.model,
+      title: `Automation: ${automation.name}`,
+      prompt: automation.prompt,
+    });
   }
 }
 

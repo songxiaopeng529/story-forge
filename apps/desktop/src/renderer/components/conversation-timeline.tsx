@@ -76,6 +76,10 @@ function AutomationProposalCard(props: {
 }) {
   const { proposal } = props.item;
   const created = props.item.status === "created";
+  const threadTimer = proposal.kind === "thread_chat";
+  const noun = threadTimer ? "timer" : "automation";
+  const pendingTitle = threadTimer ? "Thread timer proposal" : "Automation proposal";
+  const createdTitle = threadTimer ? "Thread timer created" : "Automation created";
 
   return (
     <article className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm">
@@ -86,7 +90,7 @@ function AutomationProposalCard(props: {
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
             <div className="font-semibold text-slate-900">
-              {created ? "Automation created" : "Automation proposal"}
+              {created ? createdTitle : pendingTitle}
             </div>
             <div className="text-xs text-slate-500">{proposal.timezone}</div>
           </div>
@@ -100,16 +104,16 @@ function AutomationProposalCard(props: {
           {created ? null : (
             <div className="mt-3 flex items-center gap-2">
               <button
-                aria-label={`Create automation ${proposal.name}`}
+                aria-label={`Create ${noun} ${proposal.name}`}
                 className="inline-flex items-center gap-2 rounded-md bg-forge-ember px-3 py-2 text-xs font-medium text-white"
                 onClick={() => props.onCreate?.(props.item.proposalId)}
                 type="button"
               >
                 <Check size={14} />
-                Create automation
+                Create {noun}
               </button>
               <button
-                aria-label={`Cancel automation ${proposal.name}`}
+                aria-label={`Cancel ${noun} ${proposal.name}`}
                 className="inline-flex items-center gap-2 rounded-md border border-orange-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-orange-100"
                 onClick={() => props.onCancel?.(props.item.proposalId)}
                 type="button"

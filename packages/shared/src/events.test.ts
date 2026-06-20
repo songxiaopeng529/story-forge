@@ -133,6 +133,7 @@ const automationProposalEvent = {
   turnId,
   proposalId: "automation-proposal-1",
   proposal: {
+    kind: "scheduled_chat",
     name: "Daily dependency risk check",
     workspaceId: "workspace-1",
     providerId: "deepseek",
@@ -229,6 +230,43 @@ describe("settings types", () => {
 
     expect(input.schedule.cron).toBe("0 9 * * *");
   });
+
+  it("accepts thread timer automation shapes", () => {
+    const automation = {
+      schemaVersion: 1,
+      id: "sf_automation_thread",
+      kind: "thread_chat",
+      name: "Build monitor",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "every hour",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "Every hour",
+      },
+      prompt: "Check build status in this session.",
+      createdAt: "2026-06-20T00:00:00.000Z",
+      updatedAt: "2026-06-20T00:00:00.000Z",
+    } satisfies AutomationView;
+    const input = {
+      kind: automation.kind,
+      name: automation.name,
+      status: automation.status,
+      workspaceId: automation.workspaceId,
+      providerId: automation.providerId,
+      model: automation.model,
+      sessionId: automation.sessionId,
+      schedule: automation.schedule,
+      prompt: automation.prompt,
+    } satisfies CreateAutomationInput;
+
+    expect(input.kind).toBe("thread_chat");
+    expect(input.sessionId).toBe("sf_session_existing");
+  });
 });
 
 describe("AgentEvent", () => {
@@ -246,6 +284,7 @@ describe("AgentEvent", () => {
 
   it("allows automation proposal events without marking them terminal", () => {
     expect(automationProposalEvent.proposal.cron).toBe("0 9 * * *");
+    expect(automationProposalEvent.proposal.kind).toBe("scheduled_chat");
     expect(isTerminalAgentEvent(automationProposalEvent)).toBe(false);
   });
 });

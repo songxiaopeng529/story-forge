@@ -1,6 +1,7 @@
 import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
+  AutomationView,
   CommandExecutionMode,
   ModelRequestEvent,
   PermissionRequestEvent,
@@ -35,6 +36,7 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [automations, setAutomations] = useState<AutomationView[]>([]);
   const [automationProposals, setAutomationProposals] =
     useState<Record<string, AutomationProposalTimelineState[]>>({});
   const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
@@ -64,6 +66,13 @@ export function App() {
     (provider) => provider.providerId === selectedProviderId,
   );
   const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
+  const selectedSessionTimerCount = selectedSessionId
+    ? automations.filter((automation) =>
+      automation.kind === "thread_chat"
+      && automation.sessionId === selectedSessionId
+      && automation.status === "active"
+    ).length
+    : 0;
   const currentPermissionRequest = permissionRequests[0];
 
   useEffect(() => {
@@ -122,11 +131,18 @@ export function App() {
 
     void (async () => {
       try {
-        const [nextSettings, nextProviders, nextWorkspaces, nextSessions] = await Promise.all([
+        const [
+          nextSettings,
+          nextProviders,
+          nextWorkspaces,
+          nextSessions,
+          nextAutomations,
+        ] = await Promise.all([
           window.storyForge.settings.get(),
           window.storyForge.providers.list(),
           window.storyForge.workspaces.list(),
           window.storyForge.sessions.list(),
+          window.storyForge.automations.list(),
         ]);
         if (disposed) {
           return;
@@ -140,6 +156,7 @@ export function App() {
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
+        setAutomations(nextAutomations);
         const defaultProvider = nextProviders.find((provider) => provider.isDefault)
           ?? nextProviders[0];
         if (defaultProvider) {
@@ -427,7 +444,8 @@ export function App() {
     setError(undefined);
     try {
       const { proposal } = item;
-      await window.storyForge.automations.create({
+      const created = await window.storyForge.automations.create({
+        kind: proposal.kind,
         name: proposal.name,
         status: "active",
         workspaceId: proposal.workspaceId,
@@ -440,7 +458,9 @@ export function App() {
           summary: proposal.summary,
         },
         prompt: proposal.prompt,
+        ...(proposal.sessionId ? { sessionId: proposal.sessionId } : {}),
       });
+      setAutomations((current) => [created, ...current]);
       setAutomationProposals((current) => ({
         ...current,
         [selectedSessionId]: (current[selectedSessionId] ?? []).map((proposal) =>
@@ -452,6 +472,10 @@ export function App() {
     } catch (createError) {
       setError(formatError(createError));
     }
+  }
+
+  function handleSessionTimerCreated(automation: AutomationView): void {
+    setAutomations((current) => [automation, ...current]);
   }
 
   function cancelAutomationProposal(proposalId: string): void {
@@ -514,6 +538,7 @@ export function App() {
       ) : page === "automations" ? (
         <AutomationsPage
           providers={providers}
+          sessions={sessions}
           workspaces={workspaces}
           error={error}
           onError={setError}
@@ -554,6 +579,7 @@ export function App() {
             modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
             developerMode={developerMode}
             modelInspectorOpen={modelInspectorOpen}
+            sessionTimerCount={selectedSessionTimerCount}
             activeTurnId={activeTurnId}
             prompt={prompt}
             error={error}
@@ -572,6 +598,8 @@ export function App() {
             onOpenWorkspace={() => void openWorkspace()}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
+            onSessionTimerCreated={handleSessionTimerCreated}
+            onError={setError}
             onCreateAutomationProposal={(proposalId) =>
               void createAutomationFromProposal(proposalId)}
             onCancelAutomationProposal={cancelAutomationProposal}

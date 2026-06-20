@@ -89,6 +89,51 @@ describe("AutomationService", () => {
     await expect(service.list()).resolves.toEqual([]);
   });
 
+  it("creates a thread timer bound to an existing session id", async () => {
+    const service = await createService();
+
+    await expect(service.create({
+      name: "Thread timer",
+      kind: "thread_chat",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "hourly",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "",
+      },
+      prompt: "Check this session.",
+    })).resolves.toMatchObject({
+      kind: "thread_chat",
+      sessionId: "sf_session_existing",
+      nextRunAt: "2026-06-20T01:00:00.000Z",
+    });
+  });
+
+  it("rejects thread timers without a session id", async () => {
+    const service = await createService();
+
+    await expect(service.create({
+      name: "Broken thread timer",
+      kind: "thread_chat",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "hourly",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "",
+      },
+      prompt: "Check this session.",
+    })).rejects.toThrow("Thread timers require a session id.");
+  });
+
   it("caps run history at the latest 50 records", async () => {
     const service = await createService();
     const automation = await service.create({

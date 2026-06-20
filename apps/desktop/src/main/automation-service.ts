@@ -1,4 +1,5 @@
 import type {
+  AutomationKind,
   AutomationRunView,
   AutomationView,
   CreateAutomationInput,
@@ -58,6 +59,8 @@ export class AutomationService {
   }
 
   async create(input: CreateAutomationInput): Promise<AutomationView> {
+    const kind = normalizeAutomationKind(input.kind);
+    ensureThreadTimerHasSession(kind, input.sessionId);
     const validation = this.validateSchedule({
       cron: input.schedule.cron,
       timezone: input.schedule.timezone,
@@ -68,6 +71,7 @@ export class AutomationService {
     const nextRunAt = input.status === "active" ? validation.nextRuns[0] : undefined;
     return this.repository.create({
       ...input,
+      kind,
       schedule: {
         ...input.schedule,
         cron: validation.cron,
@@ -80,6 +84,9 @@ export class AutomationService {
 
   async update(input: UpdateAutomationInput): Promise<AutomationView> {
     const current = await this.repository.get(input.automationId);
+    const kind = normalizeAutomationKind(input.kind ?? current.kind);
+    const sessionId = input.sessionId ?? current.sessionId;
+    ensureThreadTimerHasSession(kind, sessionId);
     const schedule = input.schedule ?? current.schedule;
     const status = input.status ?? current.status;
     const validation = this.validateSchedule({
@@ -91,8 +98,12 @@ export class AutomationService {
     }
     const updateInput: UpdateAutomationInput & { nextRunAt?: string | undefined } = {
       ...input,
+      kind,
       nextRunAt: status === "active" ? validation.nextRuns[0] : undefined,
     };
+    if (sessionId) {
+      updateInput.sessionId = sessionId;
+    }
     if (input.schedule) {
       updateInput.schedule = {
         ...input.schedule,
@@ -131,5 +142,18 @@ export class AutomationService {
 
   recoverRunningRuns(): Promise<void> {
     return this.repository.recoverRunningRuns();
+  }
+}
+
+function normalizeAutomationKind(kind: AutomationKind | undefined): AutomationKind {
+  return kind ?? "scheduled_chat";
+}
+
+function ensureThreadTimerHasSession(
+  kind: AutomationKind,
+  sessionId: AutomationView["sessionId"],
+): void {
+  if (kind === "thread_chat" && !sessionId) {
+    throw new Error("Thread timers require a session id.");
   }
 }

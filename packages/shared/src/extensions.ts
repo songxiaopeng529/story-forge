@@ -41,7 +41,7 @@ export type McpConfigView = {
 
 export type AutomationStatus = "active" | "paused";
 export type AutomationRunStatus = "scheduled" | "running" | "completed" | "failed" | "skipped";
-export type AutomationKind = "scheduled_chat";
+export type AutomationKind = "scheduled_chat" | "thread_chat";
 
 export type AutomationScheduleView = {
   sourceText: string;
@@ -59,6 +59,7 @@ export type AutomationView = {
   workspaceId: string;
   providerId: "deepseek" | "openai" | "anthropic" | "openrouter" | "volcano";
   model: string;
+  sessionId?: `sf_session_${string}` | undefined;
   schedule: AutomationScheduleView;
   prompt: string;
   createdAt: string;
@@ -81,10 +82,12 @@ export type AutomationRunView = {
 };
 
 export type AutomationProposalView = {
+  kind: AutomationKind;
   name: string;
   workspaceId: string;
   providerId: AutomationView["providerId"];
   model: string;
+  sessionId?: `sf_session_${string}` | undefined;
   scheduleText: string;
   cron: string;
   timezone: string;
@@ -105,21 +108,25 @@ export type ScheduleValidationResult =
 
 export type CreateAutomationInput = {
   name: string;
+  kind?: AutomationKind;
   status: AutomationStatus;
   workspaceId: string;
   providerId: AutomationView["providerId"];
   model: string;
+  sessionId?: `sf_session_${string}` | undefined;
   schedule: AutomationScheduleView;
   prompt: string;
 };
 
 export type UpdateAutomationInput = {
   automationId: string;
+  kind?: AutomationKind;
   name?: string;
   status?: AutomationStatus;
   workspaceId?: string;
   providerId?: AutomationView["providerId"];
   model?: string;
+  sessionId?: `sf_session_${string}` | undefined;
   schedule?: AutomationScheduleView;
   prompt?: string;
 };

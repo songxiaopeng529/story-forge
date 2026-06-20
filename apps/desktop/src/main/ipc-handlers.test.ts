@@ -173,6 +173,25 @@ describe("registerIpcHandlers", () => {
     })).resolves.toMatchObject({
       name: "Daily check",
     });
+    await expect(fixture.invoke(IPC_CHANNELS.automationsCreate, {
+      name: "Thread timer",
+      kind: "thread_chat",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "every hour",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "Every hour",
+      },
+      prompt: "Check the current session.",
+    })).resolves.toMatchObject({
+      kind: "thread_chat",
+      sessionId: "sf_session_existing",
+    });
     await expect(fixture.invoke(IPC_CHANNELS.automationsUpdate, {
       automationId: "automation-1",
       status: "paused",

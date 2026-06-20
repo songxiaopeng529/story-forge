@@ -237,12 +237,16 @@ export class AgentCoordinator {
         createAutomationProposalTool({
           validate: (draft) => validateAutomationProposal(draft),
           emit: (proposal) => {
+            const proposalSessionId = proposal.kind === "thread_chat"
+              ? session.id
+              : undefined;
             this.emitEvent({
               type: "automation.proposal",
               sessionId: session.id,
               turnId,
               proposalId: createAutomationProposalId(),
               proposal: {
+                kind: proposal.kind,
                 name: proposal.name,
                 scheduleText: proposal.scheduleText,
                 cron: proposal.cron,
@@ -253,6 +257,7 @@ export class AgentCoordinator {
                 workspaceId: workspace.id,
                 providerId: session.providerId,
                 model: session.model,
+                ...(proposalSessionId ? { sessionId: proposalSessionId } : {}),
               },
             });
           },
@@ -280,7 +285,9 @@ export class AgentCoordinator {
             content:
               `You are StoryForge, a local coding agent working in ${workspace.path}. `
               + "Inspect before editing, use workspace-relative paths, and run only necessary development commands. "
-              + "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation. Never claim the automation is created until the user confirms it.",
+              + "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation. "
+              + "Use kind=thread_chat only when the user explicitly wants the automation to continue in this same chat with existing context; otherwise use kind=scheduled_chat. "
+              + "Never claim the automation is created until the user confirms it.",
           },
           ...(availableSkills.length > 0
             ? [createAvailableSkillsSystemMessage(availableSkills)]

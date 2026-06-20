@@ -137,6 +137,73 @@ describe("AutomationScheduler", () => {
     });
     expect(fixture.startAutomationRun).toHaveBeenCalledTimes(1);
   });
+
+  it("runs thread timers in the existing session", async () => {
+    const fixture = await createFixture();
+    const automation = await fixture.service.create({
+      name: "Thread timer",
+      kind: "thread_chat",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "hourly",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "",
+      },
+      prompt: "Check this session.",
+    });
+    fixture.now = new Date("2026-06-20T01:00:00.000Z");
+
+    await fixture.scheduler.runDue();
+
+    expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "Check this session.",
+    });
+    await expect(fixture.service.getRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({
+        status: "completed",
+        sessionId: "sf_session_existing",
+      }),
+    ]);
+  });
+
+  it("skips thread timers when the target session is already running", async () => {
+    const fixture = await createFixture();
+    fixture.start.mockRejectedValueOnce(
+      new Error("Session already has an active turn: sf_session_existing"),
+    );
+    const automation = await fixture.service.create({
+      name: "Thread timer",
+      kind: "thread_chat",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      sessionId: "sf_session_existing",
+      schedule: {
+        sourceText: "hourly",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "",
+      },
+      prompt: "Check this session.",
+    });
+    fixture.now = new Date("2026-06-20T01:00:00.000Z");
+
+    await fixture.scheduler.runDue();
+
+    await expect(fixture.service.getRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({
+        status: "skipped",
+        error: "session-already-running",
+      }),
+    ]);
+  });
 });
 
 async function createFixture() {
@@ -151,11 +218,15 @@ async function createFixture() {
     sessionId: "sf_session_automation" as const,
     turnId: "sf_turn_automation" as const,
   }));
+  const start = vi.fn(async () => ({
+    turnId: "sf_turn_existing" as const,
+  }));
   const waitForTurn = vi.fn(async () => undefined);
   const scheduler = new AutomationScheduler({
     service,
     coordinator: {
       startAutomationRun,
+      start,
       waitForTurn,
     },
     now: () => now,
@@ -164,6 +235,7 @@ async function createFixture() {
   return {
     service,
     scheduler,
+    start,
     startAutomationRun,
     waitForTurn,
     get now() {

@@ -550,6 +550,7 @@ describe("AgentCoordinator", () => {
       sessionId: fixture.session.id,
       turnId,
       proposal: expect.objectContaining({
+        kind: "scheduled_chat",
         name: "Daily risk audit",
         workspaceId: fixture.workspace.id,
         providerId: "deepseek",
@@ -563,6 +564,61 @@ describe("AgentCoordinator", () => {
       type: "tool.result",
       name: "automation.proposeCreate",
       ok: true,
+    }));
+  });
+
+  it("binds thread automation proposals to the current session", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_thread_timer",
+                  name: "automation.proposeCreate",
+                  input: {
+                    kind: "thread_chat",
+                    name: "Thread follow-up",
+                    scheduleText: "每小时",
+                    cron: "0 * * * *",
+                    timezone: "Asia/Shanghai",
+                    prompt: "Continue the current investigation.",
+                  },
+                }],
+              }
+            : { content: "I prepared the timer for confirmation.", toolCalls: [] };
+        }),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "每小时在这个会话里继续检查一下",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "automation.proposal",
+      sessionId: fixture.session.id,
+      turnId,
+      proposal: expect.objectContaining({
+        kind: "thread_chat",
+        name: "Thread follow-up",
+        sessionId: fixture.session.id,
+        workspaceId: fixture.workspace.id,
+        cron: "0 * * * *",
+      }),
     }));
   });
 

@@ -207,6 +207,7 @@ describe("buildTimeline", () => {
         proposalId: "automation-proposal-1",
         status: "pending",
         proposal: {
+          kind: "scheduled_chat",
           name: "Daily risk audit",
           scheduleText: "每天早上 9 点",
           cron: "0 9 * * *",
