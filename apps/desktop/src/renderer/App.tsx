@@ -1,7 +1,10 @@
 import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
+  AutomationView,
+  CommandExecutionMode,
   ModelRequestEvent,
+  PermissionRequestEvent,
   ResponseMode,
   SessionId,
   TurnId,
@@ -14,11 +17,15 @@ import type {
   WorkspaceView,
 } from "../shared/story-forge-api";
 import { AgentWorkspace } from "./components/agent-workspace";
+import { AutomationsPage } from "./components/automations-page";
+import { McpSkillsPage } from "./components/mcp-skills-page";
 import { ModelsPage } from "./components/models-page";
+import { PermissionRequestPrompt } from "./components/permission-request-prompt";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
 import { SettingsPage } from "./components/settings-page";
 import { SessionSidebar } from "./components/session-sidebar";
 import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
+import type { AutomationProposalTimelineState } from "./timeline";
 
 export function App() {
   const [page, setPage] = useState<Page>("agent");
@@ -29,18 +36,26 @@ export function App() {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [automations, setAutomations] = useState<AutomationView[]>([]);
+  const [automationProposals, setAutomationProposals] =
+    useState<Record<string, AutomationProposalTimelineState[]>>({});
   const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
   const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
+  const [commandExecutionMode, setCommandExecutionMode] =
+    useState<CommandExecutionMode>("sentinel");
+  const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
+  const [permissionResponding, setPermissionResponding] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const composingRef = useRef(false);
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
   const persistedDeveloperModeRef = useRef(false);
+  const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
@@ -51,6 +66,14 @@ export function App() {
     (provider) => provider.providerId === selectedProviderId,
   );
   const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
+  const selectedSessionTimerCount = selectedSessionId
+    ? automations.filter((automation) =>
+      automation.kind === "thread_chat"
+      && automation.sessionId === selectedSessionId
+      && automation.status === "active"
+    ).length
+    : 0;
+  const currentPermissionRequest = permissionRequests[0];
 
   useEffect(() => {
     let disposed = false;
@@ -68,6 +91,28 @@ export function App() {
           [event.sessionId]: [...(current[event.sessionId] ?? []), event],
         }));
       }
+      if (event.type === "automation.proposal") {
+        setAutomationProposals((current) => {
+          const proposals = current[event.sessionId] ?? [];
+          if (proposals.some((proposal) => proposal.proposalId === event.proposalId)) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: [
+              ...proposals,
+              {
+                proposalId: event.proposalId,
+                proposal: event.proposal,
+                status: "pending",
+              },
+            ],
+          };
+        });
+      }
+      if (event.type === "permission.request") {
+        setPermissionRequests((current) => [...current, event]);
+      }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
       }
@@ -77,28 +122,41 @@ export function App() {
           delete next[event.sessionId];
           return next;
         });
+        setPermissionRequests((current) =>
+          current.filter((request) => request.sessionId !== event.sessionId)
+        );
         void refreshSession(event.sessionId);
       }
     });
 
     void (async () => {
       try {
-        const [nextSettings, nextProviders, nextWorkspaces, nextSessions] = await Promise.all([
+        const [
+          nextSettings,
+          nextProviders,
+          nextWorkspaces,
+          nextSessions,
+          nextAutomations,
+        ] = await Promise.all([
           window.storyForge.settings.get(),
           window.storyForge.providers.list(),
           window.storyForge.workspaces.list(),
           window.storyForge.sessions.list(),
+          window.storyForge.automations.list(),
         ]);
         if (disposed) {
           return;
         }
         persistedResponseModeRef.current = nextSettings.responseMode;
         persistedDeveloperModeRef.current = nextSettings.developerMode;
+        persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
         setResponseMode(nextSettings.responseMode);
         setDeveloperMode(nextSettings.developerMode);
+        setCommandExecutionMode(nextSettings.commandExecutionMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
+        setAutomations(nextAutomations);
         const defaultProvider = nextProviders.find((provider) => provider.isDefault)
           ?? nextProviders[0];
         if (defaultProvider) {
@@ -292,6 +350,56 @@ export function App() {
     }
   }
 
+  async function saveCommandExecutionMode(
+    nextCommandExecutionMode: CommandExecutionMode,
+  ): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextCommandExecutionMode === persistedCommandExecutionModeRef.current
+    ) {
+      return;
+    }
+    const previousCommandExecutionMode = persistedCommandExecutionModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setCommandExecutionMode(nextCommandExecutionMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        commandExecutionMode: nextCommandExecutionMode,
+      });
+      persistedCommandExecutionModeRef.current = saved.commandExecutionMode;
+      setCommandExecutionMode(saved.commandExecutionMode);
+    } catch (settingsError) {
+      setCommandExecutionMode(previousCommandExecutionMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
+  async function respondToPermission(approved: boolean): Promise<void> {
+    if (!currentPermissionRequest || permissionResponding) {
+      return;
+    }
+    setPermissionResponding(true);
+    setError(undefined);
+    try {
+      await window.storyForge.permissions.respond({
+        requestId: currentPermissionRequest.requestId,
+        approved,
+      });
+      setPermissionRequests((current) =>
+        current.filter((request) => request.requestId !== currentPermissionRequest.requestId)
+      );
+    } catch (permissionError) {
+      setError(formatError(permissionError));
+    } finally {
+      setPermissionResponding(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -323,6 +431,64 @@ export function App() {
     }
   }
 
+  async function createAutomationFromProposal(proposalId: string): Promise<void> {
+    if (!selectedSessionId) {
+      return;
+    }
+    const item = automationProposals[selectedSessionId]
+      ?.find((proposal) => proposal.proposalId === proposalId);
+    if (!item || item.status === "created") {
+      return;
+    }
+
+    setError(undefined);
+    try {
+      const { proposal } = item;
+      const created = await window.storyForge.automations.create({
+        kind: proposal.kind,
+        name: proposal.name,
+        status: "active",
+        workspaceId: proposal.workspaceId,
+        providerId: proposal.providerId,
+        model: proposal.model,
+        schedule: {
+          sourceText: proposal.scheduleText,
+          cron: proposal.cron,
+          timezone: proposal.timezone,
+          summary: proposal.summary,
+        },
+        prompt: proposal.prompt,
+        ...(proposal.sessionId ? { sessionId: proposal.sessionId } : {}),
+      });
+      setAutomations((current) => [created, ...current]);
+      setAutomationProposals((current) => ({
+        ...current,
+        [selectedSessionId]: (current[selectedSessionId] ?? []).map((proposal) =>
+          proposal.proposalId === proposalId
+            ? { ...proposal, status: "created" }
+            : proposal
+        ),
+      }));
+    } catch (createError) {
+      setError(formatError(createError));
+    }
+  }
+
+  function handleSessionTimerCreated(automation: AutomationView): void {
+    setAutomations((current) => [automation, ...current]);
+  }
+
+  function cancelAutomationProposal(proposalId: string): void {
+    if (!selectedSessionId) {
+      return;
+    }
+    setAutomationProposals((current) => ({
+      ...current,
+      [selectedSessionId]: (current[selectedSessionId] ?? [])
+        .filter((proposal) => proposal.proposalId !== proposalId),
+    }));
+  }
+
   async function removeWorkspace(workspaceId: string): Promise<void> {
     try {
       await window.storyForge.workspaces.remove(workspaceId);
@@ -347,10 +513,13 @@ export function App() {
         <SettingsPage
           responseMode={responseMode}
           developerMode={developerMode}
+          commandExecutionMode={commandExecutionMode}
           saving={settingsSaving}
           error={error}
           onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
           onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
+          onCommandExecutionModeChange={(nextCommandExecutionMode) =>
+            void saveCommandExecutionMode(nextCommandExecutionMode)}
         />
       ) : page === "models" ? (
         <ModelsPage
@@ -360,6 +529,19 @@ export function App() {
           onSelect={setSelectedProviderId}
           onError={setError}
           error={error}
+        />
+      ) : page === "extensions" ? (
+        <McpSkillsPage
+          error={error}
+          onError={setError}
+        />
+      ) : page === "automations" ? (
+        <AutomationsPage
+          providers={providers}
+          sessions={sessions}
+          workspaces={workspaces}
+          error={error}
+          onError={setError}
         />
       ) : (
         <div
@@ -391,9 +573,13 @@ export function App() {
             workspace={selectedWorkspace}
             session={selectedSession}
             activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            automationProposals={
+              selectedSessionId ? automationProposals[selectedSessionId] ?? [] : []
+            }
             modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
             developerMode={developerMode}
             modelInspectorOpen={modelInspectorOpen}
+            sessionTimerCount={selectedSessionTimerCount}
             activeTurnId={activeTurnId}
             prompt={prompt}
             error={error}
@@ -412,9 +598,22 @@ export function App() {
             onOpenWorkspace={() => void openWorkspace()}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
+            onSessionTimerCreated={handleSessionTimerCreated}
+            onError={setError}
+            onCreateAutomationProposal={(proposalId) =>
+              void createAutomationFromProposal(proposalId)}
+            onCancelAutomationProposal={cancelAutomationProposal}
           />
         </div>
       )}
+      {currentPermissionRequest ? (
+        <PermissionRequestPrompt
+          request={currentPermissionRequest}
+          responding={permissionResponding}
+          onApprove={() => void respondToPermission(true)}
+          onDeny={() => void respondToPermission(false)}
+        />
+      ) : null}
     </main>
   );
 }

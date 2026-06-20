@@ -13,9 +13,13 @@
   },
   "dependencies": {
     "@story-forge/agent-core": "workspace:*",
+    "@story-forge/mcp": "workspace:*",
     "@story-forge/model-gateway": "workspace:*",
     "@story-forge/shared": "workspace:*",
+    "@story-forge/skills": "workspace:*",
     "@story-forge/tools": "workspace:*",
+    "cron-parser": "^5.5.0",
+    "extract-zip": "^2.0.1",
     "lucide-react": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

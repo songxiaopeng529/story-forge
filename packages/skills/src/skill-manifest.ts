@@ -1,5 +1,7 @@
 export type SkillManifest = {
   name: string;
+  normalizedName: string;
+  invocationName: `/${string}`;
   description: string;
   body: string;
 };
@@ -11,12 +13,33 @@ export function parseSkillManifest(markdown: string): SkillManifest {
   }
 
   const [, frontmatter = "", body = ""] = match;
+  const name = readFrontmatterValue(frontmatter, "name");
+  const normalizedName = normalizeSkillName(name);
+  const trimmedBody = body.replace(/^\n/, "");
+  if (!trimmedBody.trim()) {
+    throw new Error("Skill manifest body must not be empty");
+  }
 
   return {
-    name: readFrontmatterValue(frontmatter, "name"),
+    name,
+    normalizedName,
+    invocationName: `/${normalizedName}`,
     description: readFrontmatterValue(frontmatter, "description"),
-    body: body.replace(/^\n/, ""),
+    body: trimmedBody,
   };
+}
+
+export function normalizeSkillName(name: string): string {
+  const normalized = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!normalized) {
+    throw new Error("Skill name must contain letters or numbers");
+  }
+  return normalized;
 }
 
 function readFrontmatterValue(frontmatter: string, key: string): string {

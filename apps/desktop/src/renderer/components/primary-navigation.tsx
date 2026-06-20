@@ -1,7 +1,7 @@
-import { Bot, KeyRound, Settings } from "lucide-react";
+import { Bot, CalendarClock, KeyRound, Puzzle, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type Page = "agent" | "models" | "settings";
+export type Page = "agent" | "models" | "automations" | "extensions" | "settings";
 
 export function PrimaryNavigation(props: {
   page: Page;
@@ -30,6 +30,18 @@ export function PrimaryNavigation(props: {
           icon={<KeyRound size={17} />}
           label="Models"
           onClick={() => props.onChange("models")}
+        />
+        <NavButton
+          active={props.page === "automations"}
+          icon={<CalendarClock size={17} />}
+          label="Automations"
+          onClick={() => props.onChange("automations")}
+        />
+        <NavButton
+          active={props.page === "extensions"}
+          icon={<Puzzle size={17} />}
+          label="MCP & Skills"
+          onClick={() => props.onChange("extensions")}
         />
         <div className="mt-6 border-t border-white/10 pt-4">
           <NavButton

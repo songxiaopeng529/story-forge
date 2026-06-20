@@ -4,8 +4,10 @@ import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import type { AgentCoordinator } from "./agent-coordinator";
 import type { AppSettingsStore } from "./app-settings-store";
+import type { McpConfigService } from "./mcp-config-service";
 import type { ProviderService } from "./provider-service";
 import type { SessionRepository } from "./session-repository";
+import type { SkillService } from "./skill-service";
 import type { WorkspaceRepository } from "./workspace-repository";
 
 type IpcHandler = (event: unknown, input: unknown) => unknown;
@@ -13,6 +15,19 @@ type IpcHandler = (event: unknown, input: unknown) => unknown;
 export type IpcRegistrar = {
   handle(channel: string, listener: IpcHandler): void;
   removeHandler?(channel: string): void;
+};
+
+type SkillsIpcService = Pick<SkillService, "list" | "importZip" | "setEnabled" | "remove">;
+type McpIpcService = Pick<McpConfigService, "get" | "saveRawJson" | "testServer">;
+type AutomationsIpcService = {
+  list(): unknown;
+  getRuns(automationId: string): unknown;
+  validateSchedule(input: { cron: string; timezone: string }): unknown;
+  interpretSchedule(input: { scheduleText: string; timezone: string }): unknown;
+  create(input: z.infer<typeof automationCreateSchema>): unknown;
+  update(input: z.infer<typeof automationUpdateSchema>): unknown;
+  delete(automationId: string): unknown;
+  runNow(automationId: string): unknown;
 };
 
 export type IpcHandlerOptions = {
@@ -23,9 +38,14 @@ export type IpcHandlerOptions = {
   settings: AppSettingsStore;
   coordinator: AgentCoordinator;
   selectWorkspace: () => Promise<string | undefined>;
+  skills: SkillsIpcService;
+  mcp: McpIpcService;
+  automations: AutomationsIpcService;
+  selectSkillArchive: () => Promise<string | undefined>;
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
+const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const providerIdSchema = z.enum([
   "deepseek",
   "openai",
@@ -45,6 +65,65 @@ const workspaceIdSchema = z.string().min(1);
 const settingsSaveSchema = z.object({
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
+  commandExecutionMode: commandExecutionModeSchema.optional(),
+});
+const permissionResponseSchema = z.object({
+  requestId: z.string().min(1),
+  approved: z.boolean(),
+});
+const skillIdSchema = z.string().min(1);
+const skillEnabledSchema = z.object({
+  skillId: skillIdSchema,
+  enabled: z.boolean(),
+});
+const mcpSaveSchema = z.object({
+  rawJson: z.string().min(1),
+});
+const mcpServerNameSchema = z.string().min(1);
+const automationIdSchema = z.string().min(1);
+const automationStatusSchema = z.enum(["active", "paused"]);
+const automationKindSchema = z.enum(["scheduled_chat", "thread_chat"]);
+const automationProviderIdSchema = providerIdSchema;
+const automationSessionIdSchema = z.custom<`sf_session_${string}`>(
+  (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
+  { message: "Invalid session id" },
+);
+const automationScheduleSchema = z.object({
+  sourceText: z.string(),
+  cron: z.string().min(1),
+  timezone: z.string().min(1),
+  summary: z.string(),
+});
+const automationCreateSchema = z.object({
+  name: z.string().min(1),
+  kind: automationKindSchema.optional(),
+  status: automationStatusSchema,
+  workspaceId: workspaceIdSchema,
+  providerId: automationProviderIdSchema,
+  model: z.string().min(1),
+  sessionId: automationSessionIdSchema.optional(),
+  schedule: automationScheduleSchema,
+  prompt: z.string().min(1),
+});
+const automationUpdateSchema = z.object({
+  automationId: automationIdSchema,
+  kind: automationKindSchema.optional(),
+  name: z.string().min(1).optional(),
+  status: automationStatusSchema.optional(),
+  workspaceId: workspaceIdSchema.optional(),
+  providerId: automationProviderIdSchema.optional(),
+  model: z.string().min(1).optional(),
+  sessionId: automationSessionIdSchema.optional(),
+  schedule: automationScheduleSchema.optional(),
+  prompt: z.string().min(1).optional(),
+});
+const automationValidateScheduleSchema = z.object({
+  cron: z.string().min(1),
+  timezone: z.string().min(1),
+});
+const automationInterpretScheduleSchema = z.object({
+  scheduleText: z.string().min(1),
+  timezone: z.string().min(1),
 });
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {
@@ -154,6 +233,82 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   );
   handle(options.ipc, IPC_CHANNELS.turnsStop, turnIdSchema, (turnId) =>
     options.coordinator.stop(turnId)
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.permissionRespond,
+    permissionResponseSchema,
+    (input) => options.coordinator.respondToPermission(input),
+  );
+  handle(options.ipc, IPC_CHANNELS.automationsList, z.undefined(), () =>
+    options.automations.list()
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsGetRuns,
+    automationIdSchema,
+    (automationId) => options.automations.getRuns(automationId),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsValidateSchedule,
+    automationValidateScheduleSchema,
+    (input) => options.automations.validateSchedule(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsInterpretSchedule,
+    automationInterpretScheduleSchema,
+    (input) => options.automations.interpretSchedule(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsCreate,
+    automationCreateSchema,
+    (input) => options.automations.create(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsUpdate,
+    automationUpdateSchema,
+    (input) => options.automations.update(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsDelete,
+    automationIdSchema,
+    (automationId) => options.automations.delete(automationId),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.automationsRunNow,
+    automationIdSchema,
+    (automationId) => options.automations.runNow(automationId),
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsList, z.undefined(), () =>
+    options.skills.list()
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsImportZip, z.undefined(), async () => {
+    const archivePath = await options.selectSkillArchive();
+    return archivePath ? options.skills.importZip(archivePath) : undefined;
+  });
+  handle(
+    options.ipc,
+    IPC_CHANNELS.skillsSetEnabled,
+    skillEnabledSchema,
+    (input) => options.skills.setEnabled(input.skillId, input.enabled),
+  );
+  handle(options.ipc, IPC_CHANNELS.skillsRemove, skillIdSchema, (skillId) =>
+    options.skills.remove(skillId)
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpGet, z.undefined(), () =>
+    options.mcp.get()
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpSave, mcpSaveSchema, (input) =>
+    options.mcp.saveRawJson(input.rawJson)
+  );
+  handle(options.ipc, IPC_CHANNELS.mcpTestServer, mcpServerNameSchema, (name) =>
+    options.mcp.testServer(name)
   );
 }
 

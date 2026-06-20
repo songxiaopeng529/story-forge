@@ -1,22 +1,25 @@
-import type { AgentEvent, ModelRequestEvent, TurnId } from "@story-forge/shared";
-import { Braces, CircleStop, FolderOpen, Play, Trash2 } from "lucide-react";
-import { useEffect, useState, type KeyboardEvent } from "react";
+import type { AgentEvent, AutomationView, ModelRequestEvent, TurnId } from "@story-forge/shared";
+import { Braces, CalendarClock, CircleStop, FolderOpen, Play, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import { buildTimeline } from "../timeline";
+import { buildTimeline, type AutomationProposalTimelineState } from "../timeline";
 import { ConversationTimeline } from "./conversation-timeline";
 import { ModelRequestDrawer } from "./model-request-drawer";
+import { SessionTimerDialog } from "./session-timer-dialog";
 
 export function AgentWorkspace(props: {
   loading: boolean;
   workspace: WorkspaceView | undefined;
   session: SessionView | undefined;
   activities: AgentEvent[];
+  automationProposals: AutomationProposalTimelineState[];
   modelRequests: ModelRequestEvent[];
   developerMode: boolean;
   modelInspectorOpen: boolean;
+  sessionTimerCount: number;
   activeTurnId: TurnId | undefined;
   prompt: string;
   error: string | undefined;
@@ -31,11 +34,41 @@ export function AgentWorkspace(props: {
   onOpenWorkspace: () => void;
   onModelInspectorOpen: () => void;
   onModelInspectorClose: () => void;
+  onSessionTimerCreated: (automation: AutomationView) => void;
+  onError: (error: string | undefined) => void;
+  onCreateAutomationProposal: (proposalId: string) => void;
+  onCancelAutomationProposal: (proposalId: string) => void;
 }) {
   const [title, setTitle] = useState("");
+  const [timerDialogOpen, setTimerDialogOpen] = useState(false);
+  const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const timelineItems = buildTimeline({
+    session: props.session,
+    activities: props.activities,
+    activeTurnId: props.activeTurnId,
+    automationProposals: props.automationProposals,
+  });
+  const timelineFingerprint = timelineItems.map((item) => {
+    if (item.type === "assistant-message") {
+      return `${item.id}:${item.content.length}:${item.streaming ? "streaming" : "static"}`;
+    }
+    if (item.type === "tool-step") {
+      return `${item.id}:${item.status}`;
+    }
+    return item.id;
+  }).join("|");
+
   useEffect(() => {
     setTitle(props.session?.title ?? "");
+    setTimerDialogOpen(false);
   }, [props.session?.id, props.session?.title]);
+  useEffect(() => {
+    const element = messageScrollRef.current;
+    if (!element) {
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+  }, [timelineFingerprint]);
 
   if (props.loading) {
     return <div className="flex items-center justify-center text-sm text-slate-500">Loading...</div>;
@@ -60,12 +93,6 @@ export function AgentWorkspace(props: {
       </div>
     );
   }
-
-  const timelineItems = buildTimeline({
-    session: props.session,
-    activities: props.activities,
-    activeTurnId: props.activeTurnId,
-  });
 
   return (
     <section
@@ -100,6 +127,23 @@ export function AgentWorkspace(props: {
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
+          {props.session ? (
+            <button
+              aria-label="Create session timer"
+              className="relative rounded-md border border-forge-line p-2 text-slate-500 hover:bg-orange-50 hover:text-forge-ember disabled:opacity-40"
+              disabled={Boolean(props.activeTurnId)}
+              onClick={() => setTimerDialogOpen(true)}
+              title="Create session timer"
+              type="button"
+            >
+              <CalendarClock size={16} />
+              {props.sessionTimerCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-forge-ember px-1 text-[10px] font-semibold leading-4 text-white">
+                  {props.sessionTimerCount}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
           {props.developerMode ? (
             <button
               aria-label="Open model request inspector"
@@ -126,7 +170,11 @@ export function AgentWorkspace(props: {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-6" data-testid="agent-message-scroll">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto p-6"
+            data-testid="agent-message-scroll"
+            ref={messageScrollRef}
+          >
             {!props.session ? (
               <div className="mx-auto max-w-xl rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600">
                 Create a session from the workspace sidebar to begin.
@@ -136,7 +184,11 @@ export function AgentWorkspace(props: {
                 Ask StoryForge to inspect code, edit workspace files, or run an allowed development command.
               </div>
             ) : (
-              <ConversationTimeline items={timelineItems} />
+              <ConversationTimeline
+                items={timelineItems}
+                onCancelAutomationProposal={props.onCancelAutomationProposal}
+                onCreateAutomationProposal={props.onCreateAutomationProposal}
+              />
             )}
           </div>
 
@@ -192,6 +244,16 @@ export function AgentWorkspace(props: {
           />
         ) : null}
       </div>
+      {timerDialogOpen && props.session && props.workspace ? (
+        <SessionTimerDialog
+          session={props.session}
+          workspace={props.workspace}
+          timerCount={props.sessionTimerCount}
+          onClose={() => setTimerDialogOpen(false)}
+          onCreated={props.onSessionTimerCreated}
+          onError={props.onError}
+        />
+      ) : null}
     </section>
   );
 }

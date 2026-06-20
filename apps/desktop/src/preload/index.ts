@@ -53,6 +53,35 @@ const api = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.turnEvent, wrapped);
     },
   },
+  permissions: {
+    respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.permissionRespond, input),
+  },
+  automations: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.automationsList),
+    getRuns: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsGetRuns, automationId),
+    validateSchedule: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsValidateSchedule, input),
+    interpretSchedule: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsInterpretSchedule, input),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationsCreate, input),
+    update: (input) => ipcRenderer.invoke(IPC_CHANNELS.automationsUpdate, input),
+    delete: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsDelete, automationId),
+    runNow: (automationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.automationsRunNow, automationId),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
+    importZip: () => ipcRenderer.invoke(IPC_CHANNELS.skillsImportZip),
+    setEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.skillsSetEnabled, input),
+    remove: (skillId) => ipcRenderer.invoke(IPC_CHANNELS.skillsRemove, skillId),
+  },
+  mcp: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.mcpGet),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpSave, input),
+    testServer: (name) => ipcRenderer.invoke(IPC_CHANNELS.mcpTestServer, name),
+  },
 } satisfies StoryForgeApi;
 
 contextBridge.exposeInMainWorld("storyForge", api);

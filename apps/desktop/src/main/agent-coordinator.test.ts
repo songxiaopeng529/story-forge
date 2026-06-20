@@ -212,6 +212,73 @@ describe("AgentCoordinator", () => {
     )).toBe(true);
   });
 
+  it("emits command permission requests and continues after approval", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const provider = fakeProvider(async () => {
+      requestCount += 1;
+      return requestCount === 1
+        ? {
+            content: "",
+            toolCalls: [{
+              id: "call_command",
+              name: "workspace.runCommand",
+              input: {
+                program: "node",
+                args: ["-e", "console.log('allowed')"],
+              },
+            }],
+          }
+        : { content: "Command complete.", toolCalls: [] };
+    });
+    const events: AgentEvent[] = [];
+    let coordinator: AgentCoordinator;
+    coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: { createProvider: () => provider },
+      getCommandExecutionMode: async () => "sentinel",
+      emit: (event) => {
+        events.push(event);
+        if (event.type === "permission.request") {
+          coordinator.respondToPermission({
+            requestId: event.requestId,
+            approved: true,
+          });
+        }
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "Run a command",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "permission.request",
+      reason: "Command is outside the safe allowlist.",
+      command: expect.objectContaining({
+        program: "node",
+        args: ["-e", "console.log('allowed')"],
+      }),
+      mode: "sentinel",
+      risk: "unknown",
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "workspace.runCommand",
+      ok: true,
+    }));
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      status: "completed",
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: "assistant", content: "Command complete." }),
+      ]),
+    });
+  });
+
   it("aborts an active model request and marks the session stopped", async () => {
     const fixture = await createFixture();
     const provider = fakeProvider((_messages, signal) =>
@@ -267,6 +334,381 @@ describe("AgentCoordinator", () => {
     await coordinator.waitForTurn(turnId);
 
     expect(messages).toEqual(["provider echoed [REDACTED]"]);
+  });
+
+  it("injects an enabled slash-invoked skill as a system message", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "Reviewed", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        list: async () => [{
+          id: "code-review",
+          name: "Code Review",
+          description: "Review code",
+          invocationName: "/code-review",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
+        resolveInvocation: async (command) =>
+          command === "/code-review"
+            ? {
+                id: "code-review",
+                name: "Code Review",
+                description: "Review code",
+                invocationName: "/code-review",
+                enabled: true,
+                installedAt: "2026-06-19T00:00:00.000Z",
+                updatedAt: "2026-06-19T00:00:00.000Z",
+                rootDir: "/tmp/skill",
+                entrypointPath: "/tmp/skill/SKILL.md",
+                body: "Review regressions and missing tests.",
+                contentHash: "hash",
+              }
+            : undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/code-review focus on regressions",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Active StoryForge skill: Code Review"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("workspace.runCommand / workspace_runCommand"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "user",
+      content: "/code-review focus on regressions",
+    }));
+  });
+
+  it("lists enabled skills in every model request", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "I can use installed skills when requested.", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        list: async () => [{
+          id: "agent-browser",
+          name: "agent-browser",
+          description: "Browser automation CLI",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
+        resolveInvocation: async () => undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "你有 agent-browser 这个技能吗？",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Available StoryForge skills"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("/agent-browser"),
+    }));
+  });
+
+  it("injects an enabled skill when the prompt explicitly mentions its name", async () => {
+    const fixture = await createFixture();
+    const requests: Parameters<ModelProvider["chat"]>[0]["messages"][] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () =>
+          fakeProvider(async (messages) => {
+            requests.push(messages);
+            return { content: "Yes, agent-browser is available.", toolCalls: [] };
+          }),
+      },
+      skillResolver: {
+        list: async () => [{
+          id: "agent-browser",
+          name: "agent-browser",
+          description: "Browser automation CLI",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        }],
+        resolveInvocation: async (command) =>
+          command === "/agent-browser"
+            ? {
+                id: "agent-browser",
+                name: "agent-browser",
+                description: "Browser automation CLI",
+                invocationName: "/agent-browser",
+                enabled: true,
+                installedAt: "2026-06-19T00:00:00.000Z",
+                updatedAt: "2026-06-19T00:00:00.000Z",
+                rootDir: "/tmp/skill",
+                entrypointPath: "/tmp/skill/SKILL.md",
+                body: "Use the agent-browser CLI to automate browser tasks.",
+                contentHash: "hash",
+              }
+            : undefined,
+      },
+      emit: () => undefined,
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "你有 agent-browser 这个技能吗？",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Active StoryForge skill: agent-browser"),
+    }));
+    expect(requests[0]).toContainEqual(expect.objectContaining({
+      role: "system",
+      content: expect.stringContaining("Use the agent-browser CLI"),
+    }));
+  });
+
+  it("emits an automation proposal event when the model proposes a scheduled task", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_automation",
+                  name: "automation.proposeCreate",
+                  input: {
+                    name: "Daily risk audit",
+                    scheduleText: "每天早上 9 点",
+                    cron: "0 9 * * *",
+                    timezone: "Asia/Shanghai",
+                    prompt: "Review the repository risk.",
+                  },
+                }],
+              }
+            : { content: "I prepared the automation for confirmation.", toolCalls: [] };
+        }),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "每天早上 9 点帮我检查风险",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "automation.proposal",
+      sessionId: fixture.session.id,
+      turnId,
+      proposal: expect.objectContaining({
+        kind: "scheduled_chat",
+        name: "Daily risk audit",
+        workspaceId: fixture.workspace.id,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        cron: "0 9 * * *",
+        timezone: "Asia/Shanghai",
+        summary: "Every day at 09:00",
+      }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool.result",
+      name: "automation.proposeCreate",
+      ok: true,
+    }));
+  });
+
+  it("binds thread automation proposals to the current session", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_thread_timer",
+                  name: "automation.proposeCreate",
+                  input: {
+                    kind: "thread_chat",
+                    name: "Thread follow-up",
+                    scheduleText: "每小时",
+                    cron: "0 * * * *",
+                    timezone: "Asia/Shanghai",
+                    prompt: "Continue the current investigation.",
+                  },
+                }],
+              }
+            : { content: "I prepared the timer for confirmation.", toolCalls: [] };
+        }),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "每小时在这个会话里继续检查一下",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "automation.proposal",
+      sessionId: fixture.session.id,
+      turnId,
+      proposal: expect.objectContaining({
+        kind: "thread_chat",
+        name: "Thread follow-up",
+        sessionId: fixture.session.id,
+        workspaceId: fixture.workspace.id,
+        cron: "0 * * * *",
+      }),
+    }));
+  });
+
+  it("starts an automation run in a fresh session", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Automation done.", toolCalls: [] })),
+      },
+      emit: () => undefined,
+    });
+
+    const { sessionId, turnId } = await coordinator.startAutomationRun({
+      workspaceId: fixture.workspace.id,
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      title: "Automation: Daily audit",
+      prompt: "Review risk.",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    await expect(fixture.sessionRepository.get(sessionId)).resolves.toMatchObject({
+      workspaceId: fixture.workspace.id,
+      title: "Automation: Daily audit",
+      messages: [
+        expect.objectContaining({ role: "user", content: "Review risk." }),
+        expect.objectContaining({ role: "assistant", content: "Automation done." }),
+      ],
+    });
+  });
+
+  it("rejects unknown slash skill invocations before appending a user message", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unexpected", toolCalls: [] })),
+      },
+      skillResolver: { resolveInvocation: async () => undefined },
+      emit: () => undefined,
+    });
+
+    await expect(coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/missing do work",
+    })).rejects.toThrow("Skill not found: /missing");
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      messages: [],
+    });
+  });
+
+  it("rejects disabled slash skill invocations with a distinct error", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unexpected", toolCalls: [] })),
+      },
+      skillResolver: {
+        resolveInvocation: async () => ({
+          id: "code-review",
+          name: "Code Review",
+          description: "Review code",
+          invocationName: "/code-review",
+          enabled: false,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+          rootDir: "/tmp/skill",
+          entrypointPath: "/tmp/skill/SKILL.md",
+          body: "Review regressions and missing tests.",
+          contentHash: "hash",
+        }),
+      },
+      emit: () => undefined,
+    });
+
+    await expect(coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "/code-review focus on regressions",
+    })).rejects.toThrow("Skill is disabled: /code-review");
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      messages: [],
+    });
   });
 
   it("rejects concurrent starts for the same persistent session", async () => {
