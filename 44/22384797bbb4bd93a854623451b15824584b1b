@@ -1,0 +1,21 @@
+apps/desktop/src/renderer/components/automations-page.tsx
+  s_c45a33dcdc5033::t_f06213b4d4f086 88-92,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4422384797bbb4bd93a854623451b15824584b1b",
+  "prompts": {},
+  "sessions": {
+    "s_c45a33dcdc5033": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a35fb57e53f5fd54d56ae13",
+        "model": "openrouter-3o__max"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
