@@ -1,8 +1,10 @@
 import type { InspectableModelMessage, ModelRequestEvent } from "@story-forge/shared";
 import { ChevronLeft, ChevronRight, Copy, Layers, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 type Selection = "overview" | number;
+type DetailMode = "content" | "raw";
 
 export function ModelRequestDrawer(props: {
   requests: ModelRequestEvent[];
@@ -10,25 +12,39 @@ export function ModelRequestDrawer(props: {
 }) {
   const [requestIndex, setRequestIndex] = useState(0);
   const [selection, setSelection] = useState<Selection>("overview");
+  const [detailMode, setDetailMode] = useState<DetailMode>("raw");
 
   useEffect(() => {
     setRequestIndex(Math.max(props.requests.length - 1, 0));
     setSelection("overview");
+    setDetailMode("raw");
   }, [props.requests.length]);
 
   const selected = props.requests[requestIndex];
+  const selectedMessage = selected && selection !== "overview"
+    ? selected.messages[selection]
+    : undefined;
   const viewLabel = selection === "overview" ? "request" : `request.messages[${selection}]`;
-  const viewJson = selected
+  const rawJson = selected
     ? selection === "overview"
       ? rawPayloadJson(selected)
-      : JSON.stringify(selected.messages[selection], null, 2)
+      : JSON.stringify(selectedMessage, null, 2)
     : "";
+  const contentPreview = selectedMessage
+    ? previewContent(selectedMessage.content)
+    : "";
+  const showingContent = Boolean(selectedMessage && detailMode === "content");
 
   async function copyRawJson(): Promise<void> {
     if (!selected) {
       return;
     }
-    await navigator.clipboard?.writeText(viewJson);
+    await navigator.clipboard?.writeText(rawJson);
+  }
+
+  function select(nextSelection: Selection): void {
+    setSelection(nextSelection);
+    setDetailMode(nextSelection === "overview" ? "raw" : "content");
   }
 
   return (
@@ -66,6 +82,7 @@ export function ModelRequestDrawer(props: {
               onClick={() => {
                 setRequestIndex((index) => Math.max(index - 1, 0));
                 setSelection("overview");
+                setDetailMode("raw");
               }}
               type="button"
             >
@@ -81,6 +98,7 @@ export function ModelRequestDrawer(props: {
               onClick={() => {
                 setRequestIndex((index) => Math.min(index + 1, props.requests.length - 1));
                 setSelection("overview");
+                setDetailMode("raw");
               }}
               type="button"
             >
@@ -117,7 +135,7 @@ export function ModelRequestDrawer(props: {
                       ? "border-[1.2px] border-forge-ink bg-forge-canvas"
                       : "border-forge-line bg-white hover:bg-forge-canvas"
                   }`}
-                  onClick={() => setSelection("overview")}
+                  onClick={() => select("overview")}
                   type="button"
                 >
                   <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-forge-ink/[0.06] text-forge-ink">
@@ -144,7 +162,7 @@ export function ModelRequestDrawer(props: {
                           : "border-forge-line bg-white hover:bg-forge-canvas"
                       }`}
                       key={`${message.role}-${index}`}
-                      onClick={() => setSelection(index)}
+                      onClick={() => select(index)}
                       type="button"
                     >
                       <div className="flex items-center justify-between">
@@ -166,11 +184,52 @@ export function ModelRequestDrawer(props: {
                 <span className="text-[11px] font-semibold text-[#e6e9ef]">
                   {viewLabel}
                 </span>
-                <span className="text-[10px] font-medium text-[#95989f]">raw JSON</span>
+                {selectedMessage ? (
+                  <div className="flex rounded-md border border-white/10 bg-black/20 p-0.5">
+                    <button
+                      aria-pressed={detailMode === "content"}
+                      className={`rounded px-2 py-1 text-[10px] font-medium ${
+                        detailMode === "content"
+                          ? "bg-white/12 text-[#f4f6fb]"
+                          : "text-[#95989f] hover:text-[#e6e9ef]"
+                      }`}
+                      onClick={() => setDetailMode("content")}
+                      type="button"
+                    >
+                      Content Preview
+                    </button>
+                    <button
+                      aria-pressed={detailMode === "raw"}
+                      className={`rounded px-2 py-1 text-[10px] font-medium ${
+                        detailMode === "raw"
+                          ? "bg-white/12 text-[#f4f6fb]"
+                          : "text-[#95989f] hover:text-[#e6e9ef]"
+                      }`}
+                      onClick={() => setDetailMode("raw")}
+                      type="button"
+                    >
+                      Raw JSON
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-medium text-[#95989f]">raw JSON</span>
+                )}
               </div>
-              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre px-3.5 py-3 font-mono text-[10px] leading-[15px] text-[#e6e9ef]">
-                {viewJson}
-              </pre>
+              {showingContent ? (
+                <pre
+                  className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-3.5 py-3 font-mono text-[10px] leading-[15px] text-[#e6e9ef]"
+                  data-testid="model-message-content-preview"
+                >
+                  {renderContentPreview(contentPreview)}
+                </pre>
+              ) : (
+                <pre
+                  className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-3.5 py-3 font-mono text-[10px] leading-[15px] text-[#e6e9ef]"
+                  data-testid="model-message-raw-json"
+                >
+                  {rawJson}
+                </pre>
+              )}
             </div>
           </div>
 
@@ -237,6 +296,68 @@ function summarizeMessage(message: InspectableModelMessage): { title: string; de
 function firstLine(content: string): string {
   const line = content.split("\n").map((value) => value.trim()).find(Boolean);
   return line ?? "—";
+}
+
+function previewContent(content: string): string {
+  if (!looksLikeXml(content)) {
+    return content;
+  }
+  return formatXml(content);
+}
+
+function looksLikeXml(content: string): boolean {
+  return /^<[\w:-]+(?:\s|>|\/>)/.test(content.trim());
+}
+
+function formatXml(content: string): string {
+  const normalized = content.trim();
+  if (normalized.includes("\n")) {
+    return normalized;
+  }
+
+  const tokens = normalized
+    .replace(/>\s*</g, "><")
+    .split(/(?=<)|(?<=>)/g)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  let depth = 0;
+  const lines: string[] = [];
+
+  for (const token of tokens) {
+    if (token.startsWith("</")) {
+      depth = Math.max(depth - 1, 0);
+    }
+    lines.push(`${"  ".repeat(depth)}${token}`);
+    if (token.startsWith("<") && !token.startsWith("</") && !token.endsWith("/>")
+      && !token.startsWith("<?") && !token.startsWith("<!")) {
+      depth += 1;
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function renderContentPreview(content: string): ReactNode {
+  if (!looksLikeXml(content)) {
+    return content;
+  }
+  return content.split(/(<[^>]+>)/g).map((part, index) => {
+    if (!part) {
+      return null;
+    }
+    if (part.startsWith("<")) {
+      return (
+        <span className="text-[#8bd5ff]" key={index}>
+          {part}
+        </span>
+      );
+    }
+    return (
+      <span className="text-[#f0f2f7]" key={index}>
+        {part}
+      </span>
+    );
+  });
 }
 
 function rawPayloadJson(request: ModelRequestEvent): string {

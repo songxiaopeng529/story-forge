@@ -441,14 +441,12 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Active StoryForge skill: Code Review"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("workspace.runCommand / workspace_runCommand"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\" active=\"/code-review\">");
+    expect(systemMessage?.content).toContain("<active-skill invocation=\"/code-review\" name=\"Code Review\">");
+    expect(systemMessage?.content).toContain("workspace.runCommand / workspace_runCommand");
     expect(requests[0]).toContainEqual(expect.objectContaining({
       role: "user",
       content: "/code-review focus on regressions",
@@ -490,14 +488,11 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Available StoryForge skills"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("/agent-browser"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\">");
+    expect(systemMessage?.content).toContain("<skill invocation=\"/agent-browser\" name=\"agent-browser\">");
   });
 
   it("injects an enabled skill when the prompt explicitly mentions its name", async () => {
@@ -550,14 +545,12 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Active StoryForge skill: agent-browser"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Use the agent-browser CLI"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\" active=\"/agent-browser\">");
+    expect(systemMessage?.content).toContain("<active-skill invocation=\"/agent-browser\" name=\"agent-browser\">");
+    expect(systemMessage?.content).toContain("Use the agent-browser CLI");
   });
 
   it("emits an automation proposal event when the model proposes a scheduled task", async () => {
