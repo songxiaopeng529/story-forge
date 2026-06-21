@@ -185,6 +185,40 @@ describe("AgentCoordinator", () => {
     }));
   });
 
+  it("registers web tools in developer-mode model requests when web access is enabled", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      },
+      getDeveloperMode: async () => true,
+      getWebAccessEnabled: async () => true,
+      getWebSearchCoverage: async () => "wide",
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    const modelRequest = events.find((event) => event.type === "model.request");
+    expect(modelRequest).toMatchObject({
+      type: "model.request",
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "web.search" }),
+        expect.objectContaining({ name: "web.fetch" }),
+      ]),
+    });
+  });
+
   it("does not emit model request events when developer mode is disabled", async () => {
     const fixture = await createFixture();
     const events: AgentEvent[] = [];

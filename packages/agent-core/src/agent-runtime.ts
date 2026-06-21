@@ -13,6 +13,7 @@ import type {
   SessionId,
   SkillView,
   TurnId,
+  WebSearchCoverage,
 } from "@story-forge/shared";
 import type { ToolRegistry } from "@story-forge/tools";
 
@@ -70,6 +71,8 @@ export type RuntimeSettings = {
   responseMode: ResponseMode;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
+  webAccessEnabled: boolean;
+  webSearchCoverage: WebSearchCoverage;
 };
 
 export type RuntimeSkillInvocation = {
@@ -103,6 +106,8 @@ export type RuntimeSettingsProvider = {
   getResponseMode(): Promise<ResponseMode>;
   getDeveloperMode(): Promise<boolean>;
   getCommandExecutionMode(): Promise<CommandExecutionMode>;
+  getWebAccessEnabled(): Promise<boolean>;
+  getWebSearchCoverage(): Promise<WebSearchCoverage>;
 };
 
 export type RuntimeSkillResolver = {

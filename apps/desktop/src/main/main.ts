@@ -81,6 +81,8 @@ async function initializeApplication(): Promise<void> {
     getResponseMode: async () => (await settingsStore.get()).responseMode,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
+    getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,
+    getWebSearchCoverage: async () => (await settingsStore.get()).webSearchCoverage,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);

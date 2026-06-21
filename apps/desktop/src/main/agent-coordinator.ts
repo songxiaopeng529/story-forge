@@ -21,9 +21,11 @@ import {
   type SessionId,
   type SkillView,
   type TurnId,
+  type WebSearchCoverage,
 } from "@story-forge/shared";
 import {
   createAutomationProposalTool,
+  createWebTools,
   createWorkspaceCommandTool,
   createWorkspaceFileTools,
   type AutomationProposalDraft,
@@ -59,6 +61,8 @@ export type AgentCoordinatorOptions = {
   getResponseMode?: () => Promise<ResponseMode>;
   getDeveloperMode?: () => Promise<boolean>;
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
+  getWebAccessEnabled?: () => Promise<boolean>;
+  getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -77,6 +81,8 @@ export class AgentCoordinator {
   private readonly getResponseMode: () => Promise<ResponseMode>;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
+  private readonly getWebAccessEnabled: () => Promise<boolean>;
+  private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly runtime: AgentRuntime;
   private readonly maxSteps: number | undefined;
@@ -92,6 +98,8 @@ export class AgentCoordinator {
     this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
+    this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
+    this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
@@ -246,6 +254,8 @@ export class AgentCoordinator {
         getResponseMode: this.getResponseMode,
         getDeveloperMode: this.getDeveloperMode,
         getCommandExecutionMode: this.getCommandExecutionMode,
+        getWebAccessEnabled: this.getWebAccessEnabled,
+        getWebSearchCoverage: this.getWebSearchCoverage,
       },
       ...(this.skillResolver ? { skillResolver: this.skillResolver } : {}),
     });
@@ -283,6 +293,14 @@ export class AgentCoordinator {
             signal: helpers.signal ?? new AbortController().signal,
             emit: helpers.emit,
           }),
+      }),
+      ...createWebTools({
+        enabled: context.settings.webAccessEnabled,
+        coverage: context.settings.webSearchCoverage,
+        credentials: {
+          tavilyApiKey: readEnvSecret("Tavily_API_KEY", "TAVILY_API_KEY"),
+          serpApiKey: readEnvSecret("SerpApi_API_KEY", "SERPAPI_API_KEY"),
+        },
       }),
       createAutomationProposalTool({
         validate: (draft) => validateAutomationProposal(draft),
@@ -483,6 +501,10 @@ function validateAutomationProposal(draft: AutomationProposalDraft) {
 
 function redactSecret(message: string, secret: string | undefined): string {
   return secret ? message.split(secret).join("[REDACTED]") : message;
+}
+
+function readEnvSecret(primary: string, fallback: string): string | undefined {
+  return process.env[primary] || process.env[fallback] || undefined;
 }
 
 function required<T>(value: T | undefined, name: string): T {
