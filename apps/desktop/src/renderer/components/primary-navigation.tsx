@@ -1,4 +1,11 @@
-import { Bot, CalendarClock, KeyRound, Puzzle, Settings } from "lucide-react";
+import {
+  Bot,
+  CalendarClock,
+  KeyRound,
+  PanelLeftClose,
+  Puzzle,
+  Settings,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 export type Page = "agent" | "models" | "automations" | "extensions" | "settings";
@@ -6,52 +13,58 @@ export type Page = "agent" | "models" | "automations" | "extensions" | "settings
 export function PrimaryNavigation(props: {
   page: Page;
   onChange: (page: Page) => void;
+  collapsible: boolean;
+  onCollapse: () => void;
 }) {
   return (
-    <aside className="border-r border-forge-line bg-[#17202a] px-4 py-5 text-white">
-      <div className="flex items-center gap-3 px-2">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-forge-ember">
-          <Bot size={20} aria-hidden="true" />
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold leading-6">StoryForge</h1>
-          <p className="text-xs text-slate-300">Coding agent</p>
-        </div>
+    <aside className="flex flex-col items-center gap-3 bg-forge-nav py-4 text-white">
+      <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-white text-[13px] font-semibold text-forge-ink">
+        SF
       </div>
-      <nav className="mt-8 space-y-1">
+      <div className="h-px w-7 bg-white/10" />
+      <nav className="flex flex-col items-center gap-2">
         <NavButton
           active={props.page === "agent"}
-          icon={<Bot size={17} />}
+          icon={<Bot size={20} />}
           label="Coding Agent"
           onClick={() => props.onChange("agent")}
         />
         <NavButton
           active={props.page === "models"}
-          icon={<KeyRound size={17} />}
+          icon={<KeyRound size={20} />}
           label="Models"
           onClick={() => props.onChange("models")}
         />
         <NavButton
           active={props.page === "automations"}
-          icon={<CalendarClock size={17} />}
+          icon={<CalendarClock size={20} />}
           label="Automations"
           onClick={() => props.onChange("automations")}
         />
         <NavButton
           active={props.page === "extensions"}
-          icon={<Puzzle size={17} />}
+          icon={<Puzzle size={20} />}
           label="MCP & Skills"
           onClick={() => props.onChange("extensions")}
         />
-        <div className="mt-6 border-t border-white/10 pt-4">
-          <NavButton
-            active={props.page === "settings"}
-            icon={<Settings size={17} />}
-            label="Settings"
-            onClick={() => props.onChange("settings")}
-          />
-        </div>
+        <NavButton
+          active={props.page === "settings"}
+          icon={<Settings size={20} />}
+          label="Settings"
+          onClick={() => props.onChange("settings")}
+        />
       </nav>
+      {props.collapsible ? (
+        <button
+          aria-label="Collapse navigation"
+          className="mt-auto flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-white/[0.08] text-white/70 hover:bg-white/[0.14]"
+          onClick={props.onCollapse}
+          title="Collapse navigation"
+          type="button"
+        >
+          <PanelLeftClose size={16} />
+        </button>
+      ) : null}
     </aside>
   );
 }
@@ -64,14 +77,17 @@ function NavButton(props: {
 }) {
   return (
     <button
-      className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium ${
-        props.active ? "bg-white text-forge-ink" : "text-slate-300 hover:bg-white/10"
+      aria-label={props.label}
+      className={`flex h-11 w-11 items-center justify-center rounded-[10px] ${
+        props.active
+          ? "bg-white text-forge-ink"
+          : "text-white/70 hover:bg-white/10 hover:text-white"
       }`}
       onClick={props.onClick}
+      title={props.label}
       type="button"
     >
       {props.icon}
-      {props.label}
     </button>
   );
 }

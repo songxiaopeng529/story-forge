@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StoryForge AgentLoop 架构图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+  }
+  h1 {
+    text-align: center;
+    color: #7c3aed;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #888;
+    margin-bottom: 30px;
+  }
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .legend-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+  .card {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 20px 0;
+    border: 1px solid #2a2a4a;
+  }
+  .card h2 {
+    color: #7c3aed;
+    margin-top: 0;
+    font-size: 18px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #2a2a4a;
+  }
+  th {
+    color: #a78bfa;
+    font-weight: 600;
+  }
+  td code {
+    background: #2a2a4a;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #f59e0b;
+  }
+  .stop-reason-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .stop-tag {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .mermaid-container {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+  }
+</style>
+</head>
+<body>
+<h1>🔄 StoryForge AgentLoop</h1>
+<p class="subtitle">packages/agent-core/src/agent-loop.ts — 智能体核心循环</p>
+
+<div class="mermaid-container">
+<div class="mermaid">
+flowchart TD
+    START(["🚀 run() 开始"]) --> INIT["📋 初始化<br/>• 复制 messages<br/>• 记录 startedAt<br/>• 创建 AbortController"]
+    INIT --> EMIT_START["📡 emit: runtime.started"]
+    EMIT_START --> LOOP{"🔄 主循环<br/>while(true)"}
+
+    LOOP --> PREFLIGHT["🛑 前置检查 getStopReason()<br/>• user-stopped<br/>• time-limit<br/>• step-limit"]
+    PREFLIGHT -->|"⛔ 触发"| FINISH_STOP["🏁 finish"]
+    PREFLIGHT -->|"✅ 通过"| STEP_INC["steps += 1"]
+
+    STEP_INC --> BUILD_REQ["🔧 构建 ModelRequest<br/>• trimMessagesToContext<br/>• tools.schemas()"]
+    BUILD_REQ --> EMIT_MODEL["📡 emit: model.request<br/>（inspect 开启时）"]
+
+    EMIT_MODEL --> CHOOSE_MODE{"📡 responseMode?"}
+
+    CHOOSE_MODE -->|"smooth"| SMOOTH["requestSmoothResponse<br/>→ provider.chat()"]
+    CHOOSE_MODE -->|"live"| STREAM["requestStreamingResponse<br/>→ provider.streamChat()"]
+    CHOOSE_MODE -->|"auto"| AUTO["尝试 streamChat<br/>失败无内容 → 降级 smooth<br/>失败有内容 → 报错"]
+
+    SMOOTH --> APPEND_MSG
+    STREAM --> APPEND_MSG
+    AUTO --> APPEND_MSG
+
+    APPEND_MSG["📝 追加 AssistantMessage<br/>content + reasoningContent + toolCalls"]
+
+    APPEND_MSG --> HAS_TOOLS{"🔧 有 toolCalls?"}
+
+    HAS_TOOLS -->|"❌ 无"| CP_FINAL["💾 checkpoint<br/>🏁 finish('completed')"]
+    CP_FINAL --> DONE([✅ 返回 AgentLoopResult])
+
+    HAS_TOOLS -->|"✅ 有"| FOR_EACH["🔁 遍历每个 toolCall"]
+
+    FOR_EACH --> CHECK_REPEAT{"🔄 同签名重复 ≥3?"}
+    CHECK_REPEAT -->|"是"| SKIP_REPEAT["⏭️ 跳过剩余<br/>🏁 finish('repeated-tool-call')"]
+    CHECK_REPEAT -->|"否"| TOOL_PREFLIGHT["🛑 再次停止检查"]
+
+    TOOL_PREFLIGHT -->|"⛔ 触发"| SKIP_STOP["⏭️ 跳过剩余<br/>🏁 finish"]
+    TOOL_PREFLIGHT -->|"✅ 通过"| EMIT_TOOL["📡 emit: tool.call"]
+
+    EMIT_TOOL --> EXEC["⚡ tools.execute()"]
+    EXEC --> APPEND_RESULT["📝 追加 tool result"]
+    APPEND_RESULT --> EMIT_RESULT["📡 emit: tool.result"]
+
+    EMIT_RESULT --> CHECK_FAIL{"❌ 连续失败 ≥5?"}
+    CHECK_FAIL -->|"是"| SKIP_FAIL["⏭️ 跳过剩余<br/>🏁 finish('consecutive-tool-failures')"]
+    CHECK_FAIL -->|"否"| NEXT_TOOL{"还有 toolCall?"}
+
+    NEXT_TOOL -->|"是"| FOR_EACH
+    NEXT_TOOL -->|"否"| CP_LOOP["💾 checkpoint → 回到主循环"]
+    CP_LOOP --> LOOP
+
+    FINISH_STOP --> DONE
+    SKIP_REPEAT --> DONE
+    SKIP_STOP --> DONE
+    SKIP_FAIL --> DONE
+
+    LOOP -.->|"💥 exception"| CATCH{"异常?"}
+    CATCH -->|"signal.aborted"| USER_STOP["🏁 finish('user-stopped')"]
+    CATCH -->|"timeLimitReached"| TIME_STOP["🏁 finish('time-limit')"]
+    CATCH -->|"其他"| ERR_STOP["📡 emit: runtime.error<br/>🏁 finish('unrecoverable-error')"]
+    USER_STOP --> DONE
+    TIME_STOP --> DONE
+    ERR_STOP --> DONE
+
+    style START fill:#4CAF50,stroke:#388E3C,color:#fff
+    style DONE fill:#4CAF50,stroke:#388E3C,color:#fff
+    style CP_FINAL fill:#4CAF50,stroke:#388E3C,color:#fff
+    style LOOP fill:#2196F3,stroke:#1976D2,color:#fff
+    style HAS_TOOLS fill:#FF9800,stroke:#F57C00,color:#fff
+    style CHOOSE_MODE fill:#9C27B0,stroke:#7B1FA2,color:#fff
+    style CATCH fill:#f44336,stroke:#D32F2F,color:#fff
+</div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4CAF50"></div> 开始/结束</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2196F3"></div> 循环</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#FF9800"></div> 分支判断</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#9C27B0"></div> 模式选择</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f44336"></div> 异常处理</div>
+</div>
+
+<div class="card">
+  <h2>📊 核心数据结构</h2>
+  <table>
+    <tr><th>概念</th><th>类型</th><th>说明</th></tr>
+    <tr>
+      <td><code>AgentLoopOptions</code></td>
+      <td><code>{ provider, tools, maxSteps?, maxDurationMs?, now? }</code></td>
+      <td>构造参数：模型提供者、工具注册表、步数/时间上限</td>
+    </tr>
+    <tr>
+      <td><code>AgentLoopRunInput</code></td>
+      <td><code>{ sessionId, turnId, responseMode?, messages, signal?, onEvent?, onCheckpoint? }</code></td>
+      <td>每次 run 的输入：会话/轮次 ID、响应模式、消息历史、回调</td>
+    </tr>
+    <tr>
+      <td><code>AgentLoopResult</code></td>
+      <td><code>{ messages, stopReason, steps }</code></td>
+      <td>运行结果：完整消息历史、停止原因、总步数</td>
+    </tr>
+    <tr>
+      <td><code>ResponseMode</code></td>
+      <td><code>'auto' | 'live' | 'smooth'</code></td>
+      <td>响应模式：自动降级 / 强制流式 / 非流式</td>
+    </tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>🛑 停止原因一览</h2>
+  <div class="stop-reason-list">
+    <span class="stop-tag" style="background:#4CAF50;color:#fff">completed</span>
+    <span class="stop-tag" style="background:#f44336;color:#fff">user-stopped</span>
+    <span class="stop-tag" style="background:#FF9800;color:#fff">time-limit</span>
+    <span class="stop-tag" style="background:#FF9800;color:#fff">step-limit</span>
+    <span class="stop-tag" style="background:#9C27B0;color:#fff">repeated-tool-call</span>
+    <span class="stop-tag" style="background:#9C27B0;color:#fff">consecutive-tool-failures</span>
+    <span class="stop-tag" style="background:#f44336;color:#fff">unrecoverable-error</span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🔑 关键设计决策</h2>
+  <table>
+    <tr>
+      <th>决策</th>
+      <th>实现</th>
+      <th>目的</th>
+    </tr>
+    <tr>
+      <td>上下文窗口管理</td>
+      <td><code>trimMessagesToContext</code> 从后往前保留完整对话轮次，最多 80% 窗口</td>
+      <td>防止 token 超限，同时保留最新上下文</td>
+    </tr>
+    <tr>
+      <td>流式降级</td>
+      <td><code>auto</code> 模式下流式失败且无内容时降级到 <code>smooth</code></td>
+      <td>提升可靠性，保证总能拿到响应</td>
+    </tr>
+    <tr>
+      <td>无限循环保护</td>
+      <td>默认 1000 步 / 2 小时上限；重复调用 3 次停止；连续失败 5 次停止</td>
+      <td>防止模型陷入死循环，控制成本</td>
+    </tr>
+    <tr>
+      <td>事件驱动架构</td>
+      <td><code>onEvent</code> 推送 lifecycle / model / tool 事件</td>
+      <td>支持 UI 实时更新和调试</td>
+    </tr>
+    <tr>
+      <td>检查点机制</td>
+      <td>每轮 tool 执行后通过 <code>onCheckpoint</code> 保存快照</td>
+      <td>支持断点恢复和状态持久化</td>
+    </tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>📡 事件类型</h2>
+  <table>
+    <tr><th>事件</th><th>触发时机</th></tr>
+    <tr><td><code>runtime.started</code></td><td>AgentLoop 开始运行</td></tr>
+    <tr><td><code>runtime.completed</code></td><td>正常结束（含 stopReason 和 steps）</td></tr>
+    <tr><td><code>runtime.error</code></td><td>不可恢复的异常</td></tr>
+    <tr><td><code>model.request</code></td><td>发送请求给模型前（inspect 模式）</td></tr>
+    <tr><td><code>message.delta</code></td><td>模型返回内容增量（smooth 一次性 / live 逐片）</td></tr>
+    <tr><td><code>tool.call</code></td><td>开始执行工具调用</td></tr>
+    <tr><td><code>tool.result</code></td><td>工具执行完成</td></tr>
+    <tr><td><code>response.fallback</code></td><td>auto 模式流式降级到 smooth</td></tr>
+  </table>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</body>
+</html>

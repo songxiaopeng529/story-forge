@@ -22,10 +22,19 @@ import { McpSkillsPage } from "./components/mcp-skills-page";
 import { ModelsPage } from "./components/models-page";
 import { PermissionRequestPrompt } from "./components/permission-request-prompt";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
+import { RunContextPanel, type RunStatus } from "./components/run-context-panel";
 import { SettingsPage } from "./components/settings-page";
 import { SessionSidebar } from "./components/session-sidebar";
 import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
 import type { AutomationProposalTimelineState } from "./timeline";
+
+type TurnRuntimeState = {
+  turnId: TurnId;
+  status: RunStatus;
+  startedAt: string;
+  endedAt?: string;
+  steps: number;
+};
 
 export function App() {
   const [page, setPage] = useState<Page>("agent");
@@ -42,6 +51,7 @@ export function App() {
   const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
   const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
+  const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
@@ -52,6 +62,9 @@ export function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [contextCollapsed, setContextCollapsed] = useState(false);
   const composingRef = useRef(false);
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
   const persistedDeveloperModeRef = useRef(false);
@@ -74,6 +87,19 @@ export function App() {
     ).length
     : 0;
   const currentPermissionRequest = permissionRequests[0];
+  // The agent header (which hosts the expand buttons) only renders on the agent
+  // page once a workspace is open, so panels may only collapse while it is visible.
+  const agentHeaderVisible = page === "agent" && !loading && Boolean(selectedWorkspace);
+  const effectiveNavCollapsed = navCollapsed && agentHeaderVisible;
+  const effectiveSidebarCollapsed = sidebarCollapsed && agentHeaderVisible;
+  const effectiveContextCollapsed = contextCollapsed;
+  const agentColumns = [
+    effectiveSidebarCollapsed ? null : "288px",
+    "1fr",
+    selectedSession && !effectiveContextCollapsed ? "292px" : null,
+  ]
+    .filter(Boolean)
+    .join("_");
 
   useEffect(() => {
     let disposed = false;
@@ -110,11 +136,42 @@ export function App() {
           };
         });
       }
+      if (event.type === "tool.call" || event.type === "model.request") {
+        setTurnRuntimes((current) => {
+          const existing = current[event.sessionId];
+          if (!existing || existing.turnId !== event.turnId || existing.endedAt) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: { ...existing, steps: existing.steps + 1 },
+          };
+        });
+      }
       if (event.type === "permission.request") {
         setPermissionRequests((current) => [...current, event]);
+        setTurnRuntimes((current) => {
+          const existing = current[event.sessionId];
+          if (!existing || existing.turnId !== event.turnId) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: { ...existing, status: "waiting-approval" },
+          };
+        });
       }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
+        setTurnRuntimes((current) => ({
+          ...current,
+          [event.sessionId]: {
+            turnId: event.turnId,
+            status: "running",
+            startedAt: event.createdAt,
+            steps: 0,
+          },
+        }));
       }
       if (event.type === "runtime.completed" || event.type === "runtime.error") {
         setActiveTurns((current) => {
@@ -125,6 +182,21 @@ export function App() {
         setPermissionRequests((current) =>
           current.filter((request) => request.sessionId !== event.sessionId)
         );
+        setTurnRuntimes((current) => {
+          const existing = current[event.sessionId];
+          if (!existing || existing.turnId !== event.turnId) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: {
+              ...existing,
+              status: event.type === "runtime.error" ? "failed" : "completed",
+              endedAt: new Date().toISOString(),
+              steps: event.steps ?? existing.steps,
+            },
+          };
+        });
         void refreshSession(event.sessionId);
       }
     });
@@ -393,6 +465,14 @@ export function App() {
       setPermissionRequests((current) =>
         current.filter((request) => request.requestId !== currentPermissionRequest.requestId)
       );
+      setTurnRuntimes((current) => {
+        const sessionId = currentPermissionRequest.sessionId;
+        const existing = current[sessionId];
+        if (!existing || existing.status !== "waiting-approval") {
+          return current;
+        }
+        return { ...current, [sessionId]: { ...existing, status: "running" } };
+      });
     } catch (permissionError) {
       setError(formatError(permissionError));
     } finally {
@@ -426,6 +506,25 @@ export function App() {
       setSelectedSessionId(
         remaining.find((session) => session.workspaceId === selectedWorkspaceId)?.id,
       );
+    } catch (deleteError) {
+      setError(formatError(deleteError));
+    }
+  }
+
+  async function removeSession(sessionId: SessionId): Promise<void> {
+    if (activeTurns[sessionId]) {
+      return;
+    }
+    try {
+      await window.storyForge.sessions.delete(sessionId);
+      const target = sessions.find((session) => session.id === sessionId);
+      const remaining = sessions.filter((session) => session.id !== sessionId);
+      setSessions(remaining);
+      if (sessionId === selectedSessionId) {
+        setSelectedSessionId(
+          remaining.find((session) => session.workspaceId === target?.workspaceId)?.id,
+        );
+      }
     } catch (deleteError) {
       setError(formatError(deleteError));
     }
@@ -507,8 +606,19 @@ export function App() {
   }
 
   return (
-    <main className="grid h-screen grid-cols-[220px_1fr] overflow-hidden bg-forge-canvas text-forge-ink">
-      <PrimaryNavigation page={page} onChange={setPage} />
+    <main
+      className={`grid h-screen overflow-hidden bg-forge-canvas text-forge-ink ${
+        effectiveNavCollapsed ? "grid-cols-[1fr]" : "grid-cols-[72px_1fr]"
+      }`}
+    >
+      {effectiveNavCollapsed ? null : (
+        <PrimaryNavigation
+          page={page}
+          onChange={setPage}
+          collapsible={agentHeaderVisible}
+          onCollapse={() => setNavCollapsed(true)}
+        />
+      )}
       {page === "settings" ? (
         <SettingsPage
           responseMode={responseMode}
@@ -545,29 +655,35 @@ export function App() {
         />
       ) : (
         <div
-          className="grid min-h-0 min-w-0 grid-cols-[290px_1fr] overflow-hidden"
+          className="grid min-h-0 min-w-0 overflow-hidden"
           data-testid="agent-layout"
+          style={{ gridTemplateColumns: agentColumns.replace(/_/g, " ") }}
         >
-          <SessionSidebar
-            workspaces={workspaces}
-            sessions={sessions}
-            selectedWorkspaceId={selectedWorkspaceId}
-            selectedSessionId={selectedSessionId}
-            activeTurns={activeTurns}
-            onOpenWorkspace={() => void openWorkspace()}
-            onCreateSession={(workspaceId) => void createSession(workspaceId)}
-            onRemoveWorkspace={(workspaceId) => void removeWorkspace(workspaceId)}
-            onSelectWorkspace={(workspaceId) => {
-              setSelectedWorkspaceId(workspaceId);
-              setSelectedSessionId(
-                sessions.find((session) => session.workspaceId === workspaceId)?.id,
-              );
-            }}
-            onSelectSession={(sessionId, workspaceId) => {
-              setSelectedWorkspaceId(workspaceId);
-              setSelectedSessionId(sessionId);
-            }}
-          />
+          {effectiveSidebarCollapsed ? null : (
+            <SessionSidebar
+              workspaces={workspaces}
+              sessions={sessions}
+              selectedWorkspaceId={selectedWorkspaceId}
+              selectedSessionId={selectedSessionId}
+              activeTurns={activeTurns}
+              commandExecutionMode={commandExecutionMode}
+              onCollapse={() => setSidebarCollapsed(true)}
+              onOpenWorkspace={() => void openWorkspace()}
+              onCreateSession={(workspaceId) => void createSession(workspaceId)}
+              onRemoveWorkspace={(workspaceId) => void removeWorkspace(workspaceId)}
+              onRemoveSession={(sessionId) => void removeSession(sessionId)}
+              onSelectWorkspace={(workspaceId) => {
+                setSelectedWorkspaceId(workspaceId);
+                setSelectedSessionId(
+                  sessions.find((session) => session.workspaceId === workspaceId)?.id,
+                );
+              }}
+              onSelectSession={(sessionId, workspaceId) => {
+                setSelectedWorkspaceId(workspaceId);
+                setSelectedSessionId(sessionId);
+              }}
+            />
+          )}
           <AgentWorkspace
             loading={loading}
             workspace={selectedWorkspace}
@@ -578,9 +694,16 @@ export function App() {
             }
             modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
             developerMode={developerMode}
+            commandExecutionMode={commandExecutionMode}
             modelInspectorOpen={modelInspectorOpen}
             sessionTimerCount={selectedSessionTimerCount}
             activeTurnId={activeTurnId}
+            navCollapsed={effectiveNavCollapsed}
+            sidebarCollapsed={effectiveSidebarCollapsed}
+            contextCollapsed={Boolean(selectedSession) && effectiveContextCollapsed}
+            onExpandNav={() => setNavCollapsed(false)}
+            onExpandSidebar={() => setSidebarCollapsed(false)}
+            onExpandContext={() => setContextCollapsed(false)}
             prompt={prompt}
             error={error}
             onPromptChange={setPrompt}
@@ -604,6 +727,19 @@ export function App() {
               void createAutomationFromProposal(proposalId)}
             onCancelAutomationProposal={cancelAutomationProposal}
           />
+          {selectedSession && !effectiveContextCollapsed ? (
+            <RunContextPanel
+              session={selectedSession}
+              provider={selectedProvider}
+              responseMode={responseMode}
+              commandExecutionMode={commandExecutionMode}
+              runtime={selectedSessionId ? turnRuntimes[selectedSessionId] : undefined}
+              activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+              developerMode={developerMode}
+              onCollapse={() => setContextCollapsed(true)}
+              onOpenInspector={() => setModelInspectorOpen(true)}
+            />
+          ) : null}
         </div>
       )}
       {currentPermissionRequest ? (

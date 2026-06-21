@@ -285,9 +285,9 @@ describe("App", () => {
       });
     });
 
-    expect(screen.getByText("Model Request #1")).toBeInTheDocument();
+    expect(screen.getByText("Runtime instructions")).toBeInTheDocument();
     expect(screen.getByText("system")).toBeInTheDocument();
-    expect(screen.getByText("You are StoryForge.")).toBeInTheDocument();
+    expect(screen.getByText("User request")).toBeInTheDocument();
   });
 
   it("hides the model request inspector when developer mode is disabled", async () => {
@@ -334,7 +334,7 @@ describe("App", () => {
         tools: [],
       });
     });
-    expect(screen.getByText("Model Request #1")).toBeInTheDocument();
+    expect(screen.getByText("User request")).toBeInTheDocument();
 
     const input = await screen.findByPlaceholderText(
       "Ask StoryForge to inspect, explain, or change code...",
@@ -381,7 +381,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy JSON" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(
-      expect.stringContaining("model-request-1"),
+      expect.stringContaining("\"model\": \"deepseek-v4-pro\""),
     ));
   });
 

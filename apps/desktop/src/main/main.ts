@@ -4,6 +4,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  nativeImage,
   safeStorage,
 } from "electron";
 import { join } from "node:path";
@@ -21,6 +22,8 @@ import { SessionRepository } from "./session-repository";
 import { SkillService } from "./skill-service";
 import { WorkspaceRepository } from "./workspace-repository";
 
+const APP_ICON_PATH = join(__dirname, "../../resources/icon.png");
+
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1320,
@@ -28,6 +31,7 @@ function createWindow(): BrowserWindow {
     minWidth: 1040,
     minHeight: 720,
     title: "StoryForge",
+    icon: APP_ICON_PATH,
     backgroundColor: "#f4f6f8",
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
@@ -119,7 +123,15 @@ async function initializeApplication(): Promise<void> {
   createWindow();
 }
 
-void app.whenReady().then(initializeApplication);
+void app.whenReady().then(() => {
+  if (process.platform === "darwin") {
+    const dockIcon = nativeImage.createFromPath(APP_ICON_PATH);
+    if (!dockIcon.isEmpty()) {
+      app.dock?.setIcon(dockIcon);
+    }
+  }
+  return initializeApplication();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

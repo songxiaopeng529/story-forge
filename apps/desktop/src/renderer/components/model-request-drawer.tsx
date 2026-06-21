@@ -1,100 +1,253 @@
-import type { ModelRequestEvent } from "@story-forge/shared";
-import { Copy, X } from "lucide-react";
+import type { InspectableModelMessage, ModelRequestEvent } from "@story-forge/shared";
+import { ChevronLeft, ChevronRight, Copy, Layers, X } from "lucide-react";
 import { useEffect, useState } from "react";
+
+type Selection = "overview" | number;
 
 export function ModelRequestDrawer(props: {
   requests: ModelRequestEvent[];
   onClose: () => void;
 }) {
-  const [selectedRequestId, setSelectedRequestId] = useState<string>();
-  const latestRequest = props.requests[props.requests.length - 1];
-  const selected = props.requests.find((request) => request.requestId === selectedRequestId)
-    ?? latestRequest;
+  const [requestIndex, setRequestIndex] = useState(0);
+  const [selection, setSelection] = useState<Selection>("overview");
 
   useEffect(() => {
-    setSelectedRequestId(props.requests[props.requests.length - 1]?.requestId);
+    setRequestIndex(Math.max(props.requests.length - 1, 0));
+    setSelection("overview");
   }, [props.requests.length]);
 
-  async function copySelectedRequest(): Promise<void> {
+  const selected = props.requests[requestIndex];
+  const viewLabel = selection === "overview" ? "request" : `request.messages[${selection}]`;
+  const viewJson = selected
+    ? selection === "overview"
+      ? rawPayloadJson(selected)
+      : JSON.stringify(selected.messages[selection], null, 2)
+    : "";
+
+  async function copyRawJson(): Promise<void> {
     if (!selected) {
       return;
     }
-    await navigator.clipboard?.writeText(JSON.stringify(selected, null, 2));
+    await navigator.clipboard?.writeText(viewJson);
   }
 
   return (
-    <aside className="flex min-h-0 w-[380px] flex-none flex-col border-l border-forge-line bg-white">
-      <header className="flex h-16 flex-none items-center justify-between border-b border-forge-line px-4">
-        <div>
-          <div className="text-sm font-semibold">Model Messages</div>
-          <div className="text-xs text-slate-500">{props.requests.length} captured</div>
+    <aside className="fixed inset-y-0 right-0 z-40 flex w-[520px] flex-col border-l border-forge-line bg-white shadow-[-18px_0_28px_0_rgba(0,0,0,0.14)]">
+      <header className="relative flex-none border-b border-forge-line px-6 py-[18px]">
+        <div className="pr-32">
+          <div className="text-base font-semibold text-forge-ink">Inspector</div>
+          <div className="text-[11px] text-forge-muted">Raw request payload sent to the model</div>
         </div>
-        <button
-          aria-label="Close model request inspector"
-          className="rounded-md p-2 text-slate-500 hover:bg-slate-100"
-          onClick={props.onClose}
-          type="button"
-        >
-          <X size={16} />
-        </button>
+        <div className="absolute right-5 top-[22px] flex items-center gap-2">
+          <button
+            className="inline-flex h-8 items-center gap-2 rounded-lg border border-forge-line bg-white px-3 text-[11px] font-medium text-forge-ink hover:bg-forge-canvas disabled:opacity-40"
+            disabled={!selected}
+            onClick={() => void copyRawJson()}
+            type="button"
+          >
+            <Copy size={15} />
+            Copy JSON
+          </button>
+          <button
+            aria-label="Close model request inspector"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
+            onClick={props.onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {props.requests.length > 1 ? (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-forge-muted">
+            <button
+              aria-label="Previous request"
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas disabled:opacity-40"
+              disabled={requestIndex === 0}
+              onClick={() => {
+                setRequestIndex((index) => Math.max(index - 1, 0));
+                setSelection("overview");
+              }}
+              type="button"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span>
+              Request {requestIndex + 1} / {props.requests.length}
+            </span>
+            <button
+              aria-label="Next request"
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas disabled:opacity-40"
+              disabled={requestIndex >= props.requests.length - 1}
+              onClick={() => {
+                setRequestIndex((index) => Math.min(index + 1, props.requests.length - 1));
+                setSelection("overview");
+              }}
+              type="button"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {selected ? (
-        <div className="grid min-h-0 flex-1 grid-cols-[140px_1fr]">
-          <nav className="min-h-0 overflow-y-auto border-r border-forge-line p-2">
-            {props.requests.map((request, index) => (
-              <button
-                className={`w-full rounded-md px-2 py-2 text-left text-xs ${
-                  request.requestId === selected.requestId
-                    ? "bg-orange-50 font-semibold text-forge-ember"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-                key={request.requestId}
-                onClick={() => setSelectedRequestId(request.requestId)}
-                type="button"
-              >
-                Model Request #{index + 1}
-              </button>
-            ))}
-          </nav>
-          <section className="min-h-0 overflow-y-auto p-4">
-            <button
-              className="secondary-button mb-3 inline-flex items-center gap-2"
-              onClick={() => void copySelectedRequest()}
-              type="button"
-            >
-              <Copy size={14} />
-              Copy JSON
-            </button>
-            <div className="mb-3 text-xs text-slate-500">
-              {selected.providerId} / {selected.model}
-            </div>
-            {selected.tools.length ? (
-              <div className="mb-3 rounded-md bg-slate-50 p-2 text-xs text-slate-600">
-                Tools: {selected.tools.map((tool) => tool.name).join(", ")}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-5">
+          <div className="grid flex-none grid-cols-4 gap-2 rounded-[10px] border border-forge-line bg-forge-canvas px-4 py-2.5">
+            <SummaryCell label="Messages" value={`${selected.messages.length}`} />
+            <SummaryCell label="Tools" value={`${selected.tools.length}`} />
+            <SummaryCell label="Model" value={selected.model} />
+            <SummaryCell
+              label="Stream"
+              value={selected.responseMode === "smooth" ? "false" : "true"}
+            />
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-[188px_1fr] overflow-hidden rounded-[10px] border border-forge-line">
+            <div className="min-h-0 overflow-y-auto border-r border-forge-line p-3">
+              <div className="mb-3 flex items-baseline justify-between">
+                <span className="text-xs font-semibold text-forge-ink">messages[]</span>
+                <span className="text-[10px] text-forge-muted">
+                  {selected.messages.length} items
+                </span>
               </div>
-            ) : null}
-            <div className="space-y-3">
-              {selected.messages.map((message, index) => (
-                <article
-                  className="rounded-lg border border-forge-line p-3 text-xs"
-                  key={`${message.role}-${index}`}
+              <div className="space-y-2">
+                <button
+                  className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left ${
+                    selection === "overview"
+                      ? "border-[1.2px] border-forge-ink bg-forge-canvas"
+                      : "border-forge-line bg-white hover:bg-forge-canvas"
+                  }`}
+                  onClick={() => setSelection("overview")}
+                  type="button"
                 >
-                  <div className="mb-2 font-semibold text-slate-700">{message.role}</div>
-                  <pre className="whitespace-pre-wrap text-slate-600">{message.content}</pre>
-                  {"toolCalls" in message && message.toolCalls?.length ? (
-                    <pre className="mt-2 overflow-auto rounded bg-slate-50 p-2 text-slate-600">
-                      {JSON.stringify(message.toolCalls, null, 2)}
-                    </pre>
-                  ) : null}
-                </article>
-              ))}
+                  <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-forge-ink/[0.06] text-forge-ink">
+                    <Layers size={13} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-[11px] font-medium text-forge-ink">
+                      Overview
+                    </span>
+                    <span className="block truncate text-[9px] text-forge-muted">
+                      Full outbound payload
+                    </span>
+                  </span>
+                </button>
+                <div className="h-px bg-forge-divider" />
+                {selected.messages.map((message, index) => {
+                  const summary = summarizeMessage(message);
+                  const active = selection === index;
+                  return (
+                    <button
+                      className={`w-full rounded-lg border px-2.5 py-2 text-left ${
+                        active
+                          ? "border-[1.2px] border-forge-ink bg-forge-canvas"
+                          : "border-forge-line bg-white hover:bg-forge-canvas"
+                      }`}
+                      key={`${message.role}-${index}`}
+                      onClick={() => setSelection(index)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between">
+                        <RolePill role={message.role} />
+                        <span className="text-[10px] font-medium text-forge-muted">#{index}</span>
+                      </div>
+                      <div className="mt-1.5 truncate text-[11px] font-medium text-forge-ink">
+                        {summary.title}
+                      </div>
+                      <div className="truncate text-[9px] text-forge-muted">{summary.detail}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </section>
+
+            <div className="flex min-h-0 min-w-0 flex-col bg-[#18191b]">
+              <div className="flex flex-none items-center justify-between bg-[#222326] px-3.5 py-3">
+                <span className="text-[11px] font-semibold text-[#e6e9ef]">
+                  {viewLabel}
+                </span>
+                <span className="text-[10px] font-medium text-[#95989f]">raw JSON</span>
+              </div>
+              <pre className="min-h-0 flex-1 overflow-auto whitespace-pre px-3.5 py-3 font-mono text-[10px] leading-[15px] text-[#e6e9ef]">
+                {viewJson}
+              </pre>
+            </div>
+          </div>
+
+          <div className="flex-none rounded-[10px] border border-forge-line bg-forge-canvas px-3.5 py-2.5">
+            <p className="text-[10px] leading-[15px] text-forge-muted">
+              Display rule: show the exact outbound payload first. Parsed summaries can help
+              navigation, but must never replace the raw JSON.
+            </p>
+          </div>
         </div>
       ) : (
-        <div className="p-4 text-sm text-slate-500">No model requests captured yet.</div>
+        <div className="p-6 text-sm text-forge-muted">No model requests captured yet.</div>
       )}
     </aside>
+  );
+}
+
+function SummaryCell(props: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[10px] text-forge-muted">{props.label}</div>
+      <div className="truncate text-xs font-semibold text-forge-ink" title={props.value}>
+        {props.value}
+      </div>
+    </div>
+  );
+}
+
+function RolePill(props: { role: InspectableModelMessage["role"] }) {
+  const tone: Record<InspectableModelMessage["role"], string> = {
+    system: "bg-[rgba(110,110,115,0.08)] text-forge-muted",
+    user: "bg-[rgba(29,29,31,0.08)] text-forge-ink",
+    assistant: "bg-[rgba(0,122,255,0.08)] text-forge-info",
+    tool: "bg-[rgba(52,199,89,0.08)] text-forge-success-line",
+  };
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone[props.role]}`}
+    >
+      {props.role}
+    </span>
+  );
+}
+
+function summarizeMessage(message: InspectableModelMessage): { title: string; detail: string } {
+  if (message.role === "system") {
+    return { title: "Runtime instructions", detail: firstLine(message.content) };
+  }
+  if (message.role === "user") {
+    return { title: "User request", detail: firstLine(message.content) };
+  }
+  if (message.role === "tool") {
+    return { title: `${message.name} result`, detail: firstLine(message.content) };
+  }
+  if (message.toolCalls?.length) {
+    return {
+      title: "Tool planning",
+      detail: `calls ${message.toolCalls.map((call) => call.name).join(", ")}`,
+    };
+  }
+  return { title: "Assistant message", detail: firstLine(message.content) };
+}
+
+function firstLine(content: string): string {
+  const line = content.split("\n").map((value) => value.trim()).find(Boolean);
+  return line ?? "—";
+}
+
+function rawPayloadJson(request: ModelRequestEvent): string {
+  return JSON.stringify(
+    {
+      model: request.model,
+      stream: request.responseMode !== "smooth",
+      messages: request.messages,
+      tools: request.tools,
+    },
+    null,
+    2,
   );
 }
