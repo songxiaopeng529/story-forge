@@ -62,7 +62,8 @@ describe("web search providers", () => {
       fetch,
     });
 
-    expect(String(fetch.mock.calls[0]?.[0])).toContain("api_key=serp-secret");
+    const calls = fetch.mock.calls as unknown as Array<[string | URL, RequestInit?]>;
+    expect(String(calls[0]?.[0])).toContain("api_key=serp-secret");
     expect(output.results[0]).toMatchObject({
       title: "StoryForge docs",
       url: "https://example.com/docs",

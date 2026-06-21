@@ -1,4 +1,3 @@
-import type { WebSearchCoverage } from "@story-forge/shared";
 import type { ToolDefinition } from "./tool-registry";
 import {
   extractTavily,
@@ -10,6 +9,8 @@ import {
   type WebProviderName,
 } from "./web-search-providers";
 import { assertPublicWebUrl, canonicalizeUrl } from "./web-url-policy";
+
+export type WebSearchCoverage = "focused" | "wide";
 
 export type WebToolsOptions = {
   enabled: boolean;
@@ -205,7 +206,7 @@ async function runWebSearch(
       run: () => searchTavily({
         apiKey: options.credentials.tavilyApiKey!,
         query: input.query,
-        maxResults: input.maxResults,
+        ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
         ...(input.topic ? { topic: input.topic } : {}),
         ...(input.timeRange ? { timeRange: input.timeRange } : {}),
         ...(input.includeDomains ? { includeDomains: input.includeDomains } : {}),
@@ -224,7 +225,7 @@ async function runWebSearch(
         run: () => searchSerpApi({
           apiKey: options.credentials.serpApiKey!,
           query: input.query,
-          maxResults: input.maxResults,
+          ...(input.maxResults !== undefined ? { maxResults: input.maxResults } : {}),
           ...(options.fetch ? { fetch: options.fetch } : {}),
         }),
       });

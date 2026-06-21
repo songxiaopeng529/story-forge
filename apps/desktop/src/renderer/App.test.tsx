@@ -1040,6 +1040,8 @@ describe("App", () => {
         responseMode: "live",
         developerMode: false,
         commandExecutionMode: "sentinel",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
       });
     });
     await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
