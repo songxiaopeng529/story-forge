@@ -14,6 +14,7 @@ import { AppSettingsStore } from "./app-settings-store";
 import { AutomationRepository } from "./automation-repository";
 import { AutomationScheduler } from "./automation-scheduler";
 import { AutomationService } from "./automation-service";
+import { loadStoryForgeDotEnv } from "./env-loader";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { McpConfigService } from "./mcp-config-service";
 import { ProviderConfigStore } from "./provider-config-store";
@@ -49,6 +50,7 @@ function createWindow(): BrowserWindow {
 }
 
 async function initializeApplication(): Promise<void> {
+  await loadStoryForgeDotEnv(app.getAppPath());
   const rootDir = app.getPath("userData");
   const settingsStore = new AppSettingsStore({ rootDir });
   const providerStore = new ProviderConfigStore({
