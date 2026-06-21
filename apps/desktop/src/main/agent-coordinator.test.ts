@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { AgentRuntime } from "@story-forge/agent-core";
 import type { ModelProvider } from "@story-forge/model-gateway";
 import type { AgentEvent } from "@story-forge/shared";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -12,6 +13,60 @@ import { SessionRepository } from "./session-repository";
 import { WorkspaceRepository } from "./workspace-repository";
 
 describe("AgentCoordinator", () => {
+  it("can host an injected runtime without native loop dependencies", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const prompts: string[] = [];
+    const runtime: AgentRuntime = {
+      async *runTurn(input) {
+        prompts.push(input.prompt);
+        yield {
+          type: "runtime.started",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          createdAt: "2026-06-21T00:00:00.000Z",
+        };
+        yield {
+          type: "message.delta",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          content: "Fake runtime",
+        };
+        yield {
+          type: "runtime.completed",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          stopReason: "completed",
+        };
+      },
+    };
+    const coordinator = new AgentCoordinator({
+      sessionRepository: fixture.sessionRepository,
+      runtime,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello runtime",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(prompts).toEqual(["hello runtime"]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      content: "Fake runtime",
+    }));
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      status: "completed",
+      messages: [
+        expect.objectContaining({ role: "user", content: "hello runtime" }),
+      ],
+    });
+  });
+
   it("passes the current response mode into the agent loop", async () => {
     const fixture = await createFixture();
     const events: AgentEvent[] = [];
