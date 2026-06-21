@@ -1,5 +1,12 @@
 import type { ChatMessage, ToolCall } from "@story-forge/model-gateway";
 import type { SkillView } from "@story-forge/shared";
+import { loadProjectInstructions, type ProjectInstructionsContext } from "./project-instructions";
+import {
+  serializeStoryForgeContextDocument,
+  type StoryForgeActiveSkill,
+  type StoryForgeAvailableSkill,
+  type StoryForgeContextDocument,
+} from "./storyforge-context-document";
 import type {
   AgentRuntimeTurnInput,
   RuntimeContext,
@@ -42,12 +49,16 @@ export class RuntimeContextAssembler {
         this.settings.getCommandExecutionMode(),
         this.listEnabledSkills(),
       ]);
-    const activeSkillInvocation = await this.resolveSkillInvocation(input.prompt, availableSkills);
-    const systemMessages = [
-      createBaseSystemMessage(workspace.path),
-      ...(availableSkills.length > 0 ? [createAvailableSkillsSystemMessage(availableSkills)] : []),
-      ...(activeSkillInvocation ? [createSkillSystemMessage(activeSkillInvocation)] : []),
-    ];
+    const [activeSkillInvocation, projectInstructions] = await Promise.all([
+      this.resolveSkillInvocation(input.prompt, availableSkills),
+      loadProjectInstructions(workspace.path),
+    ]);
+    const systemMessage = createStructuredSystemMessage({
+      workspacePath: workspace.path,
+      availableSkills,
+      activeSkillInvocation,
+      projectInstructions,
+    });
 
     return {
       turnId: input.turnId,
@@ -61,7 +72,7 @@ export class RuntimeContextAssembler {
       availableSkills,
       ...(activeSkillInvocation ? { activeSkillInvocation } : {}),
       messages: [
-        ...systemMessages,
+        systemMessage,
         ...session.messages.map(toChatMessage),
       ],
     };
@@ -175,42 +186,82 @@ export function toRuntimePersistedMessages(
 
 export type { RuntimePersistedMessage, RuntimeSession };
 
-function createBaseSystemMessage(workspacePath: string): ChatMessage {
+function createStructuredSystemMessage(input: {
+  workspacePath: string;
+  availableSkills: SkillView[];
+  activeSkillInvocation: RuntimeSkillInvocation | undefined;
+  projectInstructions: ProjectInstructionsContext;
+}): ChatMessage {
+  const document: StoryForgeContextDocument = {
+    version: 1,
+    main: {
+      content: createMainSystemPrompt(input.workspacePath),
+    },
+    skills: {
+      available: input.availableSkills.map(toAvailableSkill),
+      ...(input.activeSkillInvocation
+        ? { active: toActiveSkill(input.activeSkillInvocation) }
+        : {}),
+    },
+    mcp: {
+      servers: [],
+      warnings: [],
+    },
+    projectInfo: {
+      sources: input.projectInstructions.sources,
+      warnings: input.projectInstructions.warnings,
+    },
+    soul: {
+      status: "empty",
+      sources: [],
+      content: "No long-term memory has been recorded yet.",
+      warnings: [],
+    },
+  };
   return {
     role: "system",
-    content:
-      `You are StoryForge, a local coding agent working in ${workspacePath}. `
-      + "Inspect before editing, use workspace-relative paths, and run only necessary development commands. "
-      + "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation. "
-      + "Use kind=thread_chat only when the user explicitly wants the automation to continue in this same chat with existing context; otherwise use kind=scheduled_chat. "
-      + "Never claim the automation is created until the user confirms it.",
+    content: serializeStoryForgeContextDocument(document),
   };
 }
 
-function createAvailableSkillsSystemMessage(skills: SkillView[]): ChatMessage {
+function createMainSystemPrompt(workspacePath: string): string {
+  return [
+    `You are StoryForge, a local coding agent working in ${workspacePath}.`,
+    "",
+    "Instruction precedence:",
+    "1. Higher-priority platform, system, and developer instructions outside StoryForge.",
+    "2. <main> StoryForge built-in runtime rules.",
+    "3. <project-info> project instructions.",
+    "4. Active <skills> instructions for this turn.",
+    "5. <mcp> server instructions and tool usage notes.",
+    "6. <soul> long-term memory.",
+    "7. Conversation messages.",
+    "",
+    "Inspect before editing, use workspace-relative paths, and run only necessary development commands.",
+    "Treat listed skills as installed capabilities. Do not deny that a listed skill exists just because there is no dedicated tool with the same name.",
+    "If the user explicitly invokes or mentions a listed skill, follow the matching active skill instructions when they are provided in this request.",
+    "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation.",
+    "Use kind=thread_chat only when the user explicitly wants the automation to continue in this same chat with existing context; otherwise use kind=scheduled_chat.",
+    "Never claim the automation is created until the user confirms it.",
+  ].join("\n");
+}
+
+function toAvailableSkill(skill: SkillView): StoryForgeAvailableSkill {
   return {
-    role: "system",
-    content: [
-      "Available StoryForge skills:",
-      ...skills.map((skill) =>
-        `- ${skill.invocationName} (${skill.name}): ${singleLine(skill.description)}`
-      ),
-      "",
-      "These are installed and enabled skills. Do not deny that a listed skill exists just because there is no dedicated tool with the same name.",
-      "If the user explicitly invokes or mentions one of these skills, follow the matching active skill instructions when they are provided in this request.",
-    ].join("\n"),
+    invocationName: skill.invocationName,
+    name: skill.name,
+    description: singleLine(skill.description),
   };
 }
 
-function createSkillSystemMessage(invocation: RuntimeSkillInvocation): ChatMessage {
+function toActiveSkill(invocation: RuntimeSkillInvocation): StoryForgeActiveSkill {
   return {
-    role: "system",
-    content: [
-      `Active StoryForge skill: ${invocation.skill.name}`,
-      "",
-      `Invocation: ${invocation.skill.invocationName}`,
-      `Arguments: ${invocation.argumentsText}`,
-      "",
+    invocationName: invocation.skill.invocationName,
+    name: invocation.skill.name,
+    description: singleLine(invocation.skill.description),
+    argumentsText: invocation.argumentsText,
+    body: [
+      "Active StoryForge skill instructions apply to this turn.",
       "Follow this skill for the current turn. The skill instructions apply in addition to StoryForge's normal coding-agent rules. If the skill conflicts with higher-priority system instructions, follow the higher-priority instructions.",
       "If this skill describes CLI commands or command-line workflows, use StoryForge's workspace.runCommand / workspace_runCommand tool to execute those commands. Do not claim the capability is unavailable only because there is no dedicated tool named after the skill.",
       "",

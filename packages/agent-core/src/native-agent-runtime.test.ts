@@ -1,7 +1,10 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ChatMessage, ModelProvider } from "@story-forge/model-gateway";
 import type { AgentEvent, SessionId, SkillView, TurnId } from "@story-forge/shared";
 import { ToolRegistry } from "@story-forge/tools";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type RuntimePersistedMessage, type RuntimeSession, RuntimeContextAssembler } from "./runtime-context";
 import { NativeAgentRuntime } from "./native-agent-runtime";
 
@@ -17,11 +20,19 @@ function collectEvents(iterable: AsyncIterable<AgentEvent>): Promise<AgentEvent[
 
 const sessionId = "sf_session_test" as SessionId;
 const turnId = "sf_turn_test" as TurnId;
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 describe("NativeAgentRuntime", () => {
   it("assembles StoryForge context with enabled and active skills", async () => {
+    const workspacePath = await createTempWorkspace();
+    await writeFile(join(workspacePath, "AGENTS.md"), "Project rule: run the focused tests.", "utf8");
     const requests: ChatMessage[][] = [];
     const fixture = createRuntimeFixture({
+      workspacePath,
       messages: [userMessage("/code-review focus on regressions")],
       provider: fakeProvider(async (messages) => {
         requests.push(messages);
@@ -51,19 +62,22 @@ describe("NativeAgentRuntime", () => {
       type: "message.delta",
       content: "Reviewed",
     }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Available StoryForge skills"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Active StoryForge skill: Code Review"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("workspace.runCommand / workspace_runCommand"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
+    const request = requests[0] ?? [];
+    const systemMessages = request.filter((message) => message.role === "system");
+    expect(systemMessages).toHaveLength(1);
+    const systemContent = systemMessages[0]?.content ?? "";
+    expect(systemContent).toContain("<storyforge-context version=\"1\">");
+    expect(systemContent).toContain("<main>");
+    expect(systemContent).toContain("<skills count=\"1\" active=\"/code-review\">");
+    expect(systemContent).toContain("Active StoryForge skill instructions apply to this turn.");
+    expect(systemContent).toContain("Review regressions and missing tests.");
+    expect(systemContent).toContain("<mcp server-count=\"0\" tool-count=\"0\">");
+    expect(systemContent).toContain("<project-info source-count=\"1\">");
+    expect(systemContent).toContain("Project rule: run the focused tests.");
+    expect(systemContent).toContain("<soul source-count=\"0\" status=\"empty\">");
+    expect(systemContent).toContain("workspace.runCommand / workspace_runCommand");
+    expect(systemContent).not.toContain("<messages>");
+    expect(request).toContainEqual(expect.objectContaining({
       role: "user",
       content: "/code-review focus on regressions",
     }));
@@ -157,6 +171,7 @@ describe("NativeAgentRuntime", () => {
 function createRuntimeFixture(input: {
   messages: RuntimePersistedMessage[];
   provider: ModelProvider;
+  workspacePath?: string;
   tools?: ToolRegistry;
   developerMode?: boolean;
   skills?: {
@@ -182,7 +197,7 @@ function createRuntimeFixture(input: {
       },
     },
     workspaceStore: {
-      get: async () => ({ id: "workspace-1", path: "/tmp/story-forge" }),
+      get: async () => ({ id: "workspace-1", path: input.workspacePath ?? "/tmp/story-forge" }),
     },
     settings: {
       getResponseMode: async () => "smooth",
@@ -230,6 +245,12 @@ function createRuntimeFixture(input: {
       },
     }),
   };
+}
+
+async function createTempWorkspace(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "story-forge-runtime-"));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function userMessage(content: string): RuntimePersistedMessage {
