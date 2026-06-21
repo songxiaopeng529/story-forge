@@ -69,6 +69,58 @@ describe("App", () => {
     await waitFor(() => expect(fixture.stop).toHaveBeenCalledWith("sf_turn_active"));
   });
 
+  it("offers enabled skills in the slash command menu and inserts the selected invocation", async () => {
+    installApi({
+      skills: [
+        {
+          id: "agent-browser",
+          name: "Agent Browser",
+          description: "Inspect and operate browser pages",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        },
+        {
+          id: "drafting",
+          name: "Drafting",
+          description: "Draft release notes",
+          invocationName: "/drafting",
+          enabled: false,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        },
+      ],
+    });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/agent" } });
+
+    const command = await screen.findByRole("option", { name: /\/agent-browser/i });
+    expect(screen.queryByRole("option", { name: /\/drafting/i })).not.toBeInTheDocument();
+
+    fireEvent.click(command);
+
+    expect(input).toHaveValue("/agent-browser ");
+  });
+
+  it("runs built-in slash commands from the prompt", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/timer" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/timer/i }));
+
+    expect(await screen.findByLabelText("Schedule description")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
   it("updates from correlated turn events and reloads the persisted session on completion", async () => {
     const fixture = installApi();
     render(<App />);

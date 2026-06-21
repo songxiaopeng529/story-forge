@@ -719,6 +719,9 @@ export function App() {
             onRename={(title) => void renameSession(title)}
             onDelete={() => void deleteSession()}
             onOpenWorkspace={() => void openWorkspace()}
+            onOpenModels={() => setPage("models")}
+            onOpenExtensions={() => setPage("extensions")}
+            onOpenSettings={() => setPage("settings")}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
             onSessionTimerCreated={handleSessionTimerCreated}
