@@ -1,0 +1,14 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4844cae2e0ece326f9d07182c4629340cf83b5db",
+  "prompts": {},
+  "humans": {
+    "h_8e36b56ff035e9": {
+      "author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
