@@ -873,6 +873,43 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
   });
 
+  it("loads and saves Web Search Coverage from Settings", async () => {
+    const fixture = installApi({
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const webAccess = await screen.findByRole("switch", { name: "Web access" });
+    const coverageGroup = await screen.findByRole("radiogroup", {
+      name: "Web Search Coverage",
+    });
+    expect(webAccess).not.toBeChecked();
+    expect(within(coverageGroup).getByRole("radio", { name: "Focused" })).toBeDisabled();
+
+    fireEvent.click(webAccess);
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      webAccessEnabled: true,
+    }));
+    expect(within(coverageGroup).getByRole("radio", { name: "Focused" })).not.toBeDisabled();
+
+    fireEvent.click(within(coverageGroup).getByRole("radio", { name: "Wide" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      webSearchCoverage: "wide",
+    }));
+    expect(within(coverageGroup).getByRole("radio", { name: "Wide" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
   it("responds to command permission requests", async () => {
     const fixture = installApi();
     render(<App />);
@@ -1011,7 +1048,7 @@ describe("App", () => {
 });
 
 function installApi(options: {
-  settings?: AppSettingsView;
+  settings?: Partial<AppSettingsView>;
   saveSettings?: StoryForgeApi["settings"]["save"];
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
@@ -1064,11 +1101,14 @@ function installApi(options: {
   const stop = vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
-  const settings = options.settings ?? {
+  const settings: AppSettingsView = {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
     developerMode: false,
     commandExecutionMode: "sentinel" as const,
+    webAccessEnabled: false,
+    webSearchCoverage: "focused" as const,
+    ...options.settings,
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
