@@ -40,16 +40,31 @@ describe("WorkspaceSandbox", () => {
     await writeFile(outsidePath, "secret");
     const sandbox = new WorkspaceSandbox(root);
 
-    await expect(sandbox.readTextFile(outsidePath)).rejects.toThrow(`Absolute paths are not allowed: ${outsidePath}`);
+    await expect(sandbox.readTextFile(outsidePath)).rejects.toThrow(
+      `Path escapes workspace root: ${outsidePath}`,
+    );
   });
 
-  it("rejects absolute paths even when they point inside the workspace", async () => {
+  it("reads and lists absolute paths when they point inside the workspace", async () => {
     const root = await createWorkspace();
     const sandbox = new WorkspaceSandbox(root);
 
-    await expect(sandbox.readTextFile(path.join(root, "chapter.txt"))).rejects.toThrow(
-      "Absolute paths are not allowed",
+    await expect(sandbox.readTextFile(path.join(root, "chapter.txt"))).resolves.toBe(
+      "Once upon a forge",
     );
+    await expect(sandbox.listDirectory(root)).resolves.toEqual(["chapter.txt"]);
+  });
+
+  it("writes absolute paths when they point inside the workspace", async () => {
+    const root = await createWorkspace();
+    const sandbox = new WorkspaceSandbox(root);
+    const targetPath = path.join(root, "drafts", "absolute.txt");
+
+    await expect(sandbox.writeTextFile(targetPath, "absolute draft")).resolves.toEqual({
+      path: targetPath,
+      bytes: Buffer.byteLength("absolute draft"),
+    });
+    await expect(readFile(targetPath, "utf8")).resolves.toBe("absolute draft");
   });
 
   it("blocks symlinks that resolve outside the workspace root", async () => {

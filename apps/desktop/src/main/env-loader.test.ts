@@ -1,14 +1,19 @@
 // @vitest-environment node
 
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadDotEnvFile } from "./env-loader";
+import { loadDotEnvFile, loadStoryForgeDotEnv } from "./env-loader";
 
 const tempDirs: string[] = [];
+let originalCwd: string | undefined;
 
 afterEach(async () => {
+  if (originalCwd) {
+    process.chdir(originalCwd);
+    originalCwd = undefined;
+  }
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -36,5 +41,26 @@ describe("loadDotEnvFile", () => {
     await loadDotEnvFile("/tmp/story-forge-missing/.env", env);
 
     expect(env).toEqual({});
+  });
+});
+
+describe("loadStoryForgeDotEnv", () => {
+  it("loads .env from the workspace root when run from a nested package cwd", async () => {
+    const root = await mkdtemp(join(tmpdir(), "story-forge-root-"));
+    tempDirs.push(root);
+    await writeFile(join(root, "pnpm-workspace.yaml"), "packages:\n  - 'apps/*'\n", "utf8");
+    const key = `SF_TEST_ROOT_ENV_${Date.now()}`;
+    await writeFile(join(root, ".env"), `${key}=from-root\n`, "utf8");
+    const nested = join(root, "apps", "desktop");
+    await mkdir(nested, { recursive: true });
+
+    originalCwd = process.cwd();
+    process.chdir(nested);
+    try {
+      await loadStoryForgeDotEnv(nested);
+      expect(process.env[key]).toBe("from-root");
+    } finally {
+      delete process.env[key];
+    }
   });
 });

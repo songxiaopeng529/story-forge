@@ -1,5 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { access, readFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, parse } from "node:path";
+
+const WORKSPACE_ROOT_MARKER = "pnpm-workspace.yaml";
 
 export async function loadDotEnvFile(
   envPath: string,
@@ -25,10 +27,42 @@ export async function loadDotEnvFile(
 }
 
 export async function loadStoryForgeDotEnv(appPath: string): Promise<void> {
+  const candidateDirs: string[] = [];
   if (isAbsolute(appPath)) {
-    await loadDotEnvFile(join(appPath, ".env"));
+    candidateDirs.push(appPath);
   }
-  await loadDotEnvFile(join(process.cwd(), ".env"));
+  candidateDirs.push(process.cwd());
+
+  const workspaceRoot = await findWorkspaceRoot(process.cwd());
+  if (workspaceRoot) {
+    candidateDirs.push(workspaceRoot);
+  }
+
+  const seen = new Set<string>();
+  for (const dir of candidateDirs) {
+    if (seen.has(dir)) {
+      continue;
+    }
+    seen.add(dir);
+    await loadDotEnvFile(join(dir, ".env"));
+  }
+}
+
+async function findWorkspaceRoot(startDir: string): Promise<string | undefined> {
+  let current = startDir;
+  const { root } = parse(current);
+  while (true) {
+    try {
+      await access(join(current, WORKSPACE_ROOT_MARKER));
+      return current;
+    } catch {
+      // marker not here; keep walking up
+    }
+    if (current === root) {
+      return undefined;
+    }
+    current = dirname(current);
+  }
 }
 
 function parseDotEnvLine(line: string): { key: string; value: string } | undefined {
