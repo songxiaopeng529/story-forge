@@ -52,6 +52,7 @@ function createWindow(): BrowserWindow {
 async function initializeApplication(): Promise<void> {
   await loadStoryForgeDotEnv(app.getAppPath());
   const rootDir = app.getPath("userData");
+  const commandHome = join(rootDir, "command-home");
   const settingsStore = new AppSettingsStore({ rootDir });
   const providerStore = new ProviderConfigStore({
     rootDir,
@@ -83,6 +84,7 @@ async function initializeApplication(): Promise<void> {
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
     getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,
     getWebSearchCoverage: async () => (await settingsStore.get()).webSearchCoverage,
+    commandHome,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);

@@ -34,17 +34,17 @@ const commandExecutionModes: Array<{
   {
     value: "sentinel",
     label: "哨兵模式",
-    description: "安全优先。安全命令会直接执行，危险或未知命令会先询问你。",
+    description: "防守最强。安全命令直接执行；未知、高风险、破坏性或提权命令会先询问你。",
   },
   {
     value: "cruise",
     label: "巡航模式",
-    description: "快速推进。大多数命令会直接执行，破坏性操作会先询问你。",
+    description: "推进更快。普通命令直接执行；高风险、破坏性或提权命令会先询问你。",
   },
   {
     value: "unleashed",
     label: "无缰模式",
-    description: "完全放开。命令不会再弹出确认，请只在你信任当前 Agent 时使用。",
+    description: "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
   },
 ];
 
@@ -179,6 +179,9 @@ export function SettingsPage(props: {
                 );
               })}
             </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。
+            </p>
           </div>
 
           <label className="mt-5 flex items-center justify-between gap-4 border-t border-forge-line pt-5">

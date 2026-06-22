@@ -347,13 +347,13 @@ describe("AgentCoordinator", () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: "permission.request",
-      reason: "Command is outside the safe allowlist.",
+      reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
       command: expect.objectContaining({
         program: "node",
         args: ["-e", "console.log('allowed')"],
       }),
       mode: "sentinel",
-      risk: "unknown",
+      risk: "high",
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: "tool.result",
@@ -365,6 +365,58 @@ describe("AgentCoordinator", () => {
       messages: expect.arrayContaining([
         expect.objectContaining({ role: "assistant", content: "Command complete." }),
       ]),
+    });
+  });
+
+  it("passes a configured command home into workspace commands", async () => {
+    const fixture = await createFixture();
+    const commandHome = join(fixture.rootDir, "command-home");
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_command_home",
+                  name: "workspace.runCommand",
+                  input: {
+                    program: "node",
+                    args: ["-e", "console.log(process.env.HOME)"],
+                  },
+                }],
+              }
+            : { content: "Done.", toolCalls: [] };
+        }),
+      },
+      commandHome,
+      getCommandExecutionMode: async () => "unleashed",
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "Print command home",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    const toolResult = events.find((event) =>
+      event.type === "tool.result" && event.name === "workspace.runCommand"
+    );
+    expect(toolResult).toMatchObject({
+      type: "tool.result",
+      ok: true,
+      output: expect.objectContaining({
+        stdout: `${commandHome}\n`,
+      }),
     });
   });
 
@@ -848,6 +900,8 @@ async function createFixture() {
     model: "deepseek-v4-pro",
   });
   return {
+    rootDir,
+    workspacePath,
     providerStore,
     sessionRepository,
     workspaceRepository,

@@ -75,7 +75,7 @@ export type PermissionRequestEvent = {
     cwd: string;
   };
   mode: CommandExecutionMode;
-  risk: "unknown" | "destructive" | "elevated";
+  risk: "unknown" | "high" | "destructive" | "elevated";
 };
 
 export type MemoryWriteEvent = {

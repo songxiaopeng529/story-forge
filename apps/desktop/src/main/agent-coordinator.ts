@@ -63,6 +63,7 @@ export type AgentCoordinatorOptions = {
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   getWebAccessEnabled?: () => Promise<boolean>;
   getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
+  commandHome?: string;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -83,6 +84,7 @@ export class AgentCoordinator {
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly getWebAccessEnabled: () => Promise<boolean>;
   private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
+  private readonly commandHome: string | undefined;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly runtime: AgentRuntime;
   private readonly maxSteps: number | undefined;
@@ -100,6 +102,7 @@ export class AgentCoordinator {
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
+    this.commandHome = options.commandHome;
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
@@ -284,6 +287,7 @@ export class AgentCoordinator {
       ...createWorkspaceFileTools(sandbox),
       createWorkspaceCommandTool(sandbox, {
         mode: context.settings.commandExecutionMode,
+        ...(this.commandHome ? { commandHome: this.commandHome } : {}),
         requestPermission: (request) =>
           this.requestCommandPermission({
             sessionId: context.session.id,

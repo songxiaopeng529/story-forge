@@ -861,8 +861,11 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
     expect(within(commandModeGroup).getByRole("radio", { name: "无缰模式" }))
       .toHaveAccessibleDescription(
-        "完全放开。命令不会再弹出确认，请只在你信任当前 Agent 时使用。",
+        "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
       );
+    expect(screen.getByText(
+      "StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。",
+    )).toBeInTheDocument();
 
     fireEvent.click(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }));
 
