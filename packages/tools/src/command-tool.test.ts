@@ -171,6 +171,60 @@ describe("workspace.runCommand", () => {
     }
   });
 
+  it("runs commands with a sanitized environment and StoryForge-owned HOME", async () => {
+    const root = await createCommandWorkspace();
+    const previousTavilyKey = process.env.Tavily_API_KEY;
+    const previousSerpApiKey = process.env.SerpApi_API_KEY;
+    const previousSecret = process.env.STORY_FORGE_SECRET_FOR_TEST;
+    process.env.Tavily_API_KEY = "tavily-secret";
+    process.env.SerpApi_API_KEY = "serp-secret";
+    process.env.STORY_FORGE_SECRET_FOR_TEST = "custom-secret";
+    try {
+      const resolvedRoot = await realpath(root);
+      const result = await commandRegistry(root, { mode: "unleashed" }).execute("workspace.runCommand", {
+        program: "node",
+        args: [
+          "-e",
+          "console.log(JSON.stringify({home:process.env.HOME,pathPresent:Boolean(process.env.PATH),tavily:process.env.Tavily_API_KEY??null,serp:process.env.SerpApi_API_KEY??null,secret:process.env.STORY_FORGE_SECRET_FOR_TEST??null}))",
+        ],
+      });
+
+      expect(result).toMatchObject({ ok: true });
+      if (result.ok) {
+        const output = JSON.parse((result.output as { stdout: string }).stdout);
+        expect(output).toEqual({
+          home: path.join(resolvedRoot, ".storyforge-command-home"),
+          pathPresent: true,
+          tavily: null,
+          serp: null,
+          secret: null,
+        });
+      }
+    } finally {
+      restoreEnvValue("Tavily_API_KEY", previousTavilyKey);
+      restoreEnvValue("SerpApi_API_KEY", previousSerpApiKey);
+      restoreEnvValue("STORY_FORGE_SECRET_FOR_TEST", previousSecret);
+    }
+  });
+
+  it("uses a configured command home when provided", async () => {
+    const root = await createCommandWorkspace();
+    const commandHome = path.join(root, "custom-command-home");
+
+    const result = await commandRegistry(root, { commandHome, mode: "unleashed" }).execute(
+      "workspace.runCommand",
+      {
+        program: "node",
+        args: ["-e", "console.log(process.env.HOME)"],
+      },
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) {
+      expect((result.output as { stdout: string }).stdout.trim()).toBe(commandHome);
+    }
+  });
+
   it("terminates commands that exceed their timeout", async () => {
     const root = await createCommandWorkspace();
     const result = await commandRegistry(root).execute("workspace.runCommand", {
@@ -323,4 +377,12 @@ async function createCommandWorkspace(): Promise<string> {
     }),
   );
   return root;
+}
+
+function restoreEnvValue(key: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[key];
+    return;
+  }
+  process.env[key] = value;
 }

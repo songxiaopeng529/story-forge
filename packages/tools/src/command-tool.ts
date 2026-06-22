@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import {
   classifyCommand,
   type CommandExecutionMode,
@@ -10,6 +12,15 @@ import type { WorkspaceSandbox } from "./workspace-sandbox";
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
+const COMMAND_ENV_PASSTHROUGH_KEYS = [
+  "PATH",
+  "LANG",
+  "LC_ALL",
+  "TERM",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+];
 
 export type WorkspaceCommandPermissionRequest = {
   reason: string;
@@ -23,6 +34,7 @@ export type WorkspaceCommandPermissionRequest = {
 
 export type WorkspaceCommandToolOptions = {
   mode?: CommandExecutionMode;
+  commandHome?: string;
   requestPermission?: (request: WorkspaceCommandPermissionRequest) => Promise<boolean>;
 };
 
@@ -88,7 +100,9 @@ export function createWorkspaceCommandTool(
       if (mode !== "unleashed") {
         await sandbox.assertCommandArgumentsInside(cwdInput, args);
       }
-      const result = await runCommand({ program, args, cwd, timeoutMs }, context);
+      const commandHome = await prepareCommandHome(cwd, options.commandHome);
+      const env = createCommandEnvironment(commandHome);
+      const result = await runCommand({ program, args, cwd, timeoutMs, env }, context);
       if (result.aborted || result.timedOut || result.exitCode !== 0) {
         throw new Error(`Command failed: ${JSON.stringify(result)}`);
       }
@@ -105,7 +119,13 @@ export function validateCommand(program: string, args: string[]): void {
 }
 
 async function runCommand(
-  input: { program: string; args: string[]; cwd: string; timeoutMs: number },
+  input: {
+    program: string;
+    args: string[];
+    cwd: string;
+    timeoutMs: number;
+    env: NodeJS.ProcessEnv;
+  },
   context: ToolExecutionContext,
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
@@ -114,6 +134,7 @@ async function runCommand(
       shell: false,
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
+      env: input.env,
     });
     let stdout = "";
     let stderr = "";
@@ -221,6 +242,34 @@ async function runCommand(
       });
     });
   });
+}
+
+async function prepareCommandHome(cwd: string, configuredHome: string | undefined): Promise<string> {
+  const commandHome = path.resolve(cwd, configuredHome ?? ".storyforge-command-home");
+  await mkdir(commandHome, { recursive: true });
+  return commandHome;
+}
+
+function createCommandEnvironment(commandHome: string): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of COMMAND_ENV_PASSTHROUGH_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+
+  if (process.platform === "win32") {
+    for (const key of ["ComSpec", "SystemRoot", "WINDIR", "PATHEXT"]) {
+      const value = process.env[key];
+      if (value !== undefined) {
+        env[key] = value;
+      }
+    }
+  }
+
+  env.HOME = commandHome;
+  return env;
 }
 
 function readProgram(value: unknown): string {
