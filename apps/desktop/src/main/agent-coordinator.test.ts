@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import type { AgentRuntime } from "@story-forge/agent-core";
 import type { ModelProvider } from "@story-forge/model-gateway";
 import type { AgentEvent } from "@story-forge/shared";
 import { mkdtemp, writeFile } from "node:fs/promises";
@@ -12,6 +13,60 @@ import { SessionRepository } from "./session-repository";
 import { WorkspaceRepository } from "./workspace-repository";
 
 describe("AgentCoordinator", () => {
+  it("can host an injected runtime without native loop dependencies", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const prompts: string[] = [];
+    const runtime: AgentRuntime = {
+      async *runTurn(input) {
+        prompts.push(input.prompt);
+        yield {
+          type: "runtime.started",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          createdAt: "2026-06-21T00:00:00.000Z",
+        };
+        yield {
+          type: "message.delta",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          content: "Fake runtime",
+        };
+        yield {
+          type: "runtime.completed",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          stopReason: "completed",
+        };
+      },
+    };
+    const coordinator = new AgentCoordinator({
+      sessionRepository: fixture.sessionRepository,
+      runtime,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello runtime",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(prompts).toEqual(["hello runtime"]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      content: "Fake runtime",
+    }));
+    await expect(fixture.sessionRepository.get(fixture.session.id)).resolves.toMatchObject({
+      status: "completed",
+      messages: [
+        expect.objectContaining({ role: "user", content: "hello runtime" }),
+      ],
+    });
+  });
+
   it("passes the current response mode into the agent loop", async () => {
     const fixture = await createFixture();
     const events: AgentEvent[] = [];
@@ -128,6 +183,40 @@ describe("AgentCoordinator", () => {
       providerId: "deepseek",
       model: "deepseek-v4-pro",
     }));
+  });
+
+  it("registers web tools in developer-mode model requests when web access is enabled", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      },
+      getDeveloperMode: async () => true,
+      getWebAccessEnabled: async () => true,
+      getWebSearchCoverage: async () => "wide",
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    const modelRequest = events.find((event) => event.type === "model.request");
+    expect(modelRequest).toMatchObject({
+      type: "model.request",
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "web.search" }),
+        expect.objectContaining({ name: "web.fetch" }),
+      ]),
+    });
   });
 
   it("does not emit model request events when developer mode is disabled", async () => {
@@ -258,13 +347,13 @@ describe("AgentCoordinator", () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: "permission.request",
-      reason: "Command is outside the safe allowlist.",
+      reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
       command: expect.objectContaining({
         program: "node",
         args: ["-e", "console.log('allowed')"],
       }),
       mode: "sentinel",
-      risk: "unknown",
+      risk: "high",
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: "tool.result",
@@ -276,6 +365,58 @@ describe("AgentCoordinator", () => {
       messages: expect.arrayContaining([
         expect.objectContaining({ role: "assistant", content: "Command complete." }),
       ]),
+    });
+  });
+
+  it("passes a configured command home into workspace commands", async () => {
+    const fixture = await createFixture();
+    const commandHome = join(fixture.rootDir, "command-home");
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => {
+          requestCount += 1;
+          return requestCount === 1
+            ? {
+                content: "",
+                toolCalls: [{
+                  id: "call_command_home",
+                  name: "workspace.runCommand",
+                  input: {
+                    program: "node",
+                    args: ["-e", "console.log(process.env.HOME)"],
+                  },
+                }],
+              }
+            : { content: "Done.", toolCalls: [] };
+        }),
+      },
+      commandHome,
+      getCommandExecutionMode: async () => "unleashed",
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "Print command home",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    const toolResult = events.find((event) =>
+      event.type === "tool.result" && event.name === "workspace.runCommand"
+    );
+    expect(toolResult).toMatchObject({
+      type: "tool.result",
+      ok: true,
+      output: expect.objectContaining({
+        stdout: `${commandHome}\n`,
+      }),
     });
   });
 
@@ -386,14 +527,12 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Active StoryForge skill: Code Review"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("workspace.runCommand / workspace_runCommand"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\" active=\"/code-review\">");
+    expect(systemMessage?.content).toContain("<active-skill invocation=\"/code-review\" name=\"Code Review\">");
+    expect(systemMessage?.content).toContain("workspace.runCommand / workspace_runCommand");
     expect(requests[0]).toContainEqual(expect.objectContaining({
       role: "user",
       content: "/code-review focus on regressions",
@@ -435,14 +574,11 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Available StoryForge skills"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("/agent-browser"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\">");
+    expect(systemMessage?.content).toContain("<skill invocation=\"/agent-browser\" name=\"agent-browser\">");
   });
 
   it("injects an enabled skill when the prompt explicitly mentions its name", async () => {
@@ -495,14 +631,12 @@ describe("AgentCoordinator", () => {
     });
     await coordinator.waitForTurn(turnId);
 
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Active StoryForge skill: agent-browser"),
-    }));
-    expect(requests[0]).toContainEqual(expect.objectContaining({
-      role: "system",
-      content: expect.stringContaining("Use the agent-browser CLI"),
-    }));
+    expect(requests[0]).toBeDefined();
+    const systemMessage = requests[0]?.find((message) => message.role === "system");
+    expect(systemMessage?.content).toContain("<storyforge-context version=\"1\">");
+    expect(systemMessage?.content).toContain("<skills count=\"1\" active=\"/agent-browser\">");
+    expect(systemMessage?.content).toContain("<active-skill invocation=\"/agent-browser\" name=\"agent-browser\">");
+    expect(systemMessage?.content).toContain("Use the agent-browser CLI");
   });
 
   it("emits an automation proposal event when the model proposes a scheduled task", async () => {
@@ -766,6 +900,8 @@ async function createFixture() {
     model: "deepseek-v4-pro",
   });
   return {
+    rootDir,
+    workspacePath,
     providerStore,
     sessionRepository,
     workspaceRepository,

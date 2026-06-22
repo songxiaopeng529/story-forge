@@ -82,14 +82,14 @@ const permissionRequestEvent = {
   sessionId,
   turnId,
   requestId: "permission_1",
-  reason: "Command is outside the safe allowlist.",
+  reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
   command: {
-    program: "agent-browser",
-    args: ["screenshot"],
+    program: "node",
+    args: ["-e", "console.log(process.env)"],
     cwd: "/workspace/project",
   },
   mode: "sentinel",
-  risk: "unknown",
+  risk: "high",
 } satisfies AgentEvent;
 
 const memoryWriteEvent = {
@@ -187,6 +187,8 @@ describe("settings types", () => {
       responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "sentinel",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
     } satisfies AppSettingsView;
 
     expect(settings.developerMode).toBe(false);

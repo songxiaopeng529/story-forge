@@ -46,6 +46,7 @@ export type IpcHandlerOptions = {
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
+const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const providerIdSchema = z.enum([
   "deepseek",
   "openai",
@@ -66,6 +67,8 @@ const settingsSaveSchema = z.object({
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
   commandExecutionMode: commandExecutionModeSchema.optional(),
+  webAccessEnabled: z.boolean().optional(),
+  webSearchCoverage: webSearchCoverageSchema.optional(),
 });
 const permissionResponseSchema = z.object({
   requestId: z.string().min(1),

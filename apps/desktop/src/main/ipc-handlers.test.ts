@@ -86,6 +86,8 @@ describe("registerIpcHandlers", () => {
       responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "sentinel",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
@@ -94,6 +96,8 @@ describe("registerIpcHandlers", () => {
       responseMode: "smooth",
       developerMode: false,
       commandExecutionMode: "sentinel",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
@@ -102,6 +106,8 @@ describe("registerIpcHandlers", () => {
       responseMode: "auto",
       developerMode: true,
       commandExecutionMode: "sentinel",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "cruise" }),
@@ -110,6 +116,21 @@ describe("registerIpcHandlers", () => {
       responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "cruise",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, {
+        webAccessEnabled: true,
+        webSearchCoverage: "wide",
+      }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      responseMode: "auto",
+      developerMode: false,
+      commandExecutionMode: "sentinel",
+      webAccessEnabled: true,
+      webSearchCoverage: "wide",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "unsupported" }),
@@ -119,6 +140,9 @@ describe("registerIpcHandlers", () => {
     ).rejects.toThrow("Invalid IPC payload");
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "chaos" }),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { webSearchCoverage: "expensive" }),
     ).rejects.toThrow("Invalid IPC payload");
   });
 
@@ -262,12 +286,16 @@ function createFixture() {
       responseMode: "auto" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
+      webAccessEnabled: false,
+      webSearchCoverage: "focused" as const,
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
       responseMode: "auto" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
+      webAccessEnabled: false,
+      webSearchCoverage: "focused" as const,
       ...input,
     })),
   } as unknown as AppSettingsStore;

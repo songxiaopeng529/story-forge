@@ -14,6 +14,7 @@ import { AppSettingsStore } from "./app-settings-store";
 import { AutomationRepository } from "./automation-repository";
 import { AutomationScheduler } from "./automation-scheduler";
 import { AutomationService } from "./automation-service";
+import { loadStoryForgeDotEnv } from "./env-loader";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { McpConfigService } from "./mcp-config-service";
 import { ProviderConfigStore } from "./provider-config-store";
@@ -49,7 +50,9 @@ function createWindow(): BrowserWindow {
 }
 
 async function initializeApplication(): Promise<void> {
+  await loadStoryForgeDotEnv(app.getAppPath());
   const rootDir = app.getPath("userData");
+  const commandHome = join(rootDir, "command-home");
   const settingsStore = new AppSettingsStore({ rootDir });
   const providerStore = new ProviderConfigStore({
     rootDir,
@@ -79,6 +82,9 @@ async function initializeApplication(): Promise<void> {
     getResponseMode: async () => (await settingsStore.get()).responseMode,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
+    getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,
+    getWebSearchCoverage: async () => (await settingsStore.get()).webSearchCoverage,
+    commandHome,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);

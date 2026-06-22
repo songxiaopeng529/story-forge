@@ -6,13 +6,14 @@ export type CommandRisk =
   | "safe"
   | "low"
   | "unknown"
+  | "high"
   | "destructive"
   | "elevated"
   | "invalid";
 
 export type CommandPolicyDecision =
   | { action: "allow"; reason: string; risk: "safe" | "low" }
-  | { action: "confirm"; reason: string; risk: "unknown" | "destructive" | "elevated" }
+  | { action: "confirm"; reason: string; risk: "unknown" | "high" | "destructive" | "elevated" }
   | { action: "deny"; reason: string; risk: "invalid" };
 
 const SAFE_SCRIPT_NAMES = /^(dev|start|test|build|typecheck|check|lint|format)(:.+)?$/;
@@ -37,6 +38,9 @@ const SAFE_DIRECT_PROGRAMS = new Set([
 ]);
 const PACKAGE_MANAGERS = new Set(["npm", "pnpm", "yarn", "bun"]);
 const SHELL_PROGRAMS = new Set(["sh", "bash", "zsh", "fish"]);
+const INTERPRETER_PROGRAMS = new Set(["node", "python", "python3", "ruby", "perl"]);
+const REMOTE_ACCESS_PROGRAMS = new Set(["ssh", "scp", "rsync", "nc", "netcat"]);
+const ENV_INSPECTION_PROGRAMS = new Set(["env", "printenv"]);
 const ELEVATED_PROGRAMS = new Set(["sudo", "su"]);
 const DESTRUCTIVE_PROGRAMS = new Set([
   "rm",
@@ -46,6 +50,18 @@ const DESTRUCTIVE_PROGRAMS = new Set([
   "chmod",
   "chown",
 ]);
+const SECRET_INDICATORS = [
+  ".env",
+  "~/.ssh",
+  ".ssh/",
+  "id_rsa",
+  "id_ed25519",
+  "api_key",
+  "token",
+  "secret",
+  "password",
+  "private_key",
+];
 
 export function classifyCommand(input: {
   mode: CommandExecutionMode;
@@ -100,6 +116,14 @@ export function classifyCommand(input: {
       action: "confirm",
       reason: "This command may modify or delete files.",
       risk: "destructive",
+    };
+  }
+
+  if (isHighRiskCommand(program, args)) {
+    return {
+      action: "confirm",
+      reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
+      risk: "high",
     };
   }
 
@@ -192,6 +216,23 @@ function isElevatedCommand(program: string): boolean {
   return ELEVATED_PROGRAMS.has(program);
 }
 
+function isHighRiskCommand(program: string, args: string[]): boolean {
+  if (args.some((argument) => containsSecretIndicator(argument))) {
+    return true;
+  }
+
+  if (
+    SHELL_PROGRAMS.has(program)
+    || INTERPRETER_PROGRAMS.has(program)
+    || REMOTE_ACCESS_PROGRAMS.has(program)
+    || ENV_INSPECTION_PROGRAMS.has(program)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function isDestructiveCommand(program: string, args: string[]): boolean {
   if (DESTRUCTIVE_PROGRAMS.has(program)) {
     return true;
@@ -249,4 +290,9 @@ function containsDestructiveShellFragment(value: string): boolean {
     || /(^|\s)>\s*\S/.test(value)
     || /(^|\s)>>\s*\S/.test(value)
   );
+}
+
+function containsSecretIndicator(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return SECRET_INDICATORS.some((indicator) => normalized.includes(indicator));
 }

@@ -1,4 +1,8 @@
-import type { CommandExecutionMode, ResponseMode } from "@story-forge/shared";
+import type {
+  CommandExecutionMode,
+  ResponseMode,
+  WebSearchCoverage,
+} from "@story-forge/shared";
 
 const responseModes: Array<{
   value: ResponseMode;
@@ -30,17 +34,34 @@ const commandExecutionModes: Array<{
   {
     value: "sentinel",
     label: "哨兵模式",
-    description: "安全优先。安全命令会直接执行，危险或未知命令会先询问你。",
+    description: "防守最强。安全命令直接执行；未知、高风险、破坏性或提权命令会先询问你。",
   },
   {
     value: "cruise",
     label: "巡航模式",
-    description: "快速推进。大多数命令会直接执行，破坏性操作会先询问你。",
+    description: "推进更快。普通命令直接执行；高风险、破坏性或提权命令会先询问你。",
   },
   {
     value: "unleashed",
     label: "无缰模式",
-    description: "完全放开。命令不会再弹出确认，请只在你信任当前 Agent 时使用。",
+    description: "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
+  },
+];
+
+const webSearchCoverageModes: Array<{
+  value: WebSearchCoverage;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "focused",
+    label: "Focused",
+    description: "Use Tavily only for faster, lower-cost search.",
+  },
+  {
+    value: "wide",
+    label: "Wide",
+    description: "Search Tavily and SerpApi concurrently for broader coverage.",
   },
 ];
 
@@ -48,11 +69,15 @@ export function SettingsPage(props: {
   responseMode: ResponseMode;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
+  webAccessEnabled: boolean;
+  webSearchCoverage: WebSearchCoverage;
   saving: boolean;
   error: string | undefined;
   onResponseModeChange: (responseMode: ResponseMode) => void;
   onDeveloperModeChange: (developerMode: boolean) => void;
   onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
+  onWebAccessEnabledChange: (enabled: boolean) => void;
+  onWebSearchCoverageChange: (coverage: WebSearchCoverage) => void;
 }) {
   return (
     <section className="min-h-0 min-w-0 overflow-y-auto p-8">
@@ -154,6 +179,9 @@ export function SettingsPage(props: {
                 );
               })}
             </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。
+            </p>
           </div>
 
           <label className="mt-5 flex items-center justify-between gap-4 border-t border-forge-line pt-5">
@@ -173,6 +201,74 @@ export function SettingsPage(props: {
               type="checkbox"
             />
           </label>
+
+          <div className="mt-5 border-t border-forge-line pt-5">
+            <label className="flex items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm font-semibold">Web access</span>
+                <span className="mt-1 block text-sm text-slate-500">
+                  Allow StoryForge to use web search and public page extraction tools.
+                </span>
+              </span>
+              <input
+                aria-label="Web access"
+                checked={props.webAccessEnabled}
+                className="h-5 w-9 accent-forge-ember"
+                disabled={props.saving}
+                onChange={(event) =>
+                  props.onWebAccessEnabledChange(event.currentTarget.checked)}
+                role="switch"
+                type="checkbox"
+              />
+            </label>
+
+            <div className="mt-5">
+              <div>
+                <h3 className="text-sm font-semibold" id="web-search-coverage-label">
+                  Web Search Coverage
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Choose how broadly StoryForge searches when web access is enabled.
+                </p>
+              </div>
+
+              <div
+                aria-labelledby="web-search-coverage-label"
+                className="mt-4 grid gap-2 sm:grid-cols-2"
+                role="radiogroup"
+              >
+                {webSearchCoverageModes.map((mode) => {
+                  const descriptionId = `web-search-coverage-${mode.value}-description`;
+                  const disabled = props.saving || !props.webAccessEnabled;
+                  return (
+                    <button
+                      aria-checked={props.webSearchCoverage === mode.value}
+                      aria-describedby={descriptionId}
+                      aria-label={mode.label}
+                      className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+                        props.webSearchCoverage === mode.value
+                          ? "border-forge-ember bg-orange-50 text-forge-ember"
+                          : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
+                      }`}
+                      disabled={disabled}
+                      key={mode.value}
+                      onClick={() => props.onWebSearchCoverageChange(mode.value)}
+                      role="radio"
+                      type="button"
+                    >
+                      <span className="block text-sm font-medium">{mode.label}</span>
+                      <span
+                        className="mt-1 block text-xs text-slate-500"
+                        id={descriptionId}
+                      >
+                        {mode.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           {props.error ? (
             <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

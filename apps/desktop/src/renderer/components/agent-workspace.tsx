@@ -3,6 +3,7 @@ import type {
   AutomationView,
   CommandExecutionMode,
   ModelRequestEvent,
+  SkillView,
   TurnId,
 } from "@story-forge/shared";
 import {
@@ -10,13 +11,24 @@ import {
   CalendarClock,
   CircleStop,
   FolderOpen,
+  KeyRound,
   PanelLeftOpen,
   PanelRightOpen,
   Paperclip,
   Play,
+  Puzzle,
+  Settings,
   Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import type {
   SessionView,
   WorkspaceView,
@@ -56,6 +68,9 @@ export function AgentWorkspace(props: {
   onRename: (title: string) => void;
   onDelete: () => void;
   onOpenWorkspace: () => void;
+  onOpenModels: () => void;
+  onOpenExtensions: () => void;
+  onOpenSettings: () => void;
   onModelInspectorOpen: () => void;
   onModelInspectorClose: () => void;
   onSessionTimerCreated: (automation: AutomationView) => void;
@@ -65,7 +80,11 @@ export function AgentWorkspace(props: {
 }) {
   const [title, setTitle] = useState("");
   const [timerDialogOpen, setTimerDialogOpen] = useState(false);
+  const [slashRange, setSlashRange] = useState<SlashRange>();
+  const [slashSkills, setSlashSkills] = useState<SkillView[]>([]);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
   const timelineItems = buildTimeline({
     session: props.session,
     activities: props.activities,
@@ -85,6 +104,7 @@ export function AgentWorkspace(props: {
   useEffect(() => {
     setTitle(props.session?.title ?? "");
     setTimerDialogOpen(false);
+    setSlashRange(undefined);
   }, [props.session?.id, props.session?.title]);
   useEffect(() => {
     const element = messageScrollRef.current;
@@ -93,6 +113,114 @@ export function AgentWorkspace(props: {
     }
     element.scrollTop = element.scrollHeight;
   }, [timelineFingerprint]);
+  useEffect(() => {
+    if (!slashRange || !props.session) {
+      return;
+    }
+    let cancelled = false;
+    window.storyForge.skills.list()
+      .then((skills) => {
+        if (!cancelled) {
+          setSlashSkills(skills.filter((skill) => skill.enabled));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSlashSkills([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [Boolean(slashRange), props.session?.id]);
+
+  const slashCommands = useMemo(() => {
+    const builtInCommands: SlashCommandItem[] = [
+      {
+        id: "timer",
+        invocation: "/timer",
+        title: "Session timer",
+        description: "Create an automation that continues this session.",
+        kind: "builtin",
+        icon: <CalendarClock size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          setTimerDialogOpen(true);
+        },
+      },
+      {
+        id: "models",
+        invocation: "/models",
+        title: "Models",
+        description: "Open provider and model settings.",
+        kind: "builtin",
+        icon: <KeyRound size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          props.onOpenModels();
+        },
+      },
+      {
+        id: "skills",
+        invocation: "/skills",
+        title: "MCP & Skills",
+        description: "Manage installed skills and MCP servers.",
+        kind: "builtin",
+        icon: <Puzzle size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          props.onOpenExtensions();
+        },
+      },
+      {
+        id: "settings",
+        invocation: "/settings",
+        title: "Settings",
+        description: "Open application preferences.",
+        kind: "builtin",
+        icon: <Settings size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          props.onOpenSettings();
+        },
+      },
+    ];
+    const skillCommands = slashSkills.map<SlashCommandItem>((skill) => ({
+      id: `skill:${skill.id}`,
+      invocation: skill.invocationName,
+      title: skill.name,
+      description: skill.description || "Invoke installed skill.",
+      kind: "skill",
+      icon: <Puzzle size={15} />,
+    }));
+    const query = slashRange?.query.trim().toLowerCase() ?? "";
+    return [...builtInCommands, ...skillCommands]
+      .filter((command) => {
+        if (!query) {
+          return true;
+        }
+        return [
+          command.invocation.slice(1),
+          command.title,
+          command.description,
+        ].some((value) => value.toLowerCase().includes(query));
+      })
+      .slice(0, 8);
+  }, [
+    props.onOpenExtensions,
+    props.onOpenModels,
+    props.onOpenSettings,
+    props.onPromptChange,
+    slashRange?.query,
+    slashSkills,
+  ]);
+  const slashMenuOpen = Boolean(slashRange && props.session);
+
+  useEffect(() => {
+    setActiveSlashIndex((index) =>
+      slashCommands.length === 0 ? 0 : Math.min(index, slashCommands.length - 1)
+    );
+  }, [slashCommands.length]);
 
   if (props.loading) {
     return <div className="flex items-center justify-center text-sm text-slate-500">Loading...</div>;
@@ -116,6 +244,74 @@ export function AgentWorkspace(props: {
         </div>
       </div>
     );
+  }
+
+  function handlePromptChange(event: ChangeEvent<HTMLTextAreaElement>): void {
+    const value = event.currentTarget.value;
+    props.onPromptChange(value);
+    updateSlashRange(value, event.currentTarget.selectionStart ?? value.length);
+  }
+
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (slashMenuOpen) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlashRange(undefined);
+        return;
+      }
+      if (slashCommands.length > 0) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setActiveSlashIndex((index) => (index + 1) % slashCommands.length);
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setActiveSlashIndex((index) =>
+            (index - 1 + slashCommands.length) % slashCommands.length
+          );
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          selectSlashCommand(slashCommands[activeSlashIndex]);
+          return;
+        }
+      }
+    }
+    props.onPromptKeyDown(event);
+  }
+
+  function handlePromptSelection(event: { currentTarget: HTMLTextAreaElement }): void {
+    updateSlashRange(props.prompt, event.currentTarget.selectionStart ?? props.prompt.length);
+  }
+
+  function updateSlashRange(value: string, cursor: number): void {
+    setSlashRange(findSlashRange(value, cursor));
+    setActiveSlashIndex(0);
+  }
+
+  function selectSlashCommand(command: SlashCommandItem | undefined): void {
+    if (!command) {
+      return;
+    }
+    setSlashRange(undefined);
+    if (command.kind === "builtin") {
+      command.action?.();
+      return;
+    }
+    const range = slashRange ?? findSlashRange(props.prompt, promptInputRef.current?.selectionStart ?? props.prompt.length);
+    if (!range) {
+      return;
+    }
+    const insertion = `${command.invocation} `;
+    const nextPrompt = `${props.prompt.slice(0, range.start)}${insertion}${props.prompt.slice(range.end)}`;
+    const nextCursor = range.start + insertion.length;
+    props.onPromptChange(nextPrompt);
+    requestAnimationFrame(() => {
+      promptInputRef.current?.focus();
+      promptInputRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
   }
 
   return (
@@ -264,16 +460,78 @@ export function AgentWorkspace(props: {
                 </div>
               ) : null}
               <div className="rounded-2xl border border-forge-line bg-white focus-within:border-forge-ink/40">
+                <div className="relative">
+                  {slashMenuOpen ? (
+                    <div className="absolute bottom-full left-3 right-3 z-30 mb-2 overflow-hidden rounded-xl border border-forge-line bg-white shadow-xl">
+                      <div className="border-b border-forge-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-forge-muted">
+                        Slash commands
+                      </div>
+                      {slashCommands.length > 0 ? (
+                        <div
+                          aria-label="Slash commands"
+                          className="max-h-64 overflow-y-auto p-1"
+                          id="slash-command-menu"
+                          role="listbox"
+                        >
+                          {slashCommands.map((command, index) => (
+                            <div
+                              aria-label={`${command.invocation} ${command.title} ${command.description}`}
+                              aria-selected={index === activeSlashIndex}
+                              className={`flex cursor-default items-start gap-2 rounded-lg px-2.5 py-2 text-left ${
+                                index === activeSlashIndex
+                                  ? "bg-forge-canvas text-forge-ink"
+                                  : "text-forge-ink hover:bg-forge-canvas"
+                              }`}
+                              key={command.id}
+                              onClick={() => selectSlashCommand(command)}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onMouseEnter={() => setActiveSlashIndex(index)}
+                              role="option"
+                              tabIndex={-1}
+                            >
+                              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border border-forge-line bg-white text-forge-muted">
+                                {command.icon}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-2">
+                                  <span className="font-mono text-[12px] font-semibold text-forge-ink">
+                                    {command.invocation}
+                                  </span>
+                                  <span className="truncate text-[12px] font-medium text-forge-muted">
+                                    {command.title}
+                                  </span>
+                                </span>
+                                <span className="mt-0.5 block truncate text-[11px] text-forge-muted">
+                                  {command.description}
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="px-3 py-4 text-sm text-forge-muted">
+                          No matching slash commands.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 <textarea
+                  aria-autocomplete="list"
+                  aria-controls={slashMenuOpen ? "slash-command-menu" : undefined}
+                  aria-expanded={slashMenuOpen}
                   className="h-24 w-full resize-none rounded-2xl border-0 bg-transparent p-3.5 text-[13px] text-forge-ink outline-none placeholder:text-forge-muted disabled:bg-transparent"
                   disabled={!props.session}
-                  onChange={(event) => props.onPromptChange(event.target.value)}
+                  onChange={handlePromptChange}
                   onCompositionEnd={props.onCompositionEnd}
                   onCompositionStart={props.onCompositionStart}
-                  onKeyDown={props.onPromptKeyDown}
+                  onClick={handlePromptSelection}
+                  onKeyDown={handlePromptKeyDown}
+                  onKeyUp={handlePromptSelection}
                   placeholder="Ask StoryForge to inspect, explain, or change code..."
+                  ref={promptInputRef}
                   value={props.prompt}
                 />
+                </div>
                 <div className="flex items-center justify-between px-3 pb-3">
                   <div className="flex items-center gap-2">
                     <button
@@ -339,4 +597,40 @@ export function AgentWorkspace(props: {
       ) : null}
     </section>
   );
+}
+
+type SlashRange = {
+  start: number;
+  end: number;
+  query: string;
+};
+
+type SlashCommandItem = {
+  id: string;
+  invocation: `/${string}`;
+  title: string;
+  description: string;
+  kind: "builtin" | "skill";
+  icon: ReactNode;
+  action?: () => void;
+};
+
+function findSlashRange(value: string, cursor: number): SlashRange | undefined {
+  const beforeCursor = value.slice(0, cursor);
+  const match = /(?:^|\s)(\/[^\s]*)$/.exec(beforeCursor);
+  if (!match) {
+    return undefined;
+  }
+  const token = match[1];
+  if (!token) {
+    return undefined;
+  }
+  if (token.includes("//")) {
+    return undefined;
+  }
+  return {
+    start: beforeCursor.length - token.length,
+    end: cursor,
+    query: token.slice(1),
+  };
 }

@@ -8,6 +8,7 @@ import type {
   ResponseMode,
   SessionId,
   TurnId,
+  WebSearchCoverage,
 } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
@@ -57,6 +58,9 @@ export function App() {
   const [developerMode, setDeveloperMode] = useState(false);
   const [commandExecutionMode, setCommandExecutionMode] =
     useState<CommandExecutionMode>("sentinel");
+  const [webAccessEnabled, setWebAccessEnabled] = useState(false);
+  const [webSearchCoverage, setWebSearchCoverage] =
+    useState<WebSearchCoverage>("focused");
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
   const [permissionResponding, setPermissionResponding] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -69,6 +73,8 @@ export function App() {
   const persistedResponseModeRef = useRef<ResponseMode>("auto");
   const persistedDeveloperModeRef = useRef(false);
   const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
+  const persistedWebAccessEnabledRef = useRef(false);
+  const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
   const settingsSaveInFlightRef = useRef(false);
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
@@ -222,9 +228,13 @@ export function App() {
         persistedResponseModeRef.current = nextSettings.responseMode;
         persistedDeveloperModeRef.current = nextSettings.developerMode;
         persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
+        persistedWebAccessEnabledRef.current = nextSettings.webAccessEnabled;
+        persistedWebSearchCoverageRef.current = nextSettings.webSearchCoverage;
         setResponseMode(nextSettings.responseMode);
         setDeveloperMode(nextSettings.developerMode);
         setCommandExecutionMode(nextSettings.commandExecutionMode);
+        setWebAccessEnabled(nextSettings.webAccessEnabled);
+        setWebSearchCoverage(nextSettings.webSearchCoverage);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setSessions(nextSessions);
@@ -451,6 +461,62 @@ export function App() {
     }
   }
 
+  async function saveWebAccessEnabled(nextWebAccessEnabled: boolean): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextWebAccessEnabled === persistedWebAccessEnabledRef.current
+    ) {
+      return;
+    }
+    const previousWebAccessEnabled = persistedWebAccessEnabledRef.current;
+    settingsSaveInFlightRef.current = true;
+    setWebAccessEnabled(nextWebAccessEnabled);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        webAccessEnabled: nextWebAccessEnabled,
+      });
+      persistedWebAccessEnabledRef.current = saved.webAccessEnabled;
+      setWebAccessEnabled(saved.webAccessEnabled);
+    } catch (settingsError) {
+      setWebAccessEnabled(previousWebAccessEnabled);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
+  async function saveWebSearchCoverage(
+    nextWebSearchCoverage: WebSearchCoverage,
+  ): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextWebSearchCoverage === persistedWebSearchCoverageRef.current
+    ) {
+      return;
+    }
+    const previousWebSearchCoverage = persistedWebSearchCoverageRef.current;
+    settingsSaveInFlightRef.current = true;
+    setWebSearchCoverage(nextWebSearchCoverage);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        webSearchCoverage: nextWebSearchCoverage,
+      });
+      persistedWebSearchCoverageRef.current = saved.webSearchCoverage;
+      setWebSearchCoverage(saved.webSearchCoverage);
+    } catch (settingsError) {
+      setWebSearchCoverage(previousWebSearchCoverage);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
   async function respondToPermission(approved: boolean): Promise<void> {
     if (!currentPermissionRequest || permissionResponding) {
       return;
@@ -624,12 +690,18 @@ export function App() {
           responseMode={responseMode}
           developerMode={developerMode}
           commandExecutionMode={commandExecutionMode}
+          webAccessEnabled={webAccessEnabled}
+          webSearchCoverage={webSearchCoverage}
           saving={settingsSaving}
           error={error}
           onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
           onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
           onCommandExecutionModeChange={(nextCommandExecutionMode) =>
             void saveCommandExecutionMode(nextCommandExecutionMode)}
+          onWebAccessEnabledChange={(nextWebAccessEnabled) =>
+            void saveWebAccessEnabled(nextWebAccessEnabled)}
+          onWebSearchCoverageChange={(nextWebSearchCoverage) =>
+            void saveWebSearchCoverage(nextWebSearchCoverage)}
         />
       ) : page === "models" ? (
         <ModelsPage
@@ -719,6 +791,9 @@ export function App() {
             onRename={(title) => void renameSession(title)}
             onDelete={() => void deleteSession()}
             onOpenWorkspace={() => void openWorkspace()}
+            onOpenModels={() => setPage("models")}
+            onOpenExtensions={() => setPage("extensions")}
+            onOpenSettings={() => setPage("settings")}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
             onSessionTimerCreated={handleSessionTimerCreated}

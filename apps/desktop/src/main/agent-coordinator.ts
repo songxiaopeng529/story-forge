@@ -1,10 +1,15 @@
-import { AgentLoop } from "@story-forge/agent-core";
+import {
+  type AgentRuntime,
+  type AgentRuntimeTurnInput,
+  NativeAgentRuntime,
+  RuntimeContextAssembler,
+  type RuntimeContext,
+  type RuntimeToolFactoryHelpers,
+} from "@story-forge/agent-core";
 import type {
-  ChatMessage,
   ModelProvider,
   ProviderId,
   ProviderConnectionConfig,
-  ToolCall,
 } from "@story-forge/model-gateway";
 import {
   createTurnId,
@@ -16,9 +21,11 @@ import {
   type SessionId,
   type SkillView,
   type TurnId,
+  type WebSearchCoverage,
 } from "@story-forge/shared";
 import {
   createAutomationProposalTool,
+  createWebTools,
   createWorkspaceCommandTool,
   createWorkspaceFileTools,
   type AutomationProposalDraft,
@@ -29,7 +36,6 @@ import {
 import { validateSchedule } from "./automation-schedule";
 import type { ProviderConfigStore } from "./provider-config-store";
 import {
-  type PersistedMessage,
   type SessionRecord,
   type SessionRepository,
   type SessionStatus,
@@ -46,14 +52,18 @@ export type SkillInvocationResolver = {
 };
 
 export type AgentCoordinatorOptions = {
-  providerStore: ProviderConfigStore;
+  providerStore?: ProviderConfigStore;
   sessionRepository: SessionRepository;
-  workspaceRepository: WorkspaceRepository;
-  providerFactory: ProviderFactory;
+  workspaceRepository?: WorkspaceRepository;
+  providerFactory?: ProviderFactory;
+  runtime?: AgentRuntime;
   skillResolver?: SkillInvocationResolver;
   getResponseMode?: () => Promise<ResponseMode>;
   getDeveloperMode?: () => Promise<boolean>;
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
+  getWebAccessEnabled?: () => Promise<boolean>;
+  getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
+  commandHome?: string;
   emit: (event: AgentEvent) => void;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -64,23 +74,19 @@ type ActiveTurn = {
   controller: AbortController;
 };
 
-type ActiveSkillInvocation = {
-  skill: InstalledSkillRecord;
-  argumentsText: string;
-};
-
 const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class AgentCoordinator {
-  private readonly providerStore: ProviderConfigStore;
   private readonly sessionRepository: SessionRepository;
-  private readonly workspaceRepository: WorkspaceRepository;
-  private readonly providerFactory: ProviderFactory;
   private readonly skillResolver: SkillInvocationResolver | undefined;
   private readonly getResponseMode: () => Promise<ResponseMode>;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
+  private readonly getWebAccessEnabled: () => Promise<boolean>;
+  private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
+  private readonly commandHome: string | undefined;
   private readonly emitEvent: (event: AgentEvent) => void;
+  private readonly runtime: AgentRuntime;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
@@ -89,17 +95,18 @@ export class AgentCoordinator {
   private readonly turnPromises = new Map<TurnId, Promise<void>>();
 
   constructor(options: AgentCoordinatorOptions) {
-    this.providerStore = options.providerStore;
     this.sessionRepository = options.sessionRepository;
-    this.workspaceRepository = options.workspaceRepository;
-    this.providerFactory = options.providerFactory;
     this.skillResolver = options.skillResolver;
     this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
+    this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
+    this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
+    this.commandHome = options.commandHome;
     this.emitEvent = options.emit;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
+    this.runtime = options.runtime ?? this.createNativeRuntime(options);
   }
 
   async start(input: { sessionId: SessionId; prompt: string }): Promise<{ turnId: TurnId }> {
@@ -113,7 +120,7 @@ export class AgentCoordinator {
 
     try {
       let session = await this.sessionRepository.get(input.sessionId);
-      const skillInvocation = await this.resolveSkillInvocation(input.prompt);
+      await this.resolveSkillInvocation(input.prompt);
       const turnId = createTurnId();
       session = await this.sessionRepository.appendMessage(input.sessionId, {
         id: createMessageId(),
@@ -128,7 +135,7 @@ export class AgentCoordinator {
 
       const controller = new AbortController();
       this.activeTurns.set(turnId, { sessionId: input.sessionId, controller });
-      const promise = this.executeTurn(session, turnId, controller.signal, skillInvocation)
+      const promise = this.executeTurn(session, turnId, input.prompt, controller.signal)
         .finally(() => {
           this.activeTurns.delete(turnId);
           this.reservedSessions.delete(input.sessionId);
@@ -194,137 +201,35 @@ export class AgentCoordinator {
   private async executeTurn(
     session: SessionRecord,
     turnId: TurnId,
+    prompt: string,
     signal: AbortSignal,
-    skillInvocation: ActiveSkillInvocation | undefined,
   ): Promise<void> {
-    let apiKey: string | undefined;
     try {
-      const [resolvedProvider, workspace] = await Promise.all([
-        this.providerStore.resolve(session.providerId),
-        this.workspaceRepository.get(session.workspaceId),
-      ]);
-      apiKey = resolvedProvider.apiKey;
-      const provider = this.providerFactory.createProvider(
-        {
-          providerId: session.providerId,
-          baseUrl: resolvedProvider.baseUrl,
-          model: session.model,
-        },
-        resolvedProvider.apiKey,
-      );
-      const sandbox = new WorkspaceSandbox(workspace.path);
-      let persistedMessages = session.messages;
-      const toolResults = new Map<string, boolean>();
-      const [responseMode, developerMode, commandExecutionMode, availableSkills] = await Promise.all([
-        this.getResponseMode(),
-        this.getDeveloperMode(),
-        this.getCommandExecutionMode(),
-        this.listEnabledSkills(),
-      ]);
-      const tools = new ToolRegistry([
-        ...createWorkspaceFileTools(sandbox),
-        createWorkspaceCommandTool(sandbox, {
-          mode: commandExecutionMode,
-          requestPermission: (request) =>
-            this.requestCommandPermission({
-              sessionId: session.id,
-              turnId,
-              mode: commandExecutionMode,
-              request,
-              signal,
-            }),
-        }),
-        createAutomationProposalTool({
-          validate: (draft) => validateAutomationProposal(draft),
-          emit: (proposal) => {
-            const proposalSessionId = proposal.kind === "thread_chat"
-              ? session.id
-              : undefined;
-            this.emitEvent({
-              type: "automation.proposal",
-              sessionId: session.id,
-              turnId,
-              proposalId: createAutomationProposalId(),
-              proposal: {
-                kind: proposal.kind,
-                name: proposal.name,
-                scheduleText: proposal.scheduleText,
-                cron: proposal.cron,
-                timezone: proposal.timezone,
-                summary: proposal.summary,
-                nextRuns: proposal.nextRuns,
-                prompt: proposal.prompt,
-                workspaceId: workspace.id,
-                providerId: session.providerId,
-                model: session.model,
-                ...(proposalSessionId ? { sessionId: proposalSessionId } : {}),
-              },
-            });
-          },
-        }),
-      ]);
-      const loop = new AgentLoop({
-        provider,
-        tools,
-        ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
-        ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
-      });
-      const result = await loop.run({
+      let stopReason: AgentStopReason = "completed";
+      for await (const event of this.runtime.runTurn({
         sessionId: session.id,
         turnId,
-        responseMode,
-        inspectModelRequests: {
-          enabled: developerMode,
-          providerId: session.providerId,
-          model: session.model,
-        },
+        prompt,
         signal,
-        messages: [
-          {
-            role: "system",
-            content:
-              `You are StoryForge, a local coding agent working in ${workspace.path}. `
-              + "Inspect before editing, use workspace-relative paths, and run only necessary development commands. "
-              + "If the user asks for recurring or scheduled work, call automation.proposeCreate to draft an automation for user confirmation. "
-              + "Use kind=thread_chat only when the user explicitly wants the automation to continue in this same chat with existing context; otherwise use kind=scheduled_chat. "
-              + "Never claim the automation is created until the user confirms it.",
-          },
-          ...(availableSkills.length > 0
-            ? [createAvailableSkillsSystemMessage(availableSkills)]
-            : []),
-          ...(skillInvocation ? [createSkillSystemMessage(skillInvocation)] : []),
-          ...persistedMessages.map(toChatMessage),
-        ],
-        onEvent: (event) => {
-          if (event.type === "tool.result") {
-            toolResults.set(event.callId, event.ok);
-          }
-          this.emitEvent(
-            event.type === "runtime.error"
-              ? { ...event, message: redactSecret(event.message, apiKey) }
-              : event,
-          );
-        },
-        onCheckpoint: async (messages) => {
-          const nextMessages = toPersistedMessages(messages, persistedMessages, toolResults);
-          const updated = await this.sessionRepository.replaceMessages(session.id, nextMessages);
-          persistedMessages = updated.messages;
-        },
-      });
+      } satisfies AgentRuntimeTurnInput)) {
+        if (event.type === "runtime.completed") {
+          stopReason = event.stopReason ?? "completed";
+        }
+        if (event.type === "runtime.error") {
+          stopReason = event.stopReason ?? "unrecoverable-error";
+        }
+        this.emitEvent(event);
+      }
       await this.sessionRepository.markStatus(session.id, {
-        status: statusForStopReason(result.stopReason),
-        stopReason: result.stopReason,
+        status: statusForStopReason(stopReason),
+        stopReason,
       });
     } catch (error) {
-      const message = redactSecret(
-        error instanceof Error ? error.message : String(error),
-        apiKey,
-      );
       this.emitEvent({
         type: "runtime.error",
         sessionId: session.id,
         turnId,
-        message,
+        message: error instanceof Error ? error.message : String(error),
         stopReason: "unrecoverable-error",
       });
       await this.sessionRepository.markStatus(session.id, {
@@ -334,7 +239,107 @@ export class AgentCoordinator {
     }
   }
 
-  private async resolveSkillInvocation(prompt: string): Promise<ActiveSkillInvocation | undefined> {
+  private createNativeRuntime(options: AgentCoordinatorOptions): AgentRuntime {
+    const providerStore = required(options.providerStore, "providerStore");
+    const workspaceRepository = required(options.workspaceRepository, "workspaceRepository");
+    const providerFactory = required(options.providerFactory, "providerFactory");
+    const sessionStore = {
+      get: (sessionId: SessionId) => this.sessionRepository.get(sessionId),
+      replaceMessages: (sessionId: SessionId, messages: Parameters<SessionRepository["replaceMessages"]>[1]) =>
+        this.sessionRepository.replaceMessages(sessionId, messages),
+    };
+    const contextAssembler = new RuntimeContextAssembler({
+      sessionStore,
+      workspaceStore: {
+        get: (workspaceId) => workspaceRepository.get(workspaceId),
+      },
+      settings: {
+        getResponseMode: this.getResponseMode,
+        getDeveloperMode: this.getDeveloperMode,
+        getCommandExecutionMode: this.getCommandExecutionMode,
+        getWebAccessEnabled: this.getWebAccessEnabled,
+        getWebSearchCoverage: this.getWebSearchCoverage,
+      },
+      ...(this.skillResolver ? { skillResolver: this.skillResolver } : {}),
+    });
+
+    return new NativeAgentRuntime({
+      contextAssembler,
+      providerResolver: {
+        resolve: (providerId) => providerStore.resolve(providerId),
+      },
+      providerFactory,
+      sessionStore,
+      toolFactory: {
+        createTools: (context, helpers) => this.createRuntimeTools(context, helpers),
+      },
+      ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
+      ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
+    });
+  }
+
+  private createRuntimeTools(
+    context: RuntimeContext,
+    helpers: RuntimeToolFactoryHelpers,
+  ): ToolRegistry {
+    const sandbox = new WorkspaceSandbox(context.workspace.path);
+    return new ToolRegistry([
+      ...createWorkspaceFileTools(sandbox),
+      createWorkspaceCommandTool(sandbox, {
+        mode: context.settings.commandExecutionMode,
+        ...(this.commandHome ? { commandHome: this.commandHome } : {}),
+        requestPermission: (request) =>
+          this.requestCommandPermission({
+            sessionId: context.session.id,
+            turnId: context.turnId,
+            mode: context.settings.commandExecutionMode,
+            request,
+            signal: helpers.signal ?? new AbortController().signal,
+            emit: helpers.emit,
+          }),
+      }),
+      ...createWebTools({
+        enabled: context.settings.webAccessEnabled,
+        coverage: context.settings.webSearchCoverage,
+        credentials: {
+          tavilyApiKey: readEnvSecret("Tavily_API_KEY", "TAVILY_API_KEY"),
+          serpApiKey: readEnvSecret("SerpApi_API_KEY", "SERPAPI_API_KEY"),
+        },
+      }),
+      createAutomationProposalTool({
+        validate: (draft) => validateAutomationProposal(draft),
+        emit: (proposal) => {
+          const proposalSessionId = proposal.kind === "thread_chat"
+            ? context.session.id
+            : undefined;
+          void helpers.emit({
+            type: "automation.proposal",
+            sessionId: context.session.id,
+            turnId: context.turnId,
+            proposalId: createAutomationProposalId(),
+            proposal: {
+              kind: proposal.kind,
+              name: proposal.name,
+              scheduleText: proposal.scheduleText,
+              cron: proposal.cron,
+              timezone: proposal.timezone,
+              summary: proposal.summary,
+              nextRuns: proposal.nextRuns,
+              prompt: proposal.prompt,
+              workspaceId: context.workspace.id,
+              providerId: context.session.providerId,
+              model: context.session.model,
+              ...(proposalSessionId ? { sessionId: proposalSessionId } : {}),
+            },
+          });
+        },
+      }),
+    ]);
+  }
+
+  private async resolveSkillInvocation(
+    prompt: string,
+  ): Promise<{ skill: InstalledSkillRecord; argumentsText: string } | undefined> {
     const trimmed = prompt.trim();
     const slashInvocation = parseSlashInvocation(trimmed);
     const inferredInvocation = slashInvocation ?? await this.inferMentionedSkillInvocation(trimmed);
@@ -368,6 +373,7 @@ export class AgentCoordinator {
     mode: CommandExecutionMode;
     request: WorkspaceCommandPermissionRequest;
     signal: AbortSignal;
+    emit: (event: AgentEvent) => void | Promise<void>;
   }): Promise<boolean> {
     const requestId = createPermissionRequestId();
 
@@ -392,7 +398,7 @@ export class AgentCoordinator {
         return;
       }
       input.signal.addEventListener("abort", onAbort, { once: true });
-      this.emitEvent({
+      void input.emit({
         type: "permission.request",
         sessionId: input.sessionId,
         turnId: input.turnId,
@@ -431,38 +437,6 @@ export class AgentCoordinator {
   }
 }
 
-function createAvailableSkillsSystemMessage(skills: SkillView[]): ChatMessage {
-  return {
-    role: "system",
-    content: [
-      "Available StoryForge skills:",
-      ...skills.map((skill) =>
-        `- ${skill.invocationName} (${skill.name}): ${singleLine(skill.description)}`
-      ),
-      "",
-      "These are installed and enabled skills. Do not deny that a listed skill exists just because there is no dedicated tool with the same name.",
-      "If the user explicitly invokes or mentions one of these skills, follow the matching active skill instructions when they are provided in this request.",
-    ].join("\n"),
-  };
-}
-
-function createSkillSystemMessage(invocation: ActiveSkillInvocation): ChatMessage {
-  return {
-    role: "system",
-    content: [
-      `Active StoryForge skill: ${invocation.skill.name}`,
-      "",
-      `Invocation: ${invocation.skill.invocationName}`,
-      `Arguments: ${invocation.argumentsText}`,
-      "",
-      "Follow this skill for the current turn. The skill instructions apply in addition to StoryForge's normal coding-agent rules. If the skill conflicts with higher-priority system instructions, follow the higher-priority instructions.",
-      "If this skill describes CLI commands or command-line workflows, use StoryForge's workspace.runCommand / workspace_runCommand tool to execute those commands. Do not claim the capability is unavailable only because there is no dedicated tool named after the skill.",
-      "",
-      invocation.skill.body,
-    ].join("\n"),
-  };
-}
-
 function parseSlashInvocation(prompt: string): { command: string; argumentsText: string } | undefined {
   if (!prompt.startsWith("/")) {
     return undefined;
@@ -488,80 +462,6 @@ function containsToken(value: string, token: string): boolean {
   const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^\\p{L}\\p{N}_-])${escaped}($|[^\\p{L}\\p{N}_-])`, "iu")
     .test(value);
-}
-
-function singleLine(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function toChatMessage(message: PersistedMessage): ChatMessage {
-  if (message.role === "assistant") {
-    return {
-      role: "assistant",
-      content: message.content,
-      ...(message.reasoningContent ? { reasoningContent: message.reasoningContent } : {}),
-      ...(message.toolCalls?.length ? { toolCalls: message.toolCalls } : {}),
-    };
-  }
-  if (message.role === "tool") {
-    return {
-      role: "tool",
-      content: message.content,
-      name: message.name,
-      toolCallId: message.toolCallId,
-    };
-  }
-  return { role: "user", content: message.content };
-}
-
-function toPersistedMessages(
-  messages: ChatMessage[],
-  previous: PersistedMessage[],
-  toolResults: Map<string, boolean>,
-): PersistedMessage[] {
-  return messages
-    .filter((message) => message.role !== "system")
-    .map((message, index) => {
-      const existing = previous[index];
-      const identity = {
-        id: existing?.id ?? createMessageId(),
-        createdAt: existing?.createdAt ?? new Date().toISOString(),
-      };
-      if (message.role === "assistant") {
-        return {
-          ...identity,
-          role: "assistant" as const,
-          content: message.content,
-          ...(message.reasoningContent ? { reasoningContent: message.reasoningContent } : {}),
-          ...(message.toolCalls?.length
-            ? { toolCalls: cloneToolCalls(message.toolCalls) }
-            : {}),
-        };
-      }
-      if (message.role === "tool") {
-        const existingOk = existing?.role === "tool" ? existing.ok : undefined;
-        return {
-          ...identity,
-          role: "tool" as const,
-          content: message.content,
-          name: message.name,
-          toolCallId: message.toolCallId,
-          ok: toolResults.get(message.toolCallId) ?? existingOk ?? false,
-        };
-      }
-      return {
-        ...identity,
-        role: "user" as const,
-        content: message.content,
-      };
-    });
-}
-
-function cloneToolCalls(toolCalls: ToolCall[]): ToolCall[] {
-  return toolCalls.map((toolCall) => ({
-    ...toolCall,
-    input: { ...toolCall.input },
-  }));
 }
 
 function statusForStopReason(stopReason: AgentStopReason): SessionStatus {
@@ -605,4 +505,15 @@ function validateAutomationProposal(draft: AutomationProposalDraft) {
 
 function redactSecret(message: string, secret: string | undefined): string {
   return secret ? message.split(secret).join("[REDACTED]") : message;
+}
+
+function readEnvSecret(primary: string, fallback: string): string | undefined {
+  return process.env[primary] || process.env[fallback] || undefined;
+}
+
+function required<T>(value: T | undefined, name: string): T {
+  if (value === undefined) {
+    throw new Error(`AgentCoordinator requires ${name} when no runtime is injected`);
+  }
+  return value;
 }

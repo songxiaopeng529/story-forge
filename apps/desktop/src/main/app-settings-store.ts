@@ -2,6 +2,7 @@ import type {
   AppSettingsView,
   CommandExecutionMode,
   ResponseMode,
+  WebSearchCoverage,
 } from "@story-forge/shared";
 import { join } from "node:path";
 import { z } from "zod";
@@ -9,18 +10,23 @@ import { readJson, writeJsonAtomic } from "./atomic-json";
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
+const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 
 const appSettingsSchema = z.object({
   schemaVersion: z.literal(1),
   responseMode: responseModeSchema,
   developerMode: z.boolean().default(false),
   commandExecutionMode: commandExecutionModeSchema.default("sentinel"),
+  webAccessEnabled: z.boolean().default(false),
+  webSearchCoverage: webSearchCoverageSchema.default("focused"),
 });
 
 export type SaveAppSettingsInput = {
   responseMode?: ResponseMode | undefined;
   developerMode?: boolean | undefined;
   commandExecutionMode?: CommandExecutionMode | undefined;
+  webAccessEnabled?: boolean | undefined;
+  webSearchCoverage?: WebSearchCoverage | undefined;
 };
 
 export class AppSettingsStore {
@@ -52,5 +58,7 @@ function createDefaultSettings(): AppSettingsView {
     responseMode: "auto",
     developerMode: false,
     commandExecutionMode: "sentinel",
+    webAccessEnabled: false,
+    webSearchCoverage: "focused",
   };
 }

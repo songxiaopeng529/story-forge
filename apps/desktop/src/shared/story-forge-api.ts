@@ -15,6 +15,7 @@ import type {
   SkillView,
   TurnId,
   UpdateAutomationInput,
+  WebSearchCoverage,
 } from "@story-forge/shared";
 
 export const IPC_CHANNELS = {
@@ -124,6 +125,8 @@ export type StoryForgeApi = {
       responseMode?: ResponseMode;
       developerMode?: boolean;
       commandExecutionMode?: CommandExecutionMode;
+      webAccessEnabled?: boolean;
+      webSearchCoverage?: WebSearchCoverage;
     }): Promise<AppSettingsView>;
   };
   providers: {

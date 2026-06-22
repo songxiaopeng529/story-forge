@@ -92,7 +92,7 @@ export class WorkspaceSandbox {
   }
 
   private async resolveExistingPath(inputPath: string): Promise<string> {
-    const candidatePath = this.resolveRelativePath(inputPath);
+    const candidatePath = await this.resolveInputPath(inputPath);
     const rootRealpath = await this.getWorkspaceRootRealpath();
     const candidateRealpath = await realpath(candidatePath);
     this.assertInsideWorkspace(rootRealpath, candidateRealpath, inputPath);
@@ -100,7 +100,7 @@ export class WorkspaceSandbox {
   }
 
   private async resolveWritablePath(inputPath: string): Promise<string> {
-    const candidatePath = this.resolveRelativePath(inputPath);
+    const candidatePath = await this.resolveInputPath(inputPath);
     const rootRealpath = await this.getWorkspaceRootRealpath();
     try {
       const existingRealpath = await realpath(candidatePath);
@@ -134,16 +134,18 @@ export class WorkspaceSandbox {
     }
   }
 
-  private resolveRelativePath(inputPath: string): string {
+  private async resolveInputPath(inputPath: string): Promise<string> {
+    const rootRealpath = await this.getWorkspaceRootRealpath();
     if (path.isAbsolute(inputPath)) {
-      throw new Error(`Absolute paths are not allowed: ${inputPath}`);
+      return path.resolve(inputPath);
     }
+
     const pathSegments = inputPath.split(/[\\/]+/);
     if (pathSegments.includes("..")) {
       throw new Error(`Path escapes workspace root: ${inputPath}`);
     }
-    const candidatePath = path.resolve(this.workspaceRoot, inputPath);
-    if (!isInsidePath(this.workspaceRoot, candidatePath)) {
+    const candidatePath = path.resolve(rootRealpath, inputPath);
+    if (!isInsidePath(rootRealpath, candidatePath)) {
       throw new Error(`Path escapes workspace root: ${inputPath}`);
     }
     return candidatePath;

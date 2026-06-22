@@ -69,6 +69,58 @@ describe("App", () => {
     await waitFor(() => expect(fixture.stop).toHaveBeenCalledWith("sf_turn_active"));
   });
 
+  it("offers enabled skills in the slash command menu and inserts the selected invocation", async () => {
+    installApi({
+      skills: [
+        {
+          id: "agent-browser",
+          name: "Agent Browser",
+          description: "Inspect and operate browser pages",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        },
+        {
+          id: "drafting",
+          name: "Drafting",
+          description: "Draft release notes",
+          invocationName: "/drafting",
+          enabled: false,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        },
+      ],
+    });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/agent" } });
+
+    const command = await screen.findByRole("option", { name: /\/agent-browser/i });
+    expect(screen.queryByRole("option", { name: /\/drafting/i })).not.toBeInTheDocument();
+
+    fireEvent.click(command);
+
+    expect(input).toHaveValue("/agent-browser ");
+  });
+
+  it("runs built-in slash commands from the prompt", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/timer" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/timer/i }));
+
+    expect(await screen.findByLabelText("Schedule description")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+  });
+
   it("updates from correlated turn events and reloads the persisted session on completion", async () => {
     const fixture = installApi();
     render(<App />);
@@ -809,8 +861,11 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
     expect(within(commandModeGroup).getByRole("radio", { name: "无缰模式" }))
       .toHaveAccessibleDescription(
-        "完全放开。命令不会再弹出确认，请只在你信任当前 Agent 时使用。",
+        "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
       );
+    expect(screen.getByText(
+      "StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。",
+    )).toBeInTheDocument();
 
     fireEvent.click(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }));
 
@@ -818,6 +873,43 @@ describe("App", () => {
       commandExecutionMode: "cruise",
     }));
     expect(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
+  it("loads and saves Web Search Coverage from Settings", async () => {
+    const fixture = installApi({
+      settings: {
+        schemaVersion: 1,
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const webAccess = await screen.findByRole("switch", { name: "Web access" });
+    const coverageGroup = await screen.findByRole("radiogroup", {
+      name: "Web Search Coverage",
+    });
+    expect(webAccess).not.toBeChecked();
+    expect(within(coverageGroup).getByRole("radio", { name: "Focused" })).toBeDisabled();
+
+    fireEvent.click(webAccess);
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      webAccessEnabled: true,
+    }));
+    expect(within(coverageGroup).getByRole("radio", { name: "Focused" })).not.toBeDisabled();
+
+    fireEvent.click(within(coverageGroup).getByRole("radio", { name: "Wide" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      webSearchCoverage: "wide",
+    }));
+    expect(within(coverageGroup).getByRole("radio", { name: "Wide" }))
       .toHaveAttribute("aria-checked", "true");
   });
 
@@ -951,6 +1043,8 @@ describe("App", () => {
         responseMode: "live",
         developerMode: false,
         commandExecutionMode: "sentinel",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
       });
     });
     await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
@@ -959,7 +1053,7 @@ describe("App", () => {
 });
 
 function installApi(options: {
-  settings?: AppSettingsView;
+  settings?: Partial<AppSettingsView>;
   saveSettings?: StoryForgeApi["settings"]["save"];
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
@@ -1012,11 +1106,14 @@ function installApi(options: {
   const stop = vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
-  const settings = options.settings ?? {
+  const settings: AppSettingsView = {
     schemaVersion: 1 as const,
     responseMode: "auto" as const,
     developerMode: false,
     commandExecutionMode: "sentinel" as const,
+    webAccessEnabled: false,
+    webSearchCoverage: "focused" as const,
+    ...options.settings,
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
