@@ -23,6 +23,7 @@ const baseSession: SessionView = {
   createdAt: "2026-06-19T00:00:00.000Z",
   updatedAt: "2026-06-19T00:00:00.000Z",
   messages: [userMessage],
+  tasks: [],
 };
 
 describe("buildTimeline", () => {
@@ -226,6 +227,80 @@ describe("buildTimeline", () => {
       type: "automation-proposal",
       proposalId: "automation-proposal-1",
       status: "pending",
+    }));
+  });
+
+  it("adds a consolidated task list from persisted session tasks", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        tasks: [
+          {
+            id: "sf_task_1",
+            title: "Inspect runtime",
+            status: "completed",
+            createdAt: "2026-06-23T00:00:00.000Z",
+            updatedAt: "2026-06-23T00:00:00.000Z",
+          },
+          {
+            id: "sf_task_2",
+            title: "Wire UI",
+            status: "in_progress",
+            activeForm: "Rendering tasks",
+            createdAt: "2026-06-23T00:00:00.000Z",
+            updatedAt: "2026-06-23T00:00:00.000Z",
+          },
+        ],
+      },
+      activities: [],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "task-list",
+      completedCount: 1,
+      totalCount: 2,
+      tasks: [
+        expect.objectContaining({ title: "Inspect runtime", status: "completed" }),
+        expect.objectContaining({ title: "Wire UI", status: "in_progress" }),
+      ],
+    }));
+  });
+
+  it("uses live task events over persisted tasks for the active turn", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        tasks: [{
+          id: "sf_task_1",
+          title: "Inspect runtime",
+          status: "pending",
+          createdAt: "2026-06-23T00:00:00.000Z",
+          updatedAt: "2026-06-23T00:00:00.000Z",
+        }],
+      },
+      activeTurnId: "sf_turn_active",
+      activities: [{
+        type: "task.list.updated",
+        sessionId: "sf_session_test",
+        turnId: "sf_turn_active",
+        reason: "updated",
+        changedTaskId: "sf_task_1",
+        tasks: [{
+          id: "sf_task_1",
+          title: "Inspect runtime",
+          status: "completed",
+          createdAt: "2026-06-23T00:00:00.000Z",
+          updatedAt: "2026-06-23T00:00:00.000Z",
+        }],
+      }],
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "task-list",
+      completedCount: 1,
+      totalCount: 1,
+      tasks: [expect.objectContaining({ status: "completed" })],
     }));
   });
 });

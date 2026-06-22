@@ -8,6 +8,7 @@ import type {
   ResponseMode,
   SessionId,
   TurnId,
+  TurnMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -55,6 +56,7 @@ export function App() {
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
+  const [composerMode, setComposerMode] = useState<TurnMode>("normal");
   const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
@@ -334,6 +336,7 @@ export function App() {
     }
 
     setPrompt("");
+    setComposerMode("normal");
     setImageAttachments([]);
     setError(undefined);
     setActivities((current) => ({ ...current, [session.id]: [] }));
@@ -354,6 +357,7 @@ export function App() {
       const { turnId } = await window.storyForge.turns.start({
         sessionId: session.id,
         prompt: content,
+        ...(composerMode === "plan" ? { mode: composerMode } : {}),
         ...(attachments.length ? { imageAttachments: attachments } : {}),
       });
       setActiveTurns((current) => ({ ...current, [session.id]: turnId }));
@@ -790,10 +794,12 @@ export function App() {
             onExpandSidebar={() => setSidebarCollapsed(false)}
             onExpandContext={() => setContextCollapsed(false)}
             prompt={prompt}
+            composerMode={composerMode}
             imageAttachments={imageAttachments}
             imageInputEnabled={Boolean(selectedSessionProvider?.supportsImageInput)}
             error={error}
             onPromptChange={setPrompt}
+            onComposerModeChange={setComposerMode}
             onImageAttachmentsChange={setImageAttachments}
             onPromptKeyDown={handlePromptKeyDown}
             onCompositionStart={() => {

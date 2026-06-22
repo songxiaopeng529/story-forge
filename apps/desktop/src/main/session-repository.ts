@@ -1,5 +1,13 @@
 import type { ProviderId } from "@story-forge/model-gateway";
-import { createSessionId, type SessionId, type TurnId } from "@story-forge/shared";
+import {
+  createSessionId,
+  createTaskId,
+  type SessionId,
+  type SessionTask,
+  type TaskId,
+  type TaskStatus,
+  type TurnId,
+} from "@story-forge/shared";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -18,6 +26,11 @@ const imageAttachmentSchema = z.object({
   data: z.string(),
   size: z.number().int().nonnegative(),
 });
+
+const turnIdSchema = z.custom<TurnId>(
+  (value) => typeof value === "string" && /^sf_turn_[a-z0-9]+$/.test(value),
+  { message: "Invalid turn id" },
+);
 
 const persistedMessageSchema = z.discriminatedUnion("role", [
   z.object({
@@ -47,6 +60,24 @@ const persistedMessageSchema = z.discriminatedUnion("role", [
   }),
 ]);
 
+const taskIdSchema = z.custom<TaskId>(
+  (value) => typeof value === "string" && /^sf_task_[a-z0-9]+$/.test(value),
+  { message: "Invalid task id" },
+);
+
+const sessionTaskSchema = z.object({
+  id: taskIdSchema,
+  title: z.string(),
+  description: z.string().optional(),
+  activeForm: z.string().optional(),
+  status: z.enum(["pending", "in_progress", "completed", "blocked"]),
+  blockedReason: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  createdTurnId: turnIdSchema.optional(),
+  updatedTurnId: turnIdSchema.optional(),
+});
+
 const sessionSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.custom<SessionId>(isValidSessionId, { message: "Invalid session id" }),
@@ -55,19 +86,32 @@ const sessionSchema = z.object({
   providerId: z.enum(["deepseek", "openai", "anthropic", "openrouter", "volcano"]),
   model: z.string(),
   status: z.enum(["idle", "running", "completed", "interrupted", "stopped", "error"]),
-  currentTurnId: z.custom<TurnId>(
-    (value) => typeof value === "string" && /^sf_turn_[a-z0-9]+$/.test(value),
-    { message: "Invalid turn id" },
-  ).optional(),
+  currentTurnId: turnIdSchema.optional(),
   stopReason: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   messages: z.array(persistedMessageSchema),
+  tasks: z.array(sessionTaskSchema).default([]),
 });
 
 export type PersistedMessage = z.infer<typeof persistedMessageSchema>;
 export type SessionRecord = z.infer<typeof sessionSchema>;
 export type SessionStatus = SessionRecord["status"];
+export type CreateTaskInput = {
+  title: string;
+  description?: string;
+  activeForm?: string;
+  turnId?: TurnId;
+};
+export type UpdateTaskInput = {
+  taskId: TaskId;
+  title?: string;
+  description?: string;
+  activeForm?: string;
+  status?: TaskStatus;
+  blockedReason?: string;
+  turnId?: TurnId;
+};
 
 export class SessionRepository {
   private readonly sessionsDir: string;
@@ -95,6 +139,7 @@ export class SessionRepository {
       createdAt: now,
       updatedAt: now,
       messages: [],
+      tasks: [],
     };
     await this.write(session);
     return session;
@@ -152,6 +197,61 @@ export class SessionRepository {
 
   async replaceMessages(sessionId: SessionId, messages: PersistedMessage[]): Promise<SessionRecord> {
     return this.update(sessionId, (session) => ({ ...session, messages }));
+  }
+
+  async listTasks(sessionId: SessionId): Promise<SessionTask[]> {
+    const session = await this.get(sessionId);
+    return session.tasks;
+  }
+
+  async createTask(sessionId: SessionId, input: CreateTaskInput): Promise<SessionRecord> {
+    const title = input.title.trim();
+    if (!title) {
+      throw new Error("Task title must not be empty");
+    }
+
+    return this.update(sessionId, (session) => {
+      const now = new Date().toISOString();
+      const task: SessionTask = {
+        id: createTaskId(),
+        title,
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+        ...(trimOptional(input.description) ? { description: trimOptional(input.description) } : {}),
+        ...(trimOptional(input.activeForm) ? { activeForm: trimOptional(input.activeForm) } : {}),
+        ...(input.turnId ? { createdTurnId: input.turnId, updatedTurnId: input.turnId } : {}),
+      };
+      return { ...session, tasks: [...session.tasks, task] };
+    });
+  }
+
+  async updateTask(sessionId: SessionId, input: UpdateTaskInput): Promise<SessionRecord> {
+    return this.update(sessionId, (session) => {
+      const index = session.tasks.findIndex((task) => task.id === input.taskId);
+      if (index < 0) {
+        throw new Error(`Task not found: ${input.taskId}`);
+      }
+      if (input.status === "blocked" && !trimOptional(input.blockedReason)) {
+        throw new Error("Blocked tasks require a blockedReason");
+      }
+
+      const now = new Date().toISOString();
+      const tasks = session.tasks.map((task, taskIndex) => {
+        if (input.status === "in_progress" && taskIndex !== index && task.status === "in_progress") {
+          return applyTaskPatch(task, {
+            status: "pending",
+            updatedAt: now,
+            ...(input.turnId ? { updatedTurnId: input.turnId } : {}),
+          });
+        }
+        if (taskIndex !== index) {
+          return task;
+        }
+        return updateTaskRecord(task, input, now);
+      });
+      return { ...session, tasks };
+    });
   }
 
   async rename(sessionId: SessionId, title: string): Promise<SessionRecord> {
@@ -241,6 +341,65 @@ export class SessionRepository {
 function deriveTitle(content: string): string {
   const firstLine = content.trim().split(/\r?\n/, 1)[0] ?? "";
   return firstLine.slice(0, 50) || "New session";
+}
+
+function updateTaskRecord(task: SessionTask, input: UpdateTaskInput, now: string): SessionTask {
+  const status = input.status ?? task.status;
+  const patch: Partial<SessionTask> = {
+    status,
+    updatedAt: now,
+    ...(input.turnId ? { updatedTurnId: input.turnId } : {}),
+  };
+
+  if (input.title !== undefined) {
+    const title = input.title.trim();
+    if (!title) {
+      throw new Error("Task title must not be empty");
+    }
+    patch.title = title;
+  }
+
+  const description = trimOptional(input.description);
+  const activeForm = trimOptional(input.activeForm);
+  const blockedReason = trimOptional(input.blockedReason);
+  const updated = applyTaskPatch(task, patch);
+
+  if (input.description !== undefined) {
+    if (description) {
+      updated.description = description;
+    } else {
+      delete updated.description;
+    }
+  }
+
+  if (input.activeForm !== undefined) {
+    if (activeForm) {
+      updated.activeForm = activeForm;
+    } else {
+      delete updated.activeForm;
+    }
+  }
+
+  if (status === "blocked") {
+    const reason = blockedReason ?? task.blockedReason;
+    if (!reason) {
+      throw new Error("Blocked tasks require a blockedReason");
+    }
+    updated.blockedReason = reason;
+  } else {
+    delete updated.blockedReason;
+  }
+
+  return updated;
+}
+
+function applyTaskPatch(task: SessionTask, patch: Partial<SessionTask>): SessionTask {
+  return { ...task, ...patch };
+}
+
+function trimOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {

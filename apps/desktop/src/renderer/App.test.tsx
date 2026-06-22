@@ -205,6 +205,29 @@ describe("App", () => {
     expect(input).toHaveValue("");
   });
 
+  it("starts a plan mode turn from the slash command", async () => {
+    const fixture = installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/plan" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
+
+    expect(input).toHaveValue("");
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Investigate the runtime" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "Investigate the runtime",
+      mode: "plan",
+    }));
+  });
+
   it("updates from correlated turn events and reloads the persisted session on completion", async () => {
     const fixture = installApi();
     render(<App />);
@@ -1190,6 +1213,7 @@ function installApi(options: {
     updatedAt: "2026-06-07T00:00:00.000Z",
     ...options.session,
     messages: options.session?.messages ?? defaultMessages,
+    tasks: options.session?.tasks ?? [],
   };
   let eventListener: ((event: AgentEvent) => void) | undefined;
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));

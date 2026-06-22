@@ -39,6 +39,41 @@ export function createWorkspaceFileTools(sandbox: WorkspaceSandbox): ToolDefinit
       },
     },
     {
+      name: "workspace.searchText",
+      description: "Search text files inside the active workspace and return matching line snippets.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Text to search for.",
+          },
+          path: {
+            type: "string",
+            description: "Optional workspace-relative file or directory to search. Defaults to the workspace root.",
+          },
+          maxResults: {
+            type: "number",
+            description: "Optional maximum number of matches to return.",
+          },
+        },
+        required: ["query"],
+      },
+      execute: async (input, context) => {
+        const query = readRequiredString(input, "query", "workspace.searchText");
+        const searchPath = input.path === undefined
+          ? undefined
+          : readStringPath(input, "workspace.searchText");
+        const maxResults = readOptionalPositiveInteger(input.maxResults, "maxResults", "workspace.searchText");
+        return sandbox.searchText({
+          query,
+          ...(searchPath ? { path: searchPath } : {}),
+          ...(maxResults === undefined ? {} : { maxResults }),
+          ...(context.signal ? { signal: context.signal } : {}),
+        });
+      },
+    },
+    {
       name: "workspace.writeFile",
       description: "Create or overwrite a UTF-8 text file inside the active workspace.",
       parameters: {
@@ -122,4 +157,30 @@ function readString(
     throw new Error(`${toolName} requires string ${key}`);
   }
   return input[key];
+}
+
+function readRequiredString(
+  input: Record<string, unknown>,
+  key: string,
+  toolName: string,
+): string {
+  const value = readString(input, key, toolName).trim();
+  if (!value) {
+    throw new Error(`${toolName} requires a non-empty ${key}`);
+  }
+  return value;
+}
+
+function readOptionalPositiveInteger(
+  value: unknown,
+  key: string,
+  toolName: string,
+): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(value) || Number(value) <= 0) {
+    throw new Error(`${toolName} requires a positive integer ${key}`);
+  }
+  return Number(value);
 }

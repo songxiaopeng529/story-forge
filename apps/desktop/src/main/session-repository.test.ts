@@ -134,4 +134,84 @@ describe("SessionRepository", () => {
       ],
     });
   });
+
+  it("defaults missing tasks to an empty list", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    await expect(repository.listTasks(session.id)).resolves.toEqual([]);
+    expect((await repository.get(session.id)).tasks).toEqual([]);
+  });
+
+  it("creates and updates tasks on the session", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    const afterCreate = await repository.createTask(session.id, {
+      title: "Inspect runtime",
+      description: "Read the runtime files.",
+      activeForm: "Inspecting runtime files",
+      turnId: "sf_turn_task",
+    });
+    const task = afterCreate.tasks[0]!;
+
+    expect(task).toMatchObject({
+      title: "Inspect runtime",
+      description: "Read the runtime files.",
+      activeForm: "Inspecting runtime files",
+      status: "pending",
+      createdTurnId: "sf_turn_task",
+      updatedTurnId: "sf_turn_task",
+    });
+
+    const afterUpdate = await repository.updateTask(session.id, {
+      taskId: task.id,
+      status: "blocked",
+      blockedReason: "Need approval",
+      turnId: "sf_turn_task2",
+    });
+
+    expect(afterUpdate.tasks[0]).toMatchObject({
+      status: "blocked",
+      blockedReason: "Need approval",
+      updatedTurnId: "sf_turn_task2",
+    });
+  });
+
+  it("keeps only one task in progress", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    const first = (await repository.createTask(session.id, { title: "First" })).tasks[0]!;
+    const second = (await repository.createTask(session.id, { title: "Second" })).tasks[1]!;
+
+    await repository.updateTask(session.id, {
+      taskId: first.id,
+      status: "in_progress",
+    });
+    const updated = await repository.updateTask(session.id, {
+      taskId: second.id,
+      status: "in_progress",
+    });
+
+    expect(updated.tasks.map((task) => [task.title, task.status])).toEqual([
+      ["First", "pending"],
+      ["Second", "in_progress"],
+    ]);
+  });
 });

@@ -339,6 +339,26 @@ describe("workspace.runCommand", () => {
     });
   });
 
+  it("allows safe commands but denies confirm-worthy commands in read-only mode", async () => {
+    const root = await createCommandWorkspace();
+    const requestPermission = vi.fn(async () => true);
+    const registry = commandRegistry(root, { readOnly: true, requestPermission });
+
+    await expect(registry.execute("workspace.runCommand", {
+      program: "which",
+      args: ["node"],
+    })).resolves.toMatchObject({ ok: true });
+
+    await expect(registry.execute("workspace.runCommand", {
+      program: "node",
+      args: ["-e", "console.log('blocked')"],
+    })).resolves.toEqual({
+      ok: false,
+      error: "Command is not allowed: node -e console.log('blocked')",
+    });
+    expect(requestPermission).not.toHaveBeenCalled();
+  });
+
   it("rejects command arguments whose nearest existing path escapes through a symlink", async () => {
     const root = await createCommandWorkspace();
     const outside = await mkdtemp(path.join(tmpdir(), "story-forge-command-outside-"));

@@ -5,6 +5,7 @@ import type {
   ModelRequestEvent,
   SkillView,
   TurnId,
+  TurnMode,
 } from "@story-forge/shared";
 import {
   Braces,
@@ -13,6 +14,7 @@ import {
   FolderOpen,
   ImagePlus,
   KeyRound,
+  ListChecks,
   PanelLeftOpen,
   PanelRightOpen,
   Play,
@@ -60,10 +62,12 @@ export function AgentWorkspace(props: {
   onExpandSidebar: () => void;
   onExpandContext: () => void;
   prompt: string;
+  composerMode: TurnMode;
   imageAttachments: ImageAttachmentView[];
   imageInputEnabled: boolean;
   error: string | undefined;
   onPromptChange: (prompt: string) => void;
+  onComposerModeChange: (mode: TurnMode) => void;
   onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
@@ -143,6 +147,18 @@ export function AgentWorkspace(props: {
   const slashCommands = useMemo(() => {
     const builtInCommands: SlashCommandItem[] = [
       {
+        id: "plan",
+        invocation: "/plan",
+        title: "Plan mode",
+        description: "Plan the work first without editing files.",
+        kind: "builtin",
+        icon: <ListChecks size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          props.onComposerModeChange("plan");
+        },
+      },
+      {
         id: "timer",
         invocation: "/timer",
         title: "Session timer",
@@ -216,6 +232,7 @@ export function AgentWorkspace(props: {
     props.onOpenExtensions,
     props.onOpenModels,
     props.onOpenSettings,
+    props.onComposerModeChange,
     props.onPromptChange,
     slashRange?.query,
     slashSkills,
@@ -623,7 +640,7 @@ export function AgentWorkspace(props: {
                       <ImagePlus size={16} />
                     </button>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-ink">
-                      Agent
+                      {props.composerMode === "plan" ? "Plan" : "Agent"}
                     </span>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-danger">
                       {commandModeMeta[props.commandExecutionMode].chip}

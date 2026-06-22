@@ -1,4 +1,4 @@
-import { Check, Clock3, OctagonAlert, Sparkles } from "lucide-react";
+import { Check, Clock3, ListChecks, OctagonAlert, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TimelineItem } from "../timeline";
 import { useTypewriterText } from "../use-typewriter-text";
@@ -82,6 +82,9 @@ function TimelineItemView(props: {
       />
     );
   }
+  if (item.type === "task-list") {
+    return <TaskListCard item={item} />;
+  }
   if (item.type === "notice") {
     return (
       <div className="rounded-lg border border-forge-info/30 bg-forge-info-bg px-3 py-2 text-[13px] text-forge-info">
@@ -93,6 +96,57 @@ function TimelineItemView(props: {
     <div className="rounded-lg border border-forge-danger/30 bg-forge-danger-bg px-3 py-2 text-[13px] text-forge-danger">
       {item.message}
     </div>
+  );
+}
+
+function TaskListCard(props: {
+  item: Extract<TimelineItem, { type: "task-list" }>;
+}) {
+  const { item } = props;
+  return (
+    <article className="rounded-[10px] border border-forge-line bg-white px-4 py-3 text-sm">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md bg-forge-canvas text-forge-ink">
+          <ListChecks size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold text-forge-ink">Tasks</div>
+            <div className="text-xs text-forge-muted">
+              {item.completedCount}/{item.totalCount} completed
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {item.tasks.map((task) => (
+              <div className="flex items-start gap-2" key={task.id}>
+                <span className={`mt-0.5 flex-none ${taskTone(task.status)}`}>
+                  {task.status === "completed" ? (
+                    <Check size={15} />
+                  ) : task.status === "blocked" ? (
+                    <OctagonAlert size={15} />
+                  ) : (
+                    <Clock3 size={15} />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-medium text-forge-ink">{task.title}</div>
+                  {task.activeForm || task.blockedReason ? (
+                    <div className={`mt-0.5 text-[11px] leading-4 ${
+                      task.status === "blocked" ? "text-forge-danger" : "text-forge-muted"
+                    }`}>
+                      {task.blockedReason ?? task.activeForm}
+                    </div>
+                  ) : null}
+                </div>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${taskBadge(task.status)}`}>
+                  {taskLabel(task.status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -250,6 +304,36 @@ function formatValue(value: unknown): string {
     return value;
   }
   return JSON.stringify(value, null, 2);
+}
+
+function taskLabel(status: Extract<TimelineItem, { type: "task-list" }>["tasks"][number]["status"]): string {
+  if (status === "in_progress") {
+    return "In progress";
+  }
+  return status[0]?.toUpperCase() + status.slice(1);
+}
+
+function taskTone(status: Extract<TimelineItem, { type: "task-list" }>["tasks"][number]["status"]): string {
+  if (status === "completed") {
+    return "text-forge-success";
+  }
+  if (status === "blocked") {
+    return "text-forge-danger";
+  }
+  return "text-forge-info";
+}
+
+function taskBadge(status: Extract<TimelineItem, { type: "task-list" }>["tasks"][number]["status"]): string {
+  if (status === "completed") {
+    return "bg-forge-success-bg text-forge-success";
+  }
+  if (status === "blocked") {
+    return "bg-forge-danger-bg text-forge-danger";
+  }
+  if (status === "in_progress") {
+    return "bg-forge-info-bg text-forge-info";
+  }
+  return "bg-forge-canvas text-forge-muted";
 }
 
 function formatTimeChip(startedAt: string | undefined): string | undefined {

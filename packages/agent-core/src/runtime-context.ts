@@ -1,5 +1,5 @@
 import type { ChatMessage, ToolCall } from "@story-forge/model-gateway";
-import type { SkillView } from "@story-forge/shared";
+import type { SessionTask, SkillView, TurnMode } from "@story-forge/shared";
 import { loadProjectInstructions, type ProjectInstructionsContext } from "./project-instructions";
 import {
   serializeStoryForgeContextDocument,
@@ -24,6 +24,8 @@ export type RuntimeContextAssemblerOptions = {
   workspaceStore: RuntimeWorkspaceStore;
   settings: RuntimeSettingsProvider;
   skillResolver?: RuntimeSkillResolver;
+  now?: () => Date;
+  timeZone?: () => string;
 };
 
 export class RuntimeContextAssembler {
@@ -31,12 +33,16 @@ export class RuntimeContextAssembler {
   private readonly workspaceStore: RuntimeWorkspaceStore;
   private readonly settings: RuntimeSettingsProvider;
   private readonly skillResolver: RuntimeSkillResolver | undefined;
+  private readonly now: () => Date;
+  private readonly timeZone: () => string;
 
   constructor(options: RuntimeContextAssemblerOptions) {
     this.sessionStore = options.sessionStore;
     this.workspaceStore = options.workspaceStore;
     this.settings = options.settings;
     this.skillResolver = options.skillResolver;
+    this.now = options.now ?? (() => new Date());
+    this.timeZone = options.timeZone ?? resolveLocalTimeZone;
   }
 
   async build(input: AgentRuntimeTurnInput): Promise<RuntimeContext> {
@@ -63,12 +69,20 @@ export class RuntimeContextAssembler {
       this.resolveSkillInvocation(input.prompt, availableSkills),
       loadProjectInstructions(workspace.path),
     ]);
+    const tasks = session.tasks ?? [];
+    const mode = input.mode ?? "normal";
     const systemMessage = createStructuredSystemMessage({
       workspacePath: workspace.path,
       webAccessEnabled,
+      mode,
+      tasks,
       availableSkills,
       activeSkillInvocation,
       projectInstructions,
+      currentTime: {
+        now: this.now(),
+        timeZone: this.timeZone(),
+      },
     });
 
     return {
@@ -82,6 +96,8 @@ export class RuntimeContextAssembler {
         webAccessEnabled,
         webSearchCoverage,
       },
+      mode,
+      tasks,
       availableSkills,
       ...(activeSkillInvocation ? { activeSkillInvocation } : {}),
       messages: [
@@ -223,9 +239,15 @@ export type { RuntimePersistedMessage, RuntimeSession };
 function createStructuredSystemMessage(input: {
   workspacePath: string;
   webAccessEnabled: boolean;
+  mode: TurnMode;
+  tasks: SessionTask[];
   availableSkills: SkillView[];
   activeSkillInvocation: RuntimeSkillInvocation | undefined;
   projectInstructions: ProjectInstructionsContext;
+  currentTime: {
+    now: Date;
+    timeZone: string;
+  };
 }): ChatMessage {
   const document: StoryForgeContextDocument = {
     version: 1,
@@ -240,6 +262,15 @@ function createStructuredSystemMessage(input: {
       ...(input.activeSkillInvocation
         ? { active: toActiveSkill(input.activeSkillInvocation) }
         : {}),
+    },
+    runtime: {
+      content: createRuntimeSystemContext({
+        now: input.currentTime.now,
+        timeZone: input.currentTime.timeZone,
+        webAccessEnabled: input.webAccessEnabled,
+        mode: input.mode,
+        tasks: input.tasks,
+      }),
     },
     mcp: {
       servers: [],
@@ -274,9 +305,10 @@ function createMainSystemPrompt(input: {
     "2. <main> StoryForge built-in runtime rules.",
     "3. <project-info> project instructions.",
     "4. Active <skills> instructions for this turn.",
-    "5. <mcp> server instructions and tool usage notes.",
-    "6. <soul> long-term memory.",
-    "7. Conversation messages.",
+    "5. <runtime> current date/time context.",
+    "6. <mcp> server instructions and tool usage notes.",
+    "7. <soul> long-term memory.",
+    "8. Conversation messages.",
     "",
     "Inspect before editing, use workspace-relative paths, and run only necessary development commands.",
     "Treat listed skills as installed capabilities. Do not deny that a listed skill exists just because there is no dedicated tool with the same name.",
@@ -296,6 +328,86 @@ function createMainSystemPrompt(input: {
   }
 
   return lines.join("\n");
+}
+
+function createRuntimeSystemContext(input: {
+  now: Date;
+  timeZone: string;
+  webAccessEnabled: boolean;
+  mode: TurnMode;
+  tasks: SessionTask[];
+}): string {
+  const timeZone = input.timeZone.trim() || "UTC";
+  const lines = [
+    `Current turn mode: ${input.mode}.`,
+    `Current runtime date/time: ${formatRuntimeDateTime(input.now, timeZone)} (${timeZone}).`,
+    `Current UTC time: ${input.now.toISOString()}.`,
+    "Treat this as the authoritative baseline for \"today\", \"now\", \"latest\", \"recent\", and current events.",
+    "When resolving relative dates, use this runtime date/time and mention concrete dates when it prevents ambiguity.",
+    "",
+    "Use task.create and task.update for complex multi-step tasks. Keep task status current before and after meaningful work.",
+    "Mark a task completed only after the work and relevant validation are done. If blocked, mark it blocked with a concrete reason.",
+    "Before finalizing, make sure all known tasks are completed or blocked.",
+  ];
+
+  if (input.mode === "plan") {
+    lines.push(
+      "In plan mode, gather context, create or update the task list, and propose a plan without editing files or running modifying commands.",
+    );
+  }
+
+  if (input.tasks.length > 0) {
+    lines.push("", "Current StoryForge task list:");
+    for (const task of input.tasks) {
+      lines.push(formatTaskSnapshotLine(task));
+    }
+  }
+
+  if (input.webAccessEnabled) {
+    lines.push(
+      "When using web.search for current events or recent information, anchor queries and recency filters to this date/year unless the user explicitly asks for another time period.",
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function formatTaskSnapshotLine(task: SessionTask): string {
+  const details = [
+    task.activeForm,
+    task.blockedReason ? `blocked: ${task.blockedReason}` : undefined,
+  ].filter((value): value is string => Boolean(value));
+  return `- [${task.status}] ${task.title}${details.length ? ` — ${details.join("; ")}` : ""}`;
+}
+
+function formatRuntimeDateTime(date: Date, timeZone: string): string {
+  try {
+    return createRuntimeDateFormatter(timeZone).format(date);
+  } catch {
+    return createRuntimeDateFormatter("UTC").format(date);
+  }
+}
+
+function createRuntimeDateFormatter(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZoneName: "short",
+    timeZone,
+  });
+}
+
+function resolveLocalTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
 }
 
 function toAvailableSkill(skill: SkillView): StoryForgeAvailableSkill {

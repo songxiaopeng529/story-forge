@@ -29,6 +29,26 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.sessionsGet, "sf_session_../../providers"),
     ).rejects.toThrow();
     expect(fixture.start).not.toHaveBeenCalled();
+
+    await expect(
+      fixture.invoke(IPC_CHANNELS.turnsStart, {
+        sessionId: "sf_session_valid",
+        prompt: "plan this",
+        mode: "plan",
+      }),
+    ).resolves.toBeUndefined();
+    expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_valid",
+      prompt: "plan this",
+      mode: "plan",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.turnsStart, {
+        sessionId: "sf_session_valid",
+        prompt: "bad mode",
+        mode: "chaos",
+      }),
+    ).rejects.toThrow("Invalid IPC payload");
   });
 
   it("registers Skills and MCP APIs with payload validation", async () => {

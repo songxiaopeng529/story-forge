@@ -8,6 +8,8 @@
 
 **Tech Stack:** TypeScript, pnpm, Vitest, Zod, Electron IPC, React 19, existing StoryForge runtime/tool abstractions.
 
+**Implementation status:** Complete as of 2026-06-23. The shipped implementation keeps `@story-forge/tools` independent of `@story-forge/shared` by defining local structural task types that match the shared task shape.
+
 ---
 
 ## Scope and Existing Work
@@ -31,7 +33,7 @@ This plan implements V1A and V1B from the spec:
 - Create: `packages/shared/src/tasks.ts` for task types and ID creation.
 - Modify: `packages/shared/src/events.ts` for `TaskListUpdatedEvent` and `unfinished-tasks`.
 - Modify: `packages/shared/src/index.ts` to export task types.
-- Modify: `packages/tools/package.json` to depend on `@story-forge/shared`.
+- Leave `packages/tools/package.json` independent of `@story-forge/shared`; task tools use local structural task types.
 - Create: `packages/tools/src/task-tools.ts` for `task.create`, `task.update`, and `task.list`.
 - Create: `packages/tools/src/task-tools.test.ts`.
 - Modify: `packages/tools/src/file-tools.ts` to add `workspace.searchText`.

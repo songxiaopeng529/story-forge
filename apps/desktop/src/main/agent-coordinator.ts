@@ -19,12 +19,15 @@ import {
   type InstalledSkillRecord,
   type ResponseMode,
   type SessionId,
+  type TaskId,
   type SkillView,
   type TurnId,
+  type TurnMode,
   type WebSearchCoverage,
 } from "@story-forge/shared";
 import {
   createAutomationProposalTool,
+  createTaskTools,
   createWebTools,
   createWorkspaceCommandTool,
   createWorkspaceFileTools,
@@ -113,6 +116,7 @@ export class AgentCoordinator {
   async start(input: {
     sessionId: SessionId;
     prompt: string;
+    mode?: TurnMode;
     imageAttachments?: ImageAttachmentView[];
   }): Promise<{ turnId: TurnId }> {
     const imageAttachments = input.imageAttachments ?? [];
@@ -142,7 +146,7 @@ export class AgentCoordinator {
 
       const controller = new AbortController();
       this.activeTurns.set(turnId, { sessionId: input.sessionId, controller });
-      const promise = this.executeTurn(session, turnId, input.prompt, controller.signal)
+      const promise = this.executeTurn(session, turnId, input.prompt, input.mode ?? "normal", controller.signal)
         .finally(() => {
           this.activeTurns.delete(turnId);
           this.reservedSessions.delete(input.sessionId);
@@ -209,6 +213,7 @@ export class AgentCoordinator {
     session: SessionRecord,
     turnId: TurnId,
     prompt: string,
+    mode: TurnMode,
     signal: AbortSignal,
   ): Promise<void> {
     try {
@@ -217,6 +222,7 @@ export class AgentCoordinator {
         sessionId: session.id,
         turnId,
         prompt,
+        mode,
         signal,
       } satisfies AgentRuntimeTurnInput)) {
         if (event.type === "runtime.completed") {
@@ -254,6 +260,7 @@ export class AgentCoordinator {
       get: (sessionId: SessionId) => this.sessionRepository.get(sessionId),
       replaceMessages: (sessionId: SessionId, messages: Parameters<SessionRepository["replaceMessages"]>[1]) =>
         this.sessionRepository.replaceMessages(sessionId, messages),
+      listTasks: (sessionId: SessionId) => this.sessionRepository.listTasks(sessionId),
     };
     const contextAssembler = new RuntimeContextAssembler({
       sessionStore,
@@ -290,10 +297,55 @@ export class AgentCoordinator {
     helpers: RuntimeToolFactoryHelpers,
   ): ToolRegistry {
     const sandbox = new WorkspaceSandbox(context.workspace.path);
+    const fileTools = createWorkspaceFileTools(sandbox);
+    const planMode = context.mode === "plan";
+    const taskTools = createTaskTools({
+      turnId: context.turnId,
+      store: {
+        listTasks: () => this.sessionRepository.listTasks(context.session.id),
+        createTask: async (input) => {
+          const session = await this.sessionRepository.createTask(context.session.id, input);
+          const task = session.tasks.at(-1);
+          if (!task) {
+            throw new Error("Task was not created");
+          }
+          await helpers.emit({
+            type: "task.list.updated",
+            sessionId: context.session.id,
+            turnId: context.turnId,
+            tasks: session.tasks,
+            changedTaskId: task.id,
+            reason: "created",
+          });
+          return { task, tasks: session.tasks };
+        },
+        updateTask: async (input) => {
+          const session = await this.sessionRepository.updateTask(context.session.id, input);
+          const task = session.tasks.find((candidate) => candidate.id === input.taskId);
+          if (!task) {
+            throw new Error(`Task not found: ${input.taskId}`);
+          }
+          await helpers.emit({
+            type: "task.list.updated",
+            sessionId: context.session.id,
+            turnId: context.turnId,
+            tasks: session.tasks,
+            changedTaskId: task.id as TaskId,
+            reason: "updated",
+          });
+          return { task, tasks: session.tasks };
+        },
+      },
+    });
     return new ToolRegistry([
-      ...createWorkspaceFileTools(sandbox),
+      ...(planMode ? fileTools.filter((tool) =>
+        tool.name === "workspace.readFile"
+        || tool.name === "workspace.listDirectory"
+        || tool.name === "workspace.searchText"
+      ) : fileTools),
       createWorkspaceCommandTool(sandbox, {
         mode: context.settings.commandExecutionMode,
+        ...(planMode ? { readOnly: true } : {}),
         ...(this.commandHome ? { commandHome: this.commandHome } : {}),
         requestPermission: (request) =>
           this.requestCommandPermission({
@@ -313,34 +365,37 @@ export class AgentCoordinator {
           serpApiKey: readEnvSecret("SerpApi_API_KEY", "SERPAPI_API_KEY"),
         },
       }),
-      createAutomationProposalTool({
-        validate: (draft) => validateAutomationProposal(draft),
-        emit: (proposal) => {
-          const proposalSessionId = proposal.kind === "thread_chat"
-            ? context.session.id
-            : undefined;
-          void helpers.emit({
-            type: "automation.proposal",
-            sessionId: context.session.id,
-            turnId: context.turnId,
-            proposalId: createAutomationProposalId(),
-            proposal: {
-              kind: proposal.kind,
-              name: proposal.name,
-              scheduleText: proposal.scheduleText,
-              cron: proposal.cron,
-              timezone: proposal.timezone,
-              summary: proposal.summary,
-              nextRuns: proposal.nextRuns,
-              prompt: proposal.prompt,
-              workspaceId: context.workspace.id,
-              providerId: context.session.providerId,
-              model: context.session.model,
-              ...(proposalSessionId ? { sessionId: proposalSessionId } : {}),
-            },
-          });
-        },
-      }),
+      ...taskTools,
+      ...(planMode ? [] : [
+        createAutomationProposalTool({
+          validate: (draft) => validateAutomationProposal(draft),
+          emit: (proposal) => {
+            const proposalSessionId = proposal.kind === "thread_chat"
+              ? context.session.id
+              : undefined;
+            void helpers.emit({
+              type: "automation.proposal",
+              sessionId: context.session.id,
+              turnId: context.turnId,
+              proposalId: createAutomationProposalId(),
+              proposal: {
+                kind: proposal.kind,
+                name: proposal.name,
+                scheduleText: proposal.scheduleText,
+                cron: proposal.cron,
+                timezone: proposal.timezone,
+                summary: proposal.summary,
+                nextRuns: proposal.nextRuns,
+                prompt: proposal.prompt,
+                workspaceId: context.workspace.id,
+                providerId: context.session.providerId,
+                model: context.session.model,
+                ...(proposalSessionId ? { sessionId: proposalSessionId } : {}),
+              },
+            });
+          },
+        }),
+      ]),
     ]);
   }
 

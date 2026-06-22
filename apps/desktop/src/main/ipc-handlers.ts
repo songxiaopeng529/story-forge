@@ -45,6 +45,7 @@ export type IpcHandlerOptions = {
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
+const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const providerIdSchema = z.enum([
@@ -241,6 +242,7 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     z.object({
       sessionId: sessionIdSchema,
       prompt: z.string(),
+      mode: turnModeSchema.optional(),
       imageAttachments: z.array(imageAttachmentSchema).optional(),
     }).refine((input) => input.prompt.trim() || input.imageAttachments?.length, {
       message: "Prompt or image attachment is required",
@@ -248,6 +250,7 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     (input) => options.coordinator.start({
       sessionId: input.sessionId,
       prompt: input.prompt,
+      ...(input.mode ? { mode: input.mode } : {}),
       ...(input.imageAttachments ? { imageAttachments: input.imageAttachments } : {}),
     }),
   );

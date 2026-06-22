@@ -219,6 +219,80 @@ describe("AgentCoordinator", () => {
     });
   });
 
+  it("registers task tools and write tools in normal mode model requests", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      },
+      getDeveloperMode: async () => true,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "hello",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(modelRequestToolNames(events)).toEqual(expect.arrayContaining([
+      "workspace.readFile",
+      "workspace.listDirectory",
+      "workspace.searchText",
+      "workspace.writeFile",
+      "workspace.replaceText",
+      "workspace.runCommand",
+      "automation.proposeCreate",
+      "task.create",
+      "task.update",
+      "task.list",
+    ]));
+  });
+
+  it("registers only planning-safe tools in plan mode model requests", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "Plan ready", toolCalls: [] })),
+      },
+      getDeveloperMode: async () => true,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "plan this",
+      mode: "plan",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    const toolNames = modelRequestToolNames(events);
+    expect(toolNames).toEqual(expect.arrayContaining([
+      "workspace.readFile",
+      "workspace.listDirectory",
+      "workspace.searchText",
+      "workspace.runCommand",
+      "task.create",
+      "task.update",
+      "task.list",
+    ]));
+    expect(toolNames).not.toContain("workspace.writeFile");
+    expect(toolNames).not.toContain("workspace.replaceText");
+    expect(toolNames).not.toContain("automation.proposeCreate");
+  });
+
   it("does not emit model request events when developer mode is disabled", async () => {
     const fixture = await createFixture();
     const events: AgentEvent[] = [];
@@ -299,6 +373,86 @@ describe("AgentCoordinator", () => {
     expect(events.every((event) =>
       event.sessionId === fixture.session.id && event.turnId === turnId
     )).toBe(true);
+  });
+
+  it("emits task update events when the model uses task tools", async () => {
+    const fixture = await createFixture();
+    let requestCount = 0;
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async (messages) => {
+          requestCount += 1;
+          if (requestCount === 1) {
+            return {
+              content: "",
+              toolCalls: [{
+                id: "call_task_create",
+                name: "task.create",
+                input: { title: "Inspect runtime" },
+              }],
+            };
+          }
+          if (requestCount === 2) {
+            const toolMessage = messages.find((message) =>
+              message.role === "tool" && message.toolCallId === "call_task_create"
+            );
+            const toolContent = typeof toolMessage?.content === "string" ? toolMessage.content : "{}";
+            const output = JSON.parse(toolContent) as {
+              task?: { id?: string };
+            };
+            return {
+              content: "",
+              toolCalls: [{
+                id: "call_task_update",
+                name: "task.update",
+                input: {
+                  taskId: output.task?.id,
+                  status: "completed",
+                },
+              }],
+            };
+          }
+          return { content: "Tasks updated.", toolCalls: [] };
+        }),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "Track this",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "task.list.updated",
+      reason: "created",
+      tasks: [expect.objectContaining({
+        title: "Inspect runtime",
+        status: "pending",
+      })],
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "task.list.updated",
+      reason: "updated",
+      tasks: [expect.objectContaining({
+        title: "Inspect runtime",
+        status: "completed",
+      })],
+    }));
+    await expect(fixture.sessionRepository.listTasks(fixture.session.id)).resolves.toEqual([
+      expect.objectContaining({
+        title: "Inspect runtime",
+        status: "completed",
+        updatedTurnId: turnId,
+      }),
+    ]);
   });
 
   it("emits command permission requests and continues after approval", async () => {
@@ -926,4 +1080,12 @@ function fakeProvider(
     },
     chat: ({ messages }, options) => handler(messages, options?.signal),
   };
+}
+
+function modelRequestToolNames(events: AgentEvent[]): string[] {
+  const request = events.find((event) => event.type === "model.request");
+  if (!request || request.type !== "model.request") {
+    return [];
+  }
+  return request.tools.map((tool) => tool.name);
 }

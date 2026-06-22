@@ -2,6 +2,7 @@ export * from "./automation-proposal-tool";
 export * from "./command-policy";
 export * from "./command-tool";
 export * from "./file-tools";
+export * from "./task-tools";
 export * from "./tool-registry";
 export * from "./web-search-providers";
 export * from "./web-tools";

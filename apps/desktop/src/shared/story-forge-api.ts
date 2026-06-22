@@ -12,8 +12,10 @@ import type {
   ResponseMode,
   ScheduleValidationResult,
   SessionId,
+  SessionTask,
   SkillView,
   TurnId,
+  TurnMode,
   UpdateAutomationInput,
   WebSearchCoverage,
 } from "@story-forge/shared";
@@ -125,6 +127,7 @@ export type SessionView = {
   createdAt: string;
   updatedAt: string;
   messages: PersistedMessageView[];
+  tasks: SessionTask[];
 };
 
 export type StoryForgeApi = {
@@ -172,6 +175,7 @@ export type StoryForgeApi = {
     start(input: {
       sessionId: SessionId;
       prompt: string;
+      mode?: TurnMode;
       imageAttachments?: ImageAttachmentView[];
     }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
