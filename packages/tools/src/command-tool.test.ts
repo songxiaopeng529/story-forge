@@ -71,6 +71,70 @@ describe("classifyCommand", () => {
       args: ["-rf", "dist"],
     })).toMatchObject({ action: "allow", risk: "low" });
   });
+
+  it("confirms high-risk commands in sentinel and cruise but not unleashed", () => {
+    expect(classifyCommand({
+      mode: "sentinel",
+      program: "bash",
+      args: ["-lc", "echo hi"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "bash",
+      args: ["-lc", "echo hi"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "unleashed",
+      program: "bash",
+      args: ["-lc", "echo hi"],
+    })).toMatchObject({ action: "allow", risk: "low" });
+  });
+
+  it("treats secret inspection and remote access as high-risk", () => {
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "node",
+      args: ["-e", "console.log(process.env)"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "ssh",
+      args: ["example.com"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "env",
+      args: [],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "cat",
+      args: [".env"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "bash",
+      args: ["-lc", "cat .env"],
+    })).toMatchObject({ action: "confirm", risk: "high" });
+  });
+
+  it("does not classify curl or wget as high-risk by themselves", () => {
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "curl",
+      args: ["https://example.com/file"],
+    })).toMatchObject({ action: "allow", risk: "low" });
+    expect(classifyCommand({
+      mode: "cruise",
+      program: "wget",
+      args: ["https://example.com/file"],
+    })).toMatchObject({ action: "allow", risk: "low" });
+    expect(classifyCommand({
+      mode: "sentinel",
+      program: "curl",
+      args: ["https://example.com/file"],
+    })).toMatchObject({ action: "confirm", risk: "unknown" });
+  });
 });
 
 describe("workspace.runCommand", () => {
@@ -189,8 +253,8 @@ describe("workspace.runCommand", () => {
     });
 
     expect(requestPermission).toHaveBeenCalledWith({
-      reason: "Command is outside the safe allowlist.",
-      risk: "unknown",
+      reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
+      risk: "high",
       command: {
         program: "node",
         args: ["-e", "console.log('approved')"],
@@ -217,7 +281,7 @@ describe("workspace.runCommand", () => {
     expect(requestPermission).toHaveBeenCalledOnce();
     expect(result).toEqual({
       ok: false,
-      error: "Command denied: Command is outside the safe allowlist.",
+      error: "Command denied: This command can run arbitrary code, inspect secrets, or access remote systems.",
     });
   });
 
