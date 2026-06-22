@@ -11,11 +11,20 @@ const toolCallSchema = z.object({
   input: z.record(z.string(), z.unknown()),
 });
 
+const imageAttachmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  mediaType: z.string(),
+  data: z.string(),
+  size: z.number().int().nonnegative(),
+});
+
 const persistedMessageSchema = z.discriminatedUnion("role", [
   z.object({
     id: z.string(),
     role: z.literal("user"),
     content: z.string(),
+    imageAttachments: z.array(imageAttachmentSchema).optional(),
     createdAt: z.string(),
   }),
   z.object({

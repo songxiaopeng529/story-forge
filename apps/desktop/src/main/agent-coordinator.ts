@@ -40,6 +40,7 @@ import {
   type SessionRepository,
   type SessionStatus,
 } from "./session-repository";
+import type { ImageAttachmentView } from "../shared/story-forge-api";
 import type { WorkspaceRepository } from "./workspace-repository";
 
 export type ProviderFactory = {
@@ -109,9 +110,14 @@ export class AgentCoordinator {
     this.runtime = options.runtime ?? this.createNativeRuntime(options);
   }
 
-  async start(input: { sessionId: SessionId; prompt: string }): Promise<{ turnId: TurnId }> {
-    if (!input.prompt.trim()) {
-      throw new Error("Prompt must not be empty");
+  async start(input: {
+    sessionId: SessionId;
+    prompt: string;
+    imageAttachments?: ImageAttachmentView[];
+  }): Promise<{ turnId: TurnId }> {
+    const imageAttachments = input.imageAttachments ?? [];
+    if (!input.prompt.trim() && imageAttachments.length === 0) {
+      throw new Error("Prompt or image attachment must not be empty");
     }
     if (this.reservedSessions.has(input.sessionId)) {
       throw new Error(`Session already has an active turn: ${input.sessionId}`);
@@ -126,6 +132,7 @@ export class AgentCoordinator {
         id: createMessageId(),
         role: "user",
         content: input.prompt,
+        ...(imageAttachments.length ? { imageAttachments } : {}),
         createdAt: new Date().toISOString(),
       });
       await this.sessionRepository.markStatus(input.sessionId, {

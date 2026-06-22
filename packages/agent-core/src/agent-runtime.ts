@@ -33,6 +33,13 @@ export type RuntimePersistedMessage =
       id: string;
       role: "user";
       content: string;
+      imageAttachments?: Array<{
+        id: string;
+        name: string;
+        mediaType: string;
+        data: string;
+        size: number;
+      }> | undefined;
       createdAt: string;
     }
   | {

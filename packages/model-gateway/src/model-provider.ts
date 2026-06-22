@@ -13,8 +13,22 @@ export type SystemChatMessage = {
 
 export type UserChatMessage = {
   role: "user";
-  content: string;
+  content: UserChatContent;
 };
+
+export type TextContentPart = {
+  type: "text";
+  text: string;
+};
+
+export type ImageContentPart = {
+  type: "image";
+  mediaType: string;
+  data: string;
+  filename?: string;
+};
+
+export type UserChatContent = string | Array<TextContentPart | ImageContentPart>;
 
 export type AssistantChatMessage = {
   role: "assistant";

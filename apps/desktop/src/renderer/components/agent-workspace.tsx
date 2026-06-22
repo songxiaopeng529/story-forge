@@ -11,14 +11,15 @@ import {
   CalendarClock,
   CircleStop,
   FolderOpen,
+  ImagePlus,
   KeyRound,
   PanelLeftOpen,
   PanelRightOpen,
-  Paperclip,
   Play,
   Puzzle,
   Settings,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   useEffect,
@@ -30,6 +31,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  ImageAttachmentView,
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
@@ -58,8 +60,11 @@ export function AgentWorkspace(props: {
   onExpandSidebar: () => void;
   onExpandContext: () => void;
   prompt: string;
+  imageAttachments: ImageAttachmentView[];
+  imageInputEnabled: boolean;
   error: string | undefined;
   onPromptChange: (prompt: string) => void;
+  onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
@@ -85,6 +90,7 @@ export function AgentWorkspace(props: {
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const timelineItems = buildTimeline({
     session: props.session,
     activities: props.activities,
@@ -314,6 +320,36 @@ export function AgentWorkspace(props: {
     });
   }
 
+  async function handleImageInputChange(event: ChangeEvent<HTMLInputElement>): Promise<void> {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+    if (!files.length) {
+      return;
+    }
+    try {
+      const attachments = await Promise.all(files.map(readImageAttachment));
+      props.onImageAttachmentsChange([...props.imageAttachments, ...attachments]);
+      props.onError(undefined);
+    } catch (attachmentError) {
+      props.onError(attachmentError instanceof Error ? attachmentError.message : String(attachmentError));
+    }
+  }
+
+  function removeImageAttachment(attachmentId: string): void {
+    props.onImageAttachmentsChange(
+      props.imageAttachments.filter((attachment) => attachment.id !== attachmentId),
+    );
+  }
+
+  const attachDisabled = !props.session || !props.imageInputEnabled || Boolean(props.activeTurnId);
+  const attachTitle = !props.session
+    ? "Create a session to attach images"
+    : !props.imageInputEnabled
+      ? "The current model does not support image input"
+      : props.activeTurnId
+        ? "Wait for the current turn to finish"
+        : "Attach image";
+
   return (
     <section
       className="flex min-h-0 min-w-0 flex-col overflow-hidden"
@@ -532,16 +568,59 @@ export function AgentWorkspace(props: {
                   value={props.prompt}
                 />
                 </div>
+                {props.imageAttachments.length > 0 ? (
+                  <div className="flex gap-2 overflow-x-auto border-t border-forge-line px-3 py-2">
+                    {props.imageAttachments.map((attachment) => (
+                      <div
+                        className="group relative flex w-28 flex-none items-center gap-2 rounded-lg border border-forge-line bg-forge-canvas p-1.5"
+                        key={attachment.id}
+                      >
+                        <img
+                          alt=""
+                          className="h-9 w-9 flex-none rounded-md object-cover"
+                          src={imageAttachmentSrc(attachment)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[11px] font-medium text-forge-ink" title={attachment.name}>
+                            {attachment.name}
+                          </div>
+                          <div className="text-[10px] text-forge-muted">
+                            {formatFileSize(attachment.size)}
+                          </div>
+                        </div>
+                        <button
+                          aria-label={`Remove image ${attachment.name}`}
+                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-forge-line bg-white text-forge-muted shadow-sm hover:text-forge-ink"
+                          onClick={() => removeImageAttachment(attachment.id)}
+                          type="button"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between px-3 pb-3">
                   <div className="flex items-center gap-2">
+                    <input
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      aria-label="Choose image"
+                      className="sr-only"
+                      disabled={attachDisabled}
+                      multiple
+                      onChange={(event) => void handleImageInputChange(event)}
+                      ref={imageInputRef}
+                      type="file"
+                    />
                     <button
-                      aria-label="Attach file"
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-forge-muted disabled:opacity-50"
-                      disabled
-                      title="Attachments coming soon"
+                      aria-label="Attach image"
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-forge-muted hover:bg-forge-canvas hover:text-forge-ink disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={attachDisabled}
+                      onClick={() => imageInputRef.current?.click()}
+                      title={attachTitle}
                       type="button"
                     >
-                      <Paperclip size={16} />
+                      <ImagePlus size={16} />
                     </button>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-ink">
                       Agent
@@ -562,7 +641,7 @@ export function AgentWorkspace(props: {
                   ) : (
                     <button
                       className="inline-flex items-center gap-2 rounded-lg bg-forge-ink px-3.5 py-2 text-sm font-medium text-white disabled:opacity-40"
-                      disabled={!props.session || !props.prompt.trim()}
+                      disabled={!props.session || (!props.prompt.trim() && props.imageAttachments.length === 0)}
                       onClick={props.onSend}
                       type="button"
                     >
@@ -633,4 +712,54 @@ function findSlashRange(value: string, cursor: number): SlashRange | undefined {
     end: cursor,
     query: token.slice(1),
   };
+}
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function readImageAttachment(file: File): Promise<ImageAttachmentView> {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("Only image files can be attached"));
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    return Promise.reject(new Error("Images must be 10 MB or smaller"));
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read image: ${file.name}`));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const commaIndex = result.indexOf(",");
+      if (!result.startsWith("data:") || commaIndex === -1) {
+        reject(new Error(`Failed to encode image: ${file.name}`));
+        return;
+      }
+      resolve({
+        id: createImageAttachmentId(),
+        name: file.name,
+        mediaType: file.type || "image/png",
+        data: result.slice(commaIndex + 1),
+        size: file.size,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageAttachmentSrc(attachment: ImageAttachmentView): string {
+  return `data:${attachment.mediaType};base64,${attachment.data}`;
+}
+
+function createImageAttachmentId(): string {
+  return `sf_image_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

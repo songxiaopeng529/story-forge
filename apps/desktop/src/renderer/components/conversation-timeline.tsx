@@ -41,7 +41,20 @@ function TimelineItemView(props: {
     return (
       <article className="flex justify-end">
         <div className="max-w-[82%] rounded-xl bg-forge-ink px-3.5 py-2.5 text-[13px] leading-5 text-white">
-          <div className="whitespace-pre-wrap">{item.content}</div>
+          {item.content.trim() ? <div className="whitespace-pre-wrap">{item.content}</div> : null}
+          {item.imageAttachments?.length ? (
+            <div className={`grid gap-2 ${item.content.trim() ? "mt-2" : ""}`}>
+              {item.imageAttachments.map((attachment) => (
+                <img
+                  alt={attachment.name}
+                  className="max-h-44 rounded-lg border border-white/15 object-contain"
+                  key={attachment.id}
+                  src={`data:${attachment.mediaType};base64,${attachment.data}`}
+                  title={attachment.name}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       </article>
     );

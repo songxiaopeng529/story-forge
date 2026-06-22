@@ -461,8 +461,14 @@ function toInspectableMessage(message: ChatMessage): InspectableModelMessage {
       toolCallId: message.toolCallId,
     };
   }
+  if (message.role === "system") {
+    return {
+      role: "system",
+      content: message.content,
+    };
+  }
   return {
-    role: message.role,
+    role: "user",
     content: message.content,
   };
 }

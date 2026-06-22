@@ -6,6 +6,7 @@ import type {
   ModelCapabilities,
   ModelProvider,
   ToolSchema,
+  UserChatContent,
 } from "./model-provider";
 
 type FetchFunction = (input: string, init: RequestInit) => Promise<Response>;
@@ -154,7 +155,26 @@ function toAnthropicMessage(message: Exclude<ChatMessage, { role: "system" }>, t
     };
   }
 
-  return { role: "user", content: message.content };
+  return { role: "user", content: toAnthropicUserContent(message.content) };
+}
+
+function toAnthropicUserContent(messageContent: UserChatContent): unknown {
+  if (typeof messageContent === "string") {
+    return messageContent;
+  }
+  return messageContent.map((part) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    return {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: part.mediaType,
+        data: part.data,
+      },
+    };
+  });
 }
 
 function toAnthropicMessages(

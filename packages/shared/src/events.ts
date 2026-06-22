@@ -97,7 +97,13 @@ export type ResponseFallbackEvent = {
 
 export type InspectableModelMessage =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | {
+      role: "user";
+      content: string | Array<
+        | { type: "text"; text: string }
+        | { type: "image"; mediaType: string; data: string; filename?: string }
+      >;
+    }
   | {
       role: "assistant";
       content: string;

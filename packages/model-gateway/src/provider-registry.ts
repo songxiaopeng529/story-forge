@@ -11,6 +11,7 @@ export type ProviderPreset = {
   protocol: ProviderProtocol;
   baseUrl: string;
   recommendedModels: string[];
+  supportsImageInput: boolean;
   headers?: Record<string, string>;
   default?: boolean;
 };
@@ -30,6 +31,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai-compatible",
     baseUrl: "https://api.deepseek.com",
     recommendedModels: ["deepseek-v4-pro", "deepseek-v4-flash"],
+    supportsImageInput: false,
     default: true,
   },
   openai: {
@@ -38,6 +40,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai-compatible",
     baseUrl: "https://api.openai.com/v1",
     recommendedModels: ["gpt-5.4", "gpt-5.4-mini"],
+    supportsImageInput: true,
   },
   anthropic: {
     id: "anthropic",
@@ -45,6 +48,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "anthropic",
     baseUrl: "https://api.anthropic.com",
     recommendedModels: ["claude-opus-4-6", "claude-sonnet-4-6"],
+    supportsImageInput: true,
   },
   openrouter: {
     id: "openrouter",
@@ -52,6 +56,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai-compatible",
     baseUrl: "https://openrouter.ai/api/v1",
     recommendedModels: ["openrouter/auto"],
+    supportsImageInput: true,
     headers: {
       "HTTP-Referer": "https://storyforge.local",
       "X-Title": "StoryForge",
@@ -63,6 +68,7 @@ export const PROVIDER_PRESETS: Record<ProviderId, ProviderPreset> = {
     protocol: "openai-compatible",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     recommendedModels: [],
+    supportsImageInput: true,
   },
 };
 

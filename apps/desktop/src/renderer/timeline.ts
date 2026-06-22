@@ -4,7 +4,11 @@ import type {
   MessageDeliveryMode,
   TurnId,
 } from "@story-forge/shared";
-import type { PersistedMessageView, SessionView } from "../shared/story-forge-api";
+import type {
+  ImageAttachmentView,
+  PersistedMessageView,
+  SessionView,
+} from "../shared/story-forge-api";
 
 export type AutomationProposalTimelineState = {
   proposalId: string;
@@ -13,7 +17,12 @@ export type AutomationProposalTimelineState = {
 };
 
 export type TimelineItem =
-  | { type: "user-message"; id: string; content: string }
+  | {
+      type: "user-message";
+      id: string;
+      content: string;
+      imageAttachments?: ImageAttachmentView[];
+    }
   | {
       type: "assistant-message";
       id: string;
@@ -99,6 +108,7 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
         type: "user-message",
         id: message.id,
         content: message.content,
+        ...(message.imageAttachments?.length ? { imageAttachments: message.imageAttachments } : {}),
       });
       continue;
     }

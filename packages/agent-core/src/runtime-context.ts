@@ -152,6 +152,20 @@ export function toChatMessage(message: RuntimePersistedMessage): ChatMessage {
       toolCallId: message.toolCallId,
     };
   }
+  if (message.imageAttachments?.length) {
+    return {
+      role: "user",
+      content: [
+        ...(message.content.trim() ? [{ type: "text" as const, text: message.content }] : []),
+        ...message.imageAttachments.map((attachment) => ({
+          type: "image" as const,
+          mediaType: attachment.mediaType,
+          data: attachment.data,
+          filename: attachment.name,
+        })),
+      ],
+    };
+  }
   return { role: "user", content: message.content };
 }
 
@@ -189,10 +203,17 @@ export function toRuntimePersistedMessages(
           ok: toolResults.get(message.toolCallId) ?? existingOk ?? false,
         };
       }
+      const userContent = toPersistedUserContent(
+        message.content,
+        existing?.role === "user" ? existing : undefined,
+      );
       return {
         ...identity,
         role: "user" as const,
-        content: message.content,
+        content: userContent.content,
+        ...(userContent.imageAttachments.length
+          ? { imageAttachments: userContent.imageAttachments }
+          : {}),
       };
     });
 }
@@ -355,6 +376,36 @@ function cloneToolCalls(toolCalls: ToolCall[]): ToolCall[] {
     ...toolCall,
     input: { ...toolCall.input },
   }));
+}
+
+function toPersistedUserContent(
+  content: Extract<ChatMessage, { role: "user" }>["content"],
+  existing: Extract<RuntimePersistedMessage, { role: "user" }> | undefined,
+): {
+  content: string;
+  imageAttachments: NonNullable<Extract<RuntimePersistedMessage, { role: "user" }>["imageAttachments"]>;
+} {
+  if (typeof content === "string") {
+    return {
+      content,
+      imageAttachments: existing?.imageAttachments ?? [],
+    };
+  }
+  return {
+    content: content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n"),
+    imageAttachments: content
+      .filter((part) => part.type === "image")
+      .map((part, index) => ({
+        id: existing?.imageAttachments?.[index]?.id ?? `image-${index + 1}`,
+        name: part.filename ?? existing?.imageAttachments?.[index]?.name ?? `image-${index + 1}`,
+        mediaType: part.mediaType,
+        data: part.data,
+        size: existing?.imageAttachments?.[index]?.size ?? 0,
+      })),
+  };
 }
 
 function createMessageId(): string {

@@ -62,6 +62,7 @@ export type ProviderView = {
   baseUrl: string;
   model: string;
   recommendedModels: string[];
+  supportsImageInput: boolean;
   isDefault: boolean;
   hasSecret: boolean;
   lastTestStatus: "untested" | "success" | "failed";
@@ -76,11 +77,20 @@ export type WorkspaceView = {
   lastOpenedAt: string;
 };
 
+export type ImageAttachmentView = {
+  id: string;
+  name: string;
+  mediaType: string;
+  data: string;
+  size: number;
+};
+
 export type PersistedMessageView =
   | {
       id: string;
       role: "user";
       content: string;
+      imageAttachments?: ImageAttachmentView[];
       createdAt: string;
     }
   | {
@@ -159,7 +169,11 @@ export type StoryForgeApi = {
     delete(sessionId: SessionId): Promise<void>;
   };
   turns: {
-    start(input: { sessionId: SessionId; prompt: string }): Promise<{ turnId: TurnId }>;
+    start(input: {
+      sessionId: SessionId;
+      prompt: string;
+      imageAttachments?: ImageAttachmentView[];
+    }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
     onEvent(listener: (event: AgentEvent) => void): () => void;
   };
