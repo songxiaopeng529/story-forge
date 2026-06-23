@@ -1,4 +1,5 @@
 import type { AgentEvent, SessionId } from "@story-forge/shared";
+import type { ChatMessage } from "@story-forge/model-gateway";
 import type {
   AgentRuntime,
   AgentRuntimeTurnInput,
@@ -11,12 +12,16 @@ import type {
 import { AgentLoop } from "./agent-loop";
 import { RuntimeContextAssembler, toRuntimePersistedMessages } from "./runtime-context";
 
+const MAX_UNFINISHED_TASK_GUARD_REMINDERS = 2;
+const UNFINISHED_TASK_REMINDER =
+  "Known tasks remain pending or in progress. Continue working on them, or mark tasks blocked with a concrete reason if you cannot proceed.";
+
 export type NativeAgentRuntimeOptions = {
   contextAssembler: RuntimeContextAssembler;
   providerResolver: RuntimeProviderResolver;
   providerFactory: RuntimeProviderFactory;
   toolFactory: RuntimeToolFactory;
-  sessionStore: Pick<RuntimeSessionStore, "replaceMessages">;
+  sessionStore: Pick<RuntimeSessionStore, "replaceMessages" | "listTasks">;
   maxSteps?: number;
   maxDurationMs?: number;
 };
@@ -26,7 +31,7 @@ export class NativeAgentRuntime implements AgentRuntime {
   private readonly providerResolver: RuntimeProviderResolver;
   private readonly providerFactory: RuntimeProviderFactory;
   private readonly toolFactory: RuntimeToolFactory;
-  private readonly sessionStore: Pick<RuntimeSessionStore, "replaceMessages">;
+  private readonly sessionStore: Pick<RuntimeSessionStore, "replaceMessages" | "listTasks">;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
 
@@ -62,10 +67,20 @@ export class NativeAgentRuntime implements AgentRuntime {
     let apiKey: string | undefined;
     try {
       const context = await this.contextAssembler.build(input);
+      if (context.tasks.length > 0) {
+        emitEvent({
+          type: "task.list.updated",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          tasks: context.tasks,
+          reason: "loaded",
+        });
+      }
       const resolvedProvider = await this.providerResolver.resolve(context.session.providerId);
       apiKey = resolvedProvider.apiKey;
       let persistedMessages = context.session.messages;
       const toolResults = new Map<string, boolean>();
+      let unfinishedTaskGuardReminders = 0;
       const provider = this.providerFactory.createProvider(
         {
           providerId: context.session.providerId,
@@ -96,6 +111,40 @@ export class NativeAgentRuntime implements AgentRuntime {
         },
         ...(input.signal ? { signal: input.signal } : {}),
         messages: context.messages,
+        onBeforeFinish: async () => {
+          const tasks = await this.listTasks(input.sessionId, context);
+          const openTasks = tasks.filter((task) =>
+            task.status === "pending" || task.status === "in_progress"
+          );
+          if (openTasks.length === 0) {
+            return { action: "finish" };
+          }
+          if (unfinishedTaskGuardReminders >= MAX_UNFINISHED_TASK_GUARD_REMINDERS) {
+            emitEvent({
+              type: "task.list.updated",
+              sessionId: input.sessionId,
+              turnId: input.turnId,
+              tasks,
+              reason: "guard",
+            });
+            return { action: "finish", stopReason: "unfinished-tasks" };
+          }
+          unfinishedTaskGuardReminders += 1;
+          emitEvent({
+            type: "task.list.updated",
+            sessionId: input.sessionId,
+            turnId: input.turnId,
+            tasks,
+            reason: "guard",
+          });
+          return {
+            action: "continue",
+            message: {
+              role: "user",
+              content: UNFINISHED_TASK_REMINDER,
+            } satisfies ChatMessage,
+          };
+        },
         onEvent: (event) => {
           if (event.type === "tool.result") {
             toolResults.set(event.callId, event.ok);
@@ -127,6 +176,15 @@ export class NativeAgentRuntime implements AgentRuntime {
       throw new Error("NativeAgentRuntime requires a session store with replaceMessages");
     }
     return this.sessionStore.replaceMessages(sessionId, messages);
+  }
+
+  private async listTasks(
+    sessionId: SessionId,
+    context: Awaited<ReturnType<RuntimeContextAssembler["build"]>>,
+  ) {
+    return this.sessionStore.listTasks
+      ? this.sessionStore.listTasks(sessionId)
+      : context.tasks;
   }
 }
 

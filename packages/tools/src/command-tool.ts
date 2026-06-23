@@ -35,6 +35,7 @@ export type WorkspaceCommandPermissionRequest = {
 export type WorkspaceCommandToolOptions = {
   mode?: CommandExecutionMode;
   commandHome?: string;
+  readOnly?: boolean;
   requestPermission?: (request: WorkspaceCommandPermissionRequest) => Promise<boolean>;
 };
 
@@ -83,8 +84,15 @@ export function createWorkspaceCommandTool(
       const timeoutMs = readTimeout(input.timeoutMs);
       const cwd = await sandbox.resolveDirectory(cwdInput);
       const mode = options.mode ?? "sentinel";
-      const decision = classifyCommand({ mode, program, args });
+      const decision = classifyCommand({
+        mode: options.readOnly ? "sentinel" : mode,
+        program,
+        args,
+      });
       if (decision.action === "deny") {
+        throw commandNotAllowed(program, args);
+      }
+      if (options.readOnly && decision.action !== "allow") {
         throw commandNotAllowed(program, args);
       }
       if (decision.action === "confirm") {

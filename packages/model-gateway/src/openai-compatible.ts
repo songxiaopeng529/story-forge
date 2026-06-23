@@ -7,6 +7,7 @@ import type {
   ModelCapabilities,
   ModelProvider,
   ToolSchema,
+  UserChatContent,
 } from "./model-provider";
 
 type FetchFunction = (input: string, init: RequestInit) => Promise<Response>;
@@ -209,8 +210,27 @@ function toOpenAICompatibleMessage(
 
   return {
     role: message.role,
-    content: message.content,
+    content: message.role === "user"
+      ? toOpenAICompatibleUserContent(message.content)
+      : message.content,
   };
+}
+
+function toOpenAICompatibleUserContent(messageContent: UserChatContent): unknown {
+  if (typeof messageContent === "string") {
+    return messageContent;
+  }
+  return messageContent.map((part) => {
+    if (part.type === "text") {
+      return { type: "text", text: part.text };
+    }
+    return {
+      type: "image_url",
+      image_url: {
+        url: `data:${part.mediaType};base64,${part.data}`,
+      },
+    };
+  });
 }
 
 function toOpenAICompatibleTool(tool: ToolSchema, toolNameMap: Map<string, string>): OpenAICompatibleTool {

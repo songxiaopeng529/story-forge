@@ -11,8 +11,10 @@ import type {
   InstalledSkillRecord,
   ResponseMode,
   SessionId,
+  SessionTask,
   SkillView,
   TurnId,
+  TurnMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import type { ToolRegistry } from "@story-forge/tools";
@@ -25,6 +27,7 @@ export type AgentRuntimeTurnInput = {
   sessionId: SessionId;
   turnId: TurnId;
   prompt: string;
+  mode?: TurnMode;
   signal?: AbortSignal;
 };
 
@@ -33,6 +36,13 @@ export type RuntimePersistedMessage =
       id: string;
       role: "user";
       content: string;
+      imageAttachments?: Array<{
+        id: string;
+        name: string;
+        mediaType: string;
+        data: string;
+        size: number;
+      }> | undefined;
       createdAt: string;
     }
   | {
@@ -60,6 +70,7 @@ export type RuntimeSession = {
   providerId: ProviderId;
   model: string;
   messages: RuntimePersistedMessage[];
+  tasks?: SessionTask[];
 };
 
 export type RuntimeWorkspace = {
@@ -85,6 +96,8 @@ export type RuntimeContext = {
   session: RuntimeSession;
   workspace: RuntimeWorkspace;
   settings: RuntimeSettings;
+  mode: TurnMode;
+  tasks: SessionTask[];
   availableSkills: SkillView[];
   activeSkillInvocation?: RuntimeSkillInvocation;
   messages: ChatMessage[];
@@ -96,6 +109,7 @@ export type RuntimeSessionStore = {
     sessionId: SessionId,
     messages: RuntimePersistedMessage[],
   ): Promise<RuntimeSession>;
+  listTasks?(sessionId: SessionId): Promise<SessionTask[]>;
 };
 
 export type RuntimeWorkspaceStore = {

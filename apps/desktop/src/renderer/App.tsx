@@ -8,10 +8,12 @@ import type {
   ResponseMode,
   SessionId,
   TurnId,
+  TurnMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
+  ImageAttachmentView,
   PersistedMessageView,
   ProviderView,
   SessionView,
@@ -54,6 +56,8 @@ export function App() {
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
+  const [composerMode, setComposerMode] = useState<TurnMode>("normal");
+  const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
   const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
   const [commandExecutionMode, setCommandExecutionMode] =
@@ -84,6 +88,9 @@ export function App() {
   const selectedProvider = providers.find(
     (provider) => provider.providerId === selectedProviderId,
   );
+  const selectedSessionProvider = selectedSession
+    ? providers.find((provider) => provider.providerId === selectedSession.providerId)
+    : selectedProvider;
   const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
   const selectedSessionTimerCount = selectedSessionId
     ? automations.filter((automation) =>
@@ -265,6 +272,10 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setImageAttachments([]);
+  }, [selectedSessionId]);
+
   async function refreshSession(sessionId: SessionId): Promise<void> {
     try {
       const session = await window.storyForge.sessions.get(sessionId);
@@ -312,7 +323,8 @@ export function App() {
 
   async function sendPrompt(): Promise<void> {
     const content = prompt.trim();
-    if (!content) {
+    const attachments = imageAttachments;
+    if (!content && attachments.length === 0) {
       return;
     }
     let session = selectedSession;
@@ -324,6 +336,8 @@ export function App() {
     }
 
     setPrompt("");
+    setComposerMode("normal");
+    setImageAttachments([]);
     setError(undefined);
     setActivities((current) => ({ ...current, [session.id]: [] }));
     setModelRequests((current) => ({ ...current, [session.id]: [] }));
@@ -331,6 +345,7 @@ export function App() {
       id: `pending-${Date.now()}`,
       role: "user",
       content,
+      ...(attachments.length ? { imageAttachments: attachments } : {}),
       createdAt: new Date().toISOString(),
     };
     setSessions((current) => current.map((candidate) =>
@@ -342,6 +357,8 @@ export function App() {
       const { turnId } = await window.storyForge.turns.start({
         sessionId: session.id,
         prompt: content,
+        ...(composerMode === "plan" ? { mode: composerMode } : {}),
+        ...(attachments.length ? { imageAttachments: attachments } : {}),
       });
       setActiveTurns((current) => ({ ...current, [session.id]: turnId }));
     } catch (turnError) {
@@ -777,8 +794,13 @@ export function App() {
             onExpandSidebar={() => setSidebarCollapsed(false)}
             onExpandContext={() => setContextCollapsed(false)}
             prompt={prompt}
+            composerMode={composerMode}
+            imageAttachments={imageAttachments}
+            imageInputEnabled={Boolean(selectedSessionProvider?.supportsImageInput)}
             error={error}
             onPromptChange={setPrompt}
+            onComposerModeChange={setComposerMode}
+            onImageAttachmentsChange={setImageAttachments}
             onPromptKeyDown={handlePromptKeyDown}
             onCompositionStart={() => {
               composingRef.current = true;
@@ -805,7 +827,7 @@ export function App() {
           {selectedSession && !effectiveContextCollapsed ? (
             <RunContextPanel
               session={selectedSession}
-              provider={selectedProvider}
+              provider={selectedSessionProvider}
               responseMode={responseMode}
               commandExecutionMode={commandExecutionMode}
               runtime={selectedSessionId ? turnRuntimes[selectedSessionId] : undefined}

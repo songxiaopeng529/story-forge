@@ -69,6 +69,90 @@ describe("App", () => {
     await waitFor(() => expect(fixture.stop).toHaveBeenCalledWith("sf_turn_active"));
   });
 
+  it("attaches image files as base64 payloads when starting a turn", async () => {
+    const fixture = installApi({
+      providers: [{
+        providerId: "volcano",
+        displayName: "Volcano Engine",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        model: "ep-vision",
+        recommendedModels: [],
+        isDefault: true,
+        hasSecret: true,
+        lastTestStatus: "success",
+        supportsImageInput: true,
+      }],
+      session: {
+        providerId: "volcano",
+        model: "ep-vision",
+      },
+    });
+    render(<App />);
+
+    const imageInput = await screen.findByLabelText("Choose image");
+    const promptInput = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+    const file = new File([new Uint8Array([1, 2, 3])], "screen.png", { type: "image/png" });
+
+    fireEvent.change(imageInput, { target: { files: [file] } });
+
+    expect(await screen.findByText("screen.png")).toBeInTheDocument();
+    fireEvent.change(promptInput, { target: { value: "What is this?" } });
+    fireEvent.keyDown(promptInput, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "What is this?",
+      imageAttachments: [
+        expect.objectContaining({
+          name: "screen.png",
+          mediaType: "image/png",
+          data: "AQID",
+          size: 3,
+        }),
+      ],
+    }));
+  });
+
+  it("shows the provider configured on the current session in the run context", async () => {
+    installApi({
+      providers: [
+        {
+          providerId: "deepseek",
+          displayName: "DeepSeek",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-pro",
+          recommendedModels: ["deepseek-v4-pro"],
+          isDefault: true,
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: false,
+        },
+        {
+          providerId: "volcano",
+          displayName: "Volcano Engine",
+          baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+          model: "ep-vision",
+          recommendedModels: [],
+          isDefault: false,
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: true,
+        },
+      ],
+      session: {
+        providerId: "volcano",
+        model: "ep-vision",
+      },
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Volcano Engine")).toBeInTheDocument();
+    expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument();
+  });
+
   it("offers enabled skills in the slash command menu and inserts the selected invocation", async () => {
     installApi({
       skills: [
@@ -119,6 +203,29 @@ describe("App", () => {
 
     expect(await screen.findByLabelText("Schedule description")).toBeInTheDocument();
     expect(input).toHaveValue("");
+  });
+
+  it("starts a plan mode turn from the slash command", async () => {
+    const fixture = installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/plan" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
+
+    expect(input).toHaveValue("");
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Investigate the runtime" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "Investigate the runtime",
+      mode: "plan",
+    }));
   });
 
   it("updates from correlated turn events and reloads the persisted session on completion", async () => {
@@ -1055,6 +1162,8 @@ describe("App", () => {
 function installApi(options: {
   settings?: Partial<AppSettingsView>;
   saveSettings?: StoryForgeApi["settings"]["save"];
+  providers?: ProviderView[];
+  session?: Partial<SessionView>;
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
   automations?: AutomationView[];
@@ -1068,7 +1177,9 @@ function installApi(options: {
     isDefault: true,
     hasSecret: true,
     lastTestStatus: "success",
+    supportsImageInput: false,
   };
+  const providers = options.providers ?? [provider];
   const workspace: WorkspaceView = {
     id: "workspace-1",
     path: "/tmp/project",
@@ -1076,6 +1187,20 @@ function installApi(options: {
     createdAt: "2026-06-07T00:00:00.000Z",
     lastOpenedAt: "2026-06-07T00:00:00.000Z",
   };
+  const defaultMessages: SessionView["messages"] = [
+    {
+      id: "message-1",
+      role: "user",
+      content: "Previous question",
+      createdAt: "2026-06-07T00:00:00.000Z",
+    },
+    {
+      id: "message-2",
+      role: "assistant",
+      content: "Previous answer",
+      createdAt: "2026-06-07T00:00:01.000Z",
+    },
+  ];
   const session: SessionView = {
     schemaVersion: 1,
     id: "sf_session_existing",
@@ -1086,20 +1211,9 @@ function installApi(options: {
     status: "idle",
     createdAt: "2026-06-07T00:00:00.000Z",
     updatedAt: "2026-06-07T00:00:00.000Z",
-    messages: [
-      {
-        id: "message-1",
-        role: "user",
-        content: "Previous question",
-        createdAt: "2026-06-07T00:00:00.000Z",
-      },
-      {
-        id: "message-2",
-        role: "assistant",
-        content: "Previous answer",
-        createdAt: "2026-06-07T00:00:01.000Z",
-      },
-    ],
+    ...options.session,
+    messages: options.session?.messages ?? defaultMessages,
+    tasks: options.session?.tasks ?? [],
   };
   let eventListener: ((event: AgentEvent) => void) | undefined;
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
@@ -1232,7 +1346,7 @@ function installApi(options: {
       save: saveSettings,
     },
     providers: {
-      list: vi.fn(async () => [provider]),
+      list: vi.fn(async () => providers),
       save: saveProvider,
       test: vi.fn(async () => ({ models: provider.recommendedModels })),
       clearSecret: vi.fn(async () => undefined),

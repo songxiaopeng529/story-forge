@@ -42,6 +42,10 @@ export function RunContextPanel(props: {
   const meta = commandModeMeta[props.commandExecutionMode];
   const recentFiles = collectRecentFiles(props.activities);
   const latestRequest = lastModelRequest(props.activities);
+  const tasks = latestTasks(props.session?.tasks ?? [], props.activities);
+  const completedTasks = tasks.filter((task) => task.status === "completed").length;
+  const blockedTasks = tasks.filter((task) => task.status === "blocked").length;
+  const currentTask = tasks.find((task) => task.status === "in_progress");
   const toolCount = latestRequest?.tools.length ?? 0;
   const messageCount = latestRequest?.messages.length ?? props.session?.messages.length ?? 0;
 
@@ -72,6 +76,22 @@ export function RunContextPanel(props: {
           <Row label="Elapsed" value={runtime ? elapsed : "—"} />
           <Row label="Mode" value={props.responseMode} />
         </Card>
+
+        {tasks.length > 0 ? (
+          <Card>
+            <CardHeader icon={<FileCode2 size={16} />}>Tasks</CardHeader>
+            <Row label="Completed" value={`${completedTasks}/${tasks.length}`} />
+            <Row
+              label="Current"
+              value={currentTask?.activeForm ?? currentTask?.title ?? "—"}
+            />
+            {blockedTasks > 0 ? (
+              <Row label="Blocked" value={`${blockedTasks}`} tone="danger" />
+            ) : (
+              <Row label="Blocked" value={`${blockedTasks}`} />
+            )}
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader icon={<Braces size={16} />}>Model</CardHeader>
@@ -247,4 +267,17 @@ function lastModelRequest(
     }
   }
   return undefined;
+}
+
+function latestTasks(
+  persistedTasks: NonNullable<SessionView["tasks"]>,
+  activities: AgentEvent[],
+): NonNullable<SessionView["tasks"]> {
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const event = activities[index];
+    if (event?.type === "task.list.updated") {
+      return event.tasks;
+    }
+  }
+  return persistedTasks;
 }

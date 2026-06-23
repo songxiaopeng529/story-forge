@@ -31,7 +31,7 @@ export function ModelRequestDrawer(props: {
       : JSON.stringify(selectedMessage, null, 2)
     : "";
   const contentPreview = selectedMessage
-    ? previewContent(selectedMessage.content)
+    ? previewContent(modelMessageContentPreview(selectedMessage))
     : "";
   const showingContent = Boolean(selectedMessage && detailMode === "content");
 
@@ -279,7 +279,7 @@ function summarizeMessage(message: InspectableModelMessage): { title: string; de
     return { title: "Runtime instructions", detail: firstLine(message.content) };
   }
   if (message.role === "user") {
-    return { title: "User request", detail: firstLine(message.content) };
+    return { title: "User request", detail: firstLine(contentToPreviewText(message.content)) };
   }
   if (message.role === "tool") {
     return { title: `${message.name} result`, detail: firstLine(message.content) };
@@ -293,9 +293,28 @@ function summarizeMessage(message: InspectableModelMessage): { title: string; de
   return { title: "Assistant message", detail: firstLine(message.content) };
 }
 
+function modelMessageContentPreview(message: InspectableModelMessage): string {
+  if (message.role === "user") {
+    return contentToPreviewText(message.content);
+  }
+  return message.content;
+}
+
 function firstLine(content: string): string {
   const line = content.split("\n").map((value) => value.trim()).find(Boolean);
   return line ?? "—";
+}
+
+function contentToPreviewText(content: Extract<InspectableModelMessage, { role: "user" }>["content"]): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.map((part) => {
+    if (part.type === "text") {
+      return part.text;
+    }
+    return `[image: ${part.filename ?? part.mediaType}]`;
+  }).join("\n");
 }
 
 function previewContent(content: string): string {

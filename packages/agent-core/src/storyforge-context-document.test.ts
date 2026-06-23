@@ -22,6 +22,9 @@ describe("serializeStoryForgeContextDocument", () => {
           body: "Check `a < b && c > d`.",
         },
       },
+      runtime: {
+        content: "Current runtime date/time: Monday, June 22, 2026.",
+      },
       mcp: {
         servers: [],
         warnings: [],
@@ -46,7 +49,8 @@ describe("serializeStoryForgeContextDocument", () => {
 
     expect(xml).toContain("<storyforge-context version=\"1\">");
     expect(xml.indexOf("<main>")).toBeLessThan(xml.indexOf("<skills"));
-    expect(xml.indexOf("<skills")).toBeLessThan(xml.indexOf("<mcp"));
+    expect(xml.indexOf("<skills")).toBeLessThan(xml.indexOf("<runtime"));
+    expect(xml.indexOf("<runtime")).toBeLessThan(xml.indexOf("<mcp"));
     expect(xml.indexOf("<mcp")).toBeLessThan(xml.indexOf("<project-info"));
     expect(xml.indexOf("<project-info")).toBeLessThan(xml.indexOf("<soul"));
     expect(xml).toContain("Use &lt;workspace&gt; safely &amp; inspect first.");
@@ -55,6 +59,8 @@ describe("serializeStoryForgeContextDocument", () => {
     expect(xml).toContain("<active-skill invocation=\"/review\" name=\"Review\">");
     expect(xml).toContain("auth &lt;flow&gt;");
     expect(xml).toContain("a &lt; b &amp;&amp; c &gt; d");
+    expect(xml).toContain("<runtime>");
+    expect(xml).toContain("Current runtime date/time: Monday, June 22, 2026.");
     expect(xml).toContain("<mcp server-count=\"0\" tool-count=\"0\">");
     expect(xml).toContain("<project-info source-count=\"1\">");
     expect(xml).toContain("<source path=\"/repo/AGENTS.md\" scope=\"project\" truncated=\"false\"");
@@ -66,6 +72,7 @@ describe("serializeStoryForgeContextDocument", () => {
       version: 1,
       main: { content: "Main" },
       skills: { available: [] },
+      runtime: { content: "Current runtime date/time: Monday, June 22, 2026." },
       mcp: {
         servers: [{
           name: "github",

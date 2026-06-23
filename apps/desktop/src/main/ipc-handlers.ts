@@ -45,6 +45,7 @@ export type IpcHandlerOptions = {
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
+const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const providerIdSchema = z.enum([
@@ -63,6 +64,13 @@ const turnIdSchema = z.custom<TurnId>(
   { message: "Invalid turn id" },
 );
 const workspaceIdSchema = z.string().min(1);
+const imageAttachmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  mediaType: z.string().min(1),
+  data: z.string().min(1),
+  size: z.number().int().nonnegative(),
+});
 const settingsSaveSchema = z.object({
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
@@ -231,8 +239,20 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(
     options.ipc,
     IPC_CHANNELS.turnsStart,
-    z.object({ sessionId: sessionIdSchema, prompt: z.string().min(1) }),
-    (input) => options.coordinator.start(input),
+    z.object({
+      sessionId: sessionIdSchema,
+      prompt: z.string(),
+      mode: turnModeSchema.optional(),
+      imageAttachments: z.array(imageAttachmentSchema).optional(),
+    }).refine((input) => input.prompt.trim() || input.imageAttachments?.length, {
+      message: "Prompt or image attachment is required",
+    }),
+    (input) => options.coordinator.start({
+      sessionId: input.sessionId,
+      prompt: input.prompt,
+      ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.imageAttachments ? { imageAttachments: input.imageAttachments } : {}),
+    }),
   );
   handle(options.ipc, IPC_CHANNELS.turnsStop, turnIdSchema, (turnId) =>
     options.coordinator.stop(turnId)

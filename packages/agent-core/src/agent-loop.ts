@@ -43,6 +43,7 @@ export type AgentLoopRunInput = {
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
   onCheckpoint?: (messages: ChatMessage[]) => void | Promise<void>;
+  onBeforeFinish?: (messages: ChatMessage[]) => Promise<FinishGuardDecision> | FinishGuardDecision;
 };
 
 export type AgentLoopResult = {
@@ -55,6 +56,10 @@ type ModelRequest = {
   messages: ChatMessage[];
   tools: ReturnType<ToolRegistry["schemas"]>;
 };
+
+type FinishGuardDecision =
+  | { action: "finish"; stopReason?: AgentStopReason }
+  | { action: "continue"; message: ChatMessage };
 
 type EventSink = {
   sessionId: SessionId;
@@ -160,8 +165,14 @@ export class AgentLoop {
         messages.push(assistantMessage);
 
         if (response.toolCalls.length === 0) {
+          const finishDecision = await input.onBeforeFinish?.(messages) ?? { action: "finish" };
+          if (finishDecision.action === "continue") {
+            messages.push(finishDecision.message);
+            await checkpoint(input, messages);
+            continue;
+          }
           await checkpoint(input, messages);
-          return await finish("completed");
+          return await finish(finishDecision.stopReason ?? "completed");
         }
 
         for (let index = 0; index < response.toolCalls.length; index += 1) {
@@ -461,8 +472,14 @@ function toInspectableMessage(message: ChatMessage): InspectableModelMessage {
       toolCallId: message.toolCallId,
     };
   }
+  if (message.role === "system") {
+    return {
+      role: "system",
+      content: message.content,
+    };
+  }
   return {
-    role: message.role,
+    role: "user",
     content: message.content,
   };
 }

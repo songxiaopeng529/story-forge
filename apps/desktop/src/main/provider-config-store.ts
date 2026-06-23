@@ -38,6 +38,7 @@ export type ProviderView = ProviderRecord & {
   displayName: string;
   recommendedModels: string[];
   hasSecret: boolean;
+  supportsImageInput: boolean;
 };
 
 export type SaveProviderInput = {
@@ -71,6 +72,7 @@ export class ProviderConfigStore {
       ...provider,
       displayName: PROVIDER_PRESETS[provider.providerId].displayName,
       recommendedModels: PROVIDER_PRESETS[provider.providerId].recommendedModels,
+      supportsImageInput: PROVIDER_PRESETS[provider.providerId].supportsImageInput,
       hasSecret: Boolean(secrets[provider.providerId]),
     }));
   }

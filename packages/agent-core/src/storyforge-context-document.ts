@@ -4,9 +4,14 @@ export type StoryForgeContextDocument = {
     content: string;
   };
   skills: StoryForgeSkillsContext;
+  runtime: StoryForgeRuntimeContext;
   mcp: StoryForgeMcpContext;
   projectInfo: StoryForgeProjectInfoContext;
   soul: StoryForgeSoulContext;
+};
+
+export type StoryForgeRuntimeContext = {
+  content: string;
 };
 
 export type StoryForgeSkillsContext = {
@@ -81,6 +86,10 @@ export function serializeStoryForgeContextDocument(document: StoryForgeContextDo
     `  <skills count="${document.skills.available.length}"${document.skills.active ? ` active="${escapeAttribute(document.skills.active.invocationName)}"` : ""}>`,
     renderSkills(document.skills),
     "  </skills>",
+    "",
+    "  <runtime>",
+    indentText(escapeXml(document.runtime.content), 4),
+    "  </runtime>",
     "",
     `  <mcp server-count="${document.mcp.servers.length}" tool-count="${toolCount}">`,
     renderMcp(document.mcp),

@@ -2,9 +2,14 @@ import type {
   AgentEvent,
   AutomationProposalView,
   MessageDeliveryMode,
+  SessionTask,
   TurnId,
 } from "@story-forge/shared";
-import type { PersistedMessageView, SessionView } from "../shared/story-forge-api";
+import type {
+  ImageAttachmentView,
+  PersistedMessageView,
+  SessionView,
+} from "../shared/story-forge-api";
 
 export type AutomationProposalTimelineState = {
   proposalId: string;
@@ -13,7 +18,12 @@ export type AutomationProposalTimelineState = {
 };
 
 export type TimelineItem =
-  | { type: "user-message"; id: string; content: string }
+  | {
+      type: "user-message";
+      id: string;
+      content: string;
+      imageAttachments?: ImageAttachmentView[];
+    }
   | {
       type: "assistant-message";
       id: string;
@@ -38,6 +48,15 @@ export type TimelineItem =
       proposal: AutomationProposalView;
       status: "pending" | "created";
     }
+  | {
+      type: "task-list";
+      id: string;
+      tasks: SessionTask[];
+      completedCount: number;
+      totalCount: number;
+      blockedCount: number;
+      currentTask?: SessionTask;
+    }
   | { type: "notice"; id: string; message: string }
   | { type: "error"; id: string; message: string };
 
@@ -57,6 +76,15 @@ export function buildTimeline(input: {
   }
 
   const activeTurnId = input.activeTurnId;
+  const taskSnapshot = resolveTaskSnapshot({
+    persistedTasks: input.session?.tasks ?? [],
+    activities: input.activities,
+    activeTurnId,
+  });
+  if (taskSnapshot.length > 0) {
+    items.push(createTaskListItem(input.session?.id ?? "unknown-session", taskSnapshot));
+  }
+
   if (activeTurnId) {
     appendActiveTurnItems(items, input.activities, activeTurnId);
     if (!items.some((item) => isActiveTurnItem(item, activeTurnId))) {
@@ -83,6 +111,36 @@ export function buildTimeline(input: {
   return items;
 }
 
+function createTaskListItem(sessionId: string, tasks: SessionTask[]): TimelineItem {
+  const currentTask = tasks.find((task) => task.status === "in_progress");
+  return {
+    type: "task-list",
+    id: `tasks-${sessionId}`,
+    tasks,
+    completedCount: tasks.filter((task) => task.status === "completed").length,
+    totalCount: tasks.length,
+    blockedCount: tasks.filter((task) => task.status === "blocked").length,
+    ...(currentTask ? { currentTask } : {}),
+  };
+}
+
+function resolveTaskSnapshot(input: {
+  persistedTasks: SessionTask[];
+  activities: AgentEvent[];
+  activeTurnId: TurnId | undefined;
+}): SessionTask[] {
+  if (!input.activeTurnId) {
+    return input.persistedTasks;
+  }
+  for (let index = input.activities.length - 1; index >= 0; index -= 1) {
+    const event = input.activities[index];
+    if (event?.type === "task.list.updated" && event.turnId === input.activeTurnId) {
+      return event.tasks;
+    }
+  }
+  return input.persistedTasks;
+}
+
 function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
   const toolResultIds = new Set(
     messages
@@ -99,6 +157,7 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
         type: "user-message",
         id: message.id,
         content: message.content,
+        ...(message.imageAttachments?.length ? { imageAttachments: message.imageAttachments } : {}),
       });
       continue;
     }

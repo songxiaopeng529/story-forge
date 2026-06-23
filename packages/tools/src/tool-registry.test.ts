@@ -86,6 +86,7 @@ describe("ToolRegistry", () => {
     expect(registry.schemas().map((schema) => schema.name)).toEqual([
       "workspace.readFile",
       "workspace.listDirectory",
+      "workspace.searchText",
       "workspace.writeFile",
       "workspace.replaceText",
     ]);

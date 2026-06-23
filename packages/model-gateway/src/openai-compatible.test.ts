@@ -120,6 +120,53 @@ describe("OpenAICompatibleProvider", () => {
     });
   });
 
+  it("serializes image content blocks as OpenAI-compatible image_url data URLs", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: "It is a diagram." } }] })),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-vision",
+      fetch,
+    });
+
+    await provider.chat({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is in this image?" },
+            {
+              type: "image",
+              mediaType: "image/png",
+              data: "iVBORw0KGgo=",
+              filename: "diagram.png",
+            },
+          ],
+        },
+      ],
+    });
+
+    const [, requestInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is in this image?" },
+            {
+              type: "image_url",
+              image_url: {
+                url: "data:image/png;base64,iVBORw0KGgo=",
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("maps StoryForge tool names to OpenAI-safe function names and maps returned calls back", async () => {
     const fetch = vi.fn(async () =>
       new Response(

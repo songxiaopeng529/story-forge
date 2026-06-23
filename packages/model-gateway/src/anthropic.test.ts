@@ -108,4 +108,53 @@ describe("AnthropicProvider", () => {
       toolCalls: [{ id: "tool_2", name: "workspace.readFile", input: { path: "package.json" } }],
     });
   });
+
+  it("serializes image content blocks as Claude image sources", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ content: [{ type: "text", text: "It is a screenshot." }] })),
+    );
+    const provider = new AnthropicProvider({
+      apiKey: "claude_test_key",
+      baseUrl: "https://api.anthropic.com",
+      model: "claude-vision-test",
+      fetch,
+    });
+
+    await provider.chat({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            {
+              type: "image",
+              mediaType: "image/jpeg",
+              data: "/9j/4AAQSkZJRg==",
+              filename: "screen.jpg",
+            },
+          ],
+        },
+      ],
+    });
+
+    const [, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image." },
+            {
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: "image/jpeg",
+                data: "/9j/4AAQSkZJRg==",
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
 });

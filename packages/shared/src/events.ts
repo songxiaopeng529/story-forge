@@ -1,5 +1,6 @@
 import type { CommandExecutionMode, MessageDeliveryMode, ResponseMode } from "./settings";
 import type { AutomationProposalView } from "./extensions";
+import type { SessionTask, TaskId } from "./tasks";
 
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
@@ -10,6 +11,7 @@ export type AgentStopReason =
   | "repeated-tool-call"
   | "consecutive-tool-failures"
   | "step-limit"
+  | "unfinished-tasks"
   | "unrecoverable-error";
 
 export type RuntimeStartedEvent = {
@@ -97,7 +99,13 @@ export type ResponseFallbackEvent = {
 
 export type InspectableModelMessage =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | {
+      role: "user";
+      content: string | Array<
+        | { type: "text"; text: string }
+        | { type: "image"; mediaType: string; data: string; filename?: string }
+      >;
+    }
   | {
       role: "assistant";
       content: string;
@@ -132,6 +140,15 @@ export type AutomationProposalEvent = {
   proposal: AutomationProposalView;
 };
 
+export type TaskListUpdatedEvent = {
+  type: "task.list.updated";
+  sessionId: SessionId;
+  turnId: TurnId;
+  tasks: SessionTask[];
+  changedTaskId?: TaskId;
+  reason: "created" | "updated" | "loaded" | "guard";
+};
+
 export type AgentEvent =
   | RuntimeStartedEvent
   | RuntimeCompletedEvent
@@ -143,7 +160,8 @@ export type AgentEvent =
   | MemoryWriteEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
-  | AutomationProposalEvent;
+  | AutomationProposalEvent
+  | TaskListUpdatedEvent;
 
 export function createSessionId(): SessionId {
   const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;

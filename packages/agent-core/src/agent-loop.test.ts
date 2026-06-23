@@ -320,6 +320,82 @@ describe("AgentLoop", () => {
     expect(result).toMatchObject({ stopReason: "completed", steps: 1 });
   });
 
+  it("runs a finish guard before completing a no-tool response", async () => {
+    const provider = fakeProvider(async () => ({ content: "Done", toolCalls: [] }));
+    const checkpoints: ChatMessage[][] = [];
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Finish" }],
+      onBeforeFinish: async () => ({ action: "finish" }),
+      onCheckpoint: (messages) => {
+        checkpoints.push(messages);
+      },
+    });
+
+    expect(result.stopReason).toBe("completed");
+    expect(checkpoints).toHaveLength(1);
+  });
+
+  it("continues the loop when the finish guard returns a reminder message", async () => {
+    const requests: ChatMessage[][] = [];
+    let requestCount = 0;
+    const provider = fakeProvider(async (messages) => {
+      requests.push(messages);
+      requestCount += 1;
+      return {
+        content: requestCount === 1 ? "I think I am done" : "Now done",
+        toolCalls: [],
+      };
+    });
+    let guardCalls = 0;
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Finish everything" }],
+      onBeforeFinish: async () => {
+        guardCalls += 1;
+        if (guardCalls === 1) {
+          return {
+            action: "continue",
+            message: {
+              role: "user",
+              content: "Known tasks remain pending or in progress.",
+            },
+          };
+        }
+        return { action: "finish" };
+      },
+    });
+
+    expect(guardCalls).toBe(2);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContainEqual({
+      role: "user",
+      content: "Known tasks remain pending or in progress.",
+    });
+    expect(result.messages.at(-1)).toEqual({ role: "assistant", content: "Now done" });
+    expect(result.stopReason).toBe("completed");
+  });
+
+  it("uses the finish guard stop reason when the guard refuses completion", async () => {
+    const provider = fakeProvider(async () => ({ content: "Done", toolCalls: [] }));
+
+    const result = await new AgentLoop({ provider, tools: new ToolRegistry() }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Finish" }],
+      onBeforeFinish: async () => ({
+        action: "finish",
+        stopReason: "unfinished-tasks",
+      }),
+    });
+
+    expect(result.stopReason).toBe("unfinished-tasks");
+  });
+
   it("executes tool calls sequentially and replays reasoning and results to the model", async () => {
     const events: AgentEvent[] = [];
     const requests: ChatMessage[][] = [];

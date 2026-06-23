@@ -10,6 +10,21 @@ import {
 import path from "node:path";
 
 export const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_MAX_SEARCH_RESULTS = 20;
+const MAX_SEARCH_RESULTS = 100;
+const IGNORED_SEARCH_DIRECTORIES = new Set([".git", "node_modules"]);
+
+export type WorkspaceSearchMatch = {
+  path: string;
+  line: number;
+  snippet: string;
+};
+
+export type WorkspaceSearchResult = {
+  query: string;
+  matches: WorkspaceSearchMatch[];
+  truncated: boolean;
+};
 
 export class WorkspaceSandbox {
   private readonly workspaceRoot: string;
@@ -31,6 +46,86 @@ export class WorkspaceSandbox {
   async listDirectory(directoryPath = "."): Promise<string[]> {
     const resolvedPath = await this.resolveExistingPath(directoryPath);
     return readdir(resolvedPath);
+  }
+
+  async searchText(input: {
+    query: string;
+    path?: string;
+    maxResults?: number;
+    signal?: AbortSignal;
+  }): Promise<WorkspaceSearchResult> {
+    const query = input.query.trim();
+    if (!query) {
+      throw new Error("workspace.searchText requires a non-empty query");
+    }
+
+    const maxResults = clampSearchResults(input.maxResults);
+    const startPath = await this.resolveExistingPath(input.path ?? ".");
+    const rootRealpath = await this.getWorkspaceRootRealpath();
+    const matches: WorkspaceSearchMatch[] = [];
+    let truncated = false;
+
+    const visitFile = async (filePath: string): Promise<void> => {
+      throwIfAborted(input.signal);
+      if (matches.length >= maxResults) {
+        truncated = true;
+        return;
+      }
+      const fileStat = await stat(filePath);
+      this.assertFileSize(fileStat.size);
+      const buffer = await readFile(filePath);
+      if (buffer.includes(0)) {
+        return;
+      }
+      const relativePath = normalizeRelativePath(path.relative(rootRealpath, filePath));
+      const lines = buffer.toString("utf8").split(/\r?\n/);
+      for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index] ?? "";
+        if (!line.includes(query)) {
+          continue;
+        }
+        if (matches.length >= maxResults) {
+          truncated = true;
+          return;
+        }
+        matches.push({
+          path: relativePath,
+          line: index + 1,
+          snippet: line.trim(),
+        });
+      }
+    };
+
+    const visitPath = async (candidatePath: string): Promise<void> => {
+      throwIfAborted(input.signal);
+      if (matches.length >= maxResults) {
+        truncated = true;
+        return;
+      }
+      const entryStat = await stat(candidatePath);
+      if (entryStat.isFile()) {
+        await visitFile(candidatePath);
+        return;
+      }
+      if (!entryStat.isDirectory()) {
+        return;
+      }
+      const entries = (await readdir(candidatePath, { withFileTypes: true }))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      for (const entry of entries) {
+        if (entry.isDirectory() && IGNORED_SEARCH_DIRECTORIES.has(entry.name)) {
+          continue;
+        }
+        await visitPath(path.join(candidatePath, entry.name));
+        if (matches.length >= maxResults) {
+          truncated = true;
+          return;
+        }
+      }
+    };
+
+    await visitPath(startPath);
+    return { query, matches, truncated };
   }
 
   async writeTextFile(filePath: string, content: string): Promise<{ path: string; bytes: number }> {
@@ -210,6 +305,26 @@ async function resolvePathOrNearestParent(candidatePath: string): Promise<string
 function isInsidePath(rootPath: string, candidatePath: string): boolean {
   const relativePath = path.relative(rootPath, candidatePath);
   return relativePath === "" || (!relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+function clampSearchResults(value: number | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_MAX_SEARCH_RESULTS;
+  }
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error("workspace.searchText maxResults must be a positive integer");
+  }
+  return Math.min(value, MAX_SEARCH_RESULTS);
+}
+
+function normalizeRelativePath(value: string): string {
+  return value.split(path.sep).join("/");
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new Error("workspace.searchText aborted");
+  }
 }
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
