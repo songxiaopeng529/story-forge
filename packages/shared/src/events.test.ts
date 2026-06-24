@@ -137,6 +137,17 @@ const contextUsageEvent = {
   source: "provider",
 } satisfies AgentEvent;
 
+const contextCompactedEvent = {
+  type: "context.compacted",
+  sessionId,
+  turnId,
+  trigger: "manual",
+  beforeTokens: 96000,
+  afterTokens: 40000,
+  budgetTokens: 102400,
+  retainedRounds: 1,
+} satisfies AgentEvent;
+
 const automationProposalEvent = {
   type: "automation.proposal",
   sessionId,
@@ -170,6 +181,7 @@ const agentEventFixtures = [
   memoryWriteEvent,
   modelRequestEvent,
   contextUsageEvent,
+  contextCompactedEvent,
   automationProposalEvent,
 ] satisfies AgentEvent[];
 

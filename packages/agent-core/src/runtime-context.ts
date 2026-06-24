@@ -158,6 +158,7 @@ export function toChatMessage(message: RuntimePersistedMessage): ChatMessage {
       content: message.content,
       ...(message.reasoningContent ? { reasoningContent: message.reasoningContent } : {}),
       ...(message.toolCalls?.length ? { toolCalls: message.toolCalls } : {}),
+      ...(message.kind ? { kind: message.kind } : {}),
     };
   }
   if (message.role === "tool") {
@@ -191,10 +192,12 @@ export function toRuntimePersistedMessages(
   toolResults: Map<string, boolean>,
   now: () => string = () => new Date().toISOString(),
 ): RuntimePersistedMessage[] {
+  const previousBySignature = indexPreviousMessages(previous);
+
   return messages
     .filter((message) => message.role !== "system")
-    .map((message, index) => {
-      const existing = previous[index];
+    .map((message) => {
+      const existing = takePreviousMatch(previousBySignature, message);
       const identity = {
         id: existing?.id ?? createMessageId(),
         createdAt: existing?.createdAt ?? now(),
@@ -206,6 +209,7 @@ export function toRuntimePersistedMessages(
           content: message.content,
           ...(message.reasoningContent ? { reasoningContent: message.reasoningContent } : {}),
           ...(message.toolCalls?.length ? { toolCalls: cloneToolCalls(message.toolCalls) } : {}),
+          ...(message.kind ? { kind: message.kind } : {}),
         };
       }
       if (message.role === "tool") {
@@ -232,6 +236,69 @@ export function toRuntimePersistedMessages(
           : {}),
       };
     });
+}
+
+function indexPreviousMessages(
+  previous: RuntimePersistedMessage[],
+): Map<string, RuntimePersistedMessage[]> {
+  const index = new Map<string, RuntimePersistedMessage[]>();
+  for (const message of previous) {
+    const signature = persistedMessageSignature(message);
+    const queue = index.get(signature);
+    if (queue) {
+      queue.push(message);
+    } else {
+      index.set(signature, [message]);
+    }
+  }
+  return index;
+}
+
+function takePreviousMatch(
+  index: Map<string, RuntimePersistedMessage[]>,
+  message: ChatMessage,
+): RuntimePersistedMessage | undefined {
+  const signature = chatMessageSignature(message);
+  if (!signature) {
+    return undefined;
+  }
+  const queue = index.get(signature);
+  return queue?.shift();
+}
+
+function persistedMessageSignature(message: RuntimePersistedMessage): string {
+  if (message.role === "tool") {
+    return `tool:${message.toolCallId}`;
+  }
+  if (message.role === "assistant") {
+    return `assistant:${message.kind ?? ""}:${message.content}`;
+  }
+  return `user:${message.content}`;
+}
+
+function chatMessageSignature(message: ChatMessage): string | undefined {
+  if (message.role === "system") {
+    return undefined;
+  }
+  if (message.role === "tool") {
+    return `tool:${message.toolCallId}`;
+  }
+  if (message.role === "assistant") {
+    return `assistant:${message.kind ?? ""}:${message.content}`;
+  }
+  return `user:${chatUserContentToText(message.content)}`;
+}
+
+function chatUserContentToText(
+  content: Extract<ChatMessage, { role: "user" }>["content"],
+): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
 }
 
 export type { RuntimePersistedMessage, RuntimeSession };

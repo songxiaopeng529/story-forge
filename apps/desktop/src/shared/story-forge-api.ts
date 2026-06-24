@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   sessionsDelete: "story-forge:sessions:delete",
   turnsStart: "story-forge:turns:start",
   turnsStop: "story-forge:turns:stop",
+  turnsCompact: "story-forge:turns:compact",
   turnEvent: "story-forge:turns:event",
   permissionRespond: "story-forge:permissions:respond",
   automationsList: "story-forge:automations:list",
@@ -102,6 +103,7 @@ export type PersistedMessageView =
       reasoningContent?: string;
       toolCalls?: ToolCall[];
       error?: boolean;
+      kind?: "summary";
       createdAt: string;
     }
   | {
@@ -179,6 +181,7 @@ export type StoryForgeApi = {
       imageAttachments?: ImageAttachmentView[];
     }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
+    compact(sessionId: SessionId): Promise<void>;
     onEvent(listener: (event: AgentEvent) => void): () => void;
   };
   permissions: {

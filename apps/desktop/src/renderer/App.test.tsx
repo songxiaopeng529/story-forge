@@ -228,6 +228,30 @@ describe("App", () => {
     }));
   });
 
+  it("shows a progress indicator while the /compact command runs", async () => {
+    const deferred = createDeferred<undefined>();
+    const fixture = installApi({ compact: vi.fn(() => deferred.promise) });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/compact" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/compact/i }));
+
+    expect(await screen.findByTestId("compaction-indicator")).toBeInTheDocument();
+    expect(fixture.compact).toHaveBeenCalledWith("sf_session_existing");
+
+    await act(async () => {
+      deferred.resolve(undefined);
+      await deferred.promise;
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("compaction-indicator")).not.toBeInTheDocument()
+    );
+  });
+
   it("updates from correlated turn events and reloads the persisted session on completion", async () => {
     const fixture = installApi();
     render(<App />);
@@ -1167,6 +1191,7 @@ function installApi(options: {
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
   automations?: AutomationView[];
+  compact?: StoryForgeApi["turns"]["compact"];
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -1218,6 +1243,9 @@ function installApi(options: {
   let eventListener: ((event: AgentEvent) => void) | undefined;
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
+  const compact = options.compact
+    ? vi.mocked(options.compact)
+    : vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
   const settings: AppSettingsView = {
@@ -1368,6 +1396,7 @@ function installApi(options: {
     turns: {
       start,
       stop,
+      compact,
       onEvent: vi.fn((listener) => {
         eventListener = listener;
         return () => {
@@ -1407,6 +1436,7 @@ function installApi(options: {
   return {
     start,
     stop,
+    compact,
     respondPermission,
     getSession,
     saveSettings,

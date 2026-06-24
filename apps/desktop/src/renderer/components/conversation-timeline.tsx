@@ -1,4 +1,4 @@
-import { Check, Clock3, ListChecks, OctagonAlert, Sparkles } from "lucide-react";
+import { Check, Clock3, FoldVertical, ListChecks, OctagonAlert, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TimelineItem } from "../timeline";
 import { useTypewriterText } from "../use-typewriter-text";
@@ -69,6 +69,9 @@ function TimelineItemView(props: {
   }
   if (item.type === "reasoning") {
     return <ReasoningBlock content={item.content} />;
+  }
+  if (item.type === "summary") {
+    return <SummaryBlock content={item.content} />;
   }
   if (item.type === "tool-step") {
     return <ToolStep item={item} />;
@@ -227,6 +230,20 @@ function ReasoningBlock(props: { content: string }) {
       <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-forge-ink">
         <Sparkles className="text-forge-ink" size={16} />
         Reasoning
+      </summary>
+      <div className="mt-1.5 whitespace-pre-wrap text-xs leading-[18px] text-forge-ink">
+        {props.content}
+      </div>
+    </details>
+  );
+}
+
+function SummaryBlock(props: { content: string }) {
+  return (
+    <details className="rounded-[10px] border border-forge-line bg-forge-canvas px-3 py-2.5 text-sm">
+      <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-forge-muted">
+        <FoldVertical className="text-forge-muted" size={16} />
+        上下文摘要
       </summary>
       <div className="mt-1.5 whitespace-pre-wrap text-xs leading-[18px] text-forge-ink">
         {props.content}

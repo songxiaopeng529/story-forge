@@ -68,6 +68,7 @@ export function App() {
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
   const [permissionResponding, setPermissionResponding] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [compactingSessionId, setCompactingSessionId] = useState<SessionId>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [navCollapsed, setNavCollapsed] = useState(false);
@@ -392,6 +393,25 @@ export function App() {
       await window.storyForge.turns.stop(activeTurnId);
     } catch (stopError) {
       setError(formatError(stopError));
+    }
+  }
+
+  async function compactSelectedSession(): Promise<void> {
+    if (!selectedSession || selectedSession.messages.length === 0) {
+      return;
+    }
+    if (compactingSessionId) {
+      return;
+    }
+    const sessionId = selectedSession.id;
+    setCompactingSessionId(sessionId);
+    try {
+      await window.storyForge.turns.compact(sessionId);
+      await refreshSession(sessionId);
+    } catch (compactError) {
+      setError(formatError(compactError));
+    } finally {
+      setCompactingSessionId((current) => (current === sessionId ? undefined : current));
     }
   }
 
@@ -784,6 +804,7 @@ export function App() {
             modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
             developerMode={developerMode}
             commandExecutionMode={commandExecutionMode}
+            compacting={Boolean(selectedSessionId) && compactingSessionId === selectedSessionId}
             modelInspectorOpen={modelInspectorOpen}
             sessionTimerCount={selectedSessionTimerCount}
             activeTurnId={activeTurnId}
@@ -816,6 +837,7 @@ export function App() {
             onOpenModels={() => setPage("models")}
             onOpenExtensions={() => setPage("extensions")}
             onOpenSettings={() => setPage("settings")}
+            onCompact={() => void compactSelectedSession()}
             onModelInspectorOpen={() => setModelInspectorOpen(true)}
             onModelInspectorClose={() => setModelInspectorOpen(false)}
             onSessionTimerCreated={handleSessionTimerCreated}

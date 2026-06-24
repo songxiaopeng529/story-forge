@@ -144,6 +144,17 @@ export type ContextUsageEvent = {
   source: ContextUsageSource;
 };
 
+export type ContextCompactedEvent = {
+  type: "context.compacted";
+  sessionId: SessionId;
+  turnId: TurnId;
+  trigger: "auto" | "manual";
+  beforeTokens: number;
+  afterTokens: number;
+  budgetTokens: number;
+  retainedRounds: number;
+};
+
 export type AutomationProposalEvent = {
   type: "automation.proposal";
   sessionId: SessionId;
@@ -173,6 +184,7 @@ export type AgentEvent =
   | ResponseFallbackEvent
   | ModelRequestEvent
   | ContextUsageEvent
+  | ContextCompactedEvent
   | AutomationProposalEvent
   | TaskListUpdatedEvent;
 

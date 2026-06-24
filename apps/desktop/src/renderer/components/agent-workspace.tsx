@@ -11,10 +11,12 @@ import {
   Braces,
   CalendarClock,
   CircleStop,
+  FoldVertical,
   FolderOpen,
   ImagePlus,
   KeyRound,
   ListChecks,
+  Loader2,
   PanelLeftOpen,
   PanelRightOpen,
   Play,
@@ -52,6 +54,7 @@ export function AgentWorkspace(props: {
   modelRequests: ModelRequestEvent[];
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
+  compacting: boolean;
   modelInspectorOpen: boolean;
   sessionTimerCount: number;
   activeTurnId: TurnId | undefined;
@@ -80,6 +83,7 @@ export function AgentWorkspace(props: {
   onOpenModels: () => void;
   onOpenExtensions: () => void;
   onOpenSettings: () => void;
+  onCompact: () => void;
   onModelInspectorOpen: () => void;
   onModelInspectorClose: () => void;
   onSessionTimerCreated: (automation: AutomationView) => void;
@@ -110,6 +114,7 @@ export function AgentWorkspace(props: {
     }
     return item.id;
   }).join("|");
+  const scrollFingerprint = `${timelineFingerprint}|${props.compacting ? "compacting" : "idle"}`;
 
   useEffect(() => {
     setTitle(props.session?.title ?? "");
@@ -122,7 +127,7 @@ export function AgentWorkspace(props: {
       return;
     }
     element.scrollTop = element.scrollHeight;
-  }, [timelineFingerprint]);
+  }, [scrollFingerprint]);
   useEffect(() => {
     if (!slashRange || !props.session) {
       return;
@@ -168,6 +173,18 @@ export function AgentWorkspace(props: {
         action: () => {
           props.onPromptChange("");
           setTimerDialogOpen(true);
+        },
+      },
+      {
+        id: "compact",
+        invocation: "/compact",
+        title: "Compact context",
+        description: "Summarize and shrink this conversation's context.",
+        kind: "builtin",
+        icon: <FoldVertical size={15} />,
+        action: () => {
+          props.onPromptChange("");
+          props.onCompact();
         },
       },
       {
@@ -232,6 +249,7 @@ export function AgentWorkspace(props: {
     props.onOpenExtensions,
     props.onOpenModels,
     props.onOpenSettings,
+    props.onCompact,
     props.onComposerModeChange,
     props.onPromptChange,
     slashRange?.query,
@@ -503,6 +521,19 @@ export function AgentWorkspace(props: {
                 onCreateAutomationProposal={props.onCreateAutomationProposal}
               />
             )}
+            {props.session && props.compacting ? (
+              <div className="mx-auto mt-3 flex max-w-[560px] justify-center">
+                <span
+                  aria-live="polite"
+                  className="inline-flex items-center gap-2 rounded-full border border-forge-line bg-white px-3 py-1.5 text-[12px] font-medium text-forge-muted shadow-sm"
+                  data-testid="compaction-indicator"
+                  role="status"
+                >
+                  <Loader2 className="animate-spin text-forge-ink" size={14} />
+                  正在压缩上下文…
+                </span>
+              </div>
+            ) : null}
           </div>
 
           <footer className="flex-none border-t border-forge-line bg-forge-canvas px-6 pb-5 pt-3">

@@ -47,6 +47,7 @@ const persistedMessageSchema = z.discriminatedUnion("role", [
     reasoningContent: z.string().optional(),
     toolCalls: z.array(toolCallSchema).optional(),
     error: z.boolean().optional(),
+    kind: z.enum(["summary"]).optional(),
     createdAt: z.string(),
   }),
   z.object({
