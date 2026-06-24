@@ -59,6 +59,63 @@ describe("AgentLoop", () => {
     expect(events.some((event) => event.type === "model.request")).toBe(false);
   });
 
+  it("emits estimated context usage before each request", async () => {
+    const events: AgentEvent[] = [];
+
+    await new AgentLoop({
+      provider: fakeProvider(async () => ({ content: "Done", toolCalls: [] })),
+      tools: new ToolRegistry(),
+    }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Hello" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    const usageEvents = events.filter((event) => event.type === "context.usage");
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      type: "context.usage",
+      source: "estimate",
+      budgetTokens: 800,
+      windowTokens: 1000,
+    });
+    expect((usageEvents[0] as Extract<AgentEvent, { type: "context.usage" }>).usedTokens)
+      .toBeGreaterThan(0);
+  });
+
+  it("emits provider-accurate context usage when the model reports usage", async () => {
+    const events: AgentEvent[] = [];
+
+    await new AgentLoop({
+      provider: fakeProvider(async () => ({
+        content: "Done",
+        toolCalls: [],
+        usage: { promptTokens: 512 },
+      })),
+      tools: new ToolRegistry(),
+    }).run({
+      sessionId,
+      turnId,
+      messages: [{ role: "user", content: "Hello" }],
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    const providerUsage = events.find(
+      (event): event is Extract<AgentEvent, { type: "context.usage" }> =>
+        event.type === "context.usage" && event.source === "provider",
+    );
+    expect(providerUsage).toMatchObject({
+      usedTokens: 512,
+      budgetTokens: 800,
+      windowTokens: 1000,
+    });
+  });
+
   it("uses chat in smooth mode and ignores streamChat when available", async () => {
     const events: AgentEvent[] = [];
     let chatCalls = 0;

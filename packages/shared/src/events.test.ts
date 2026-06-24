@@ -127,6 +127,16 @@ const modelRequestEvent = {
   ],
 } satisfies AgentEvent;
 
+const contextUsageEvent = {
+  type: "context.usage",
+  sessionId,
+  turnId,
+  usedTokens: 24000,
+  budgetTokens: 102400,
+  windowTokens: 128000,
+  source: "provider",
+} satisfies AgentEvent;
+
 const automationProposalEvent = {
   type: "automation.proposal",
   sessionId,
@@ -159,6 +169,7 @@ const agentEventFixtures = [
   permissionRequestEvent,
   memoryWriteEvent,
   modelRequestEvent,
+  contextUsageEvent,
   automationProposalEvent,
 ] satisfies AgentEvent[];
 

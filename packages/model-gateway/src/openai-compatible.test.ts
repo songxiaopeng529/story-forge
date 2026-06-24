@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ChatStreamEvent } from "./model-provider";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 
 function streamResponse(chunks: string[]): Response {
@@ -874,5 +875,68 @@ describe("OpenAICompatibleProvider", () => {
       })(),
     ).rejects.toThrow("OpenAI-compatible provider returned an invalid stream: missing [DONE] marker");
     expect(events).toEqual([{ type: "content.delta", content: "unterminated" }]);
+  });
+
+  it("parses token usage from non-streaming completions", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "Hi" } }],
+          usage: { prompt_tokens: 1200, completion_tokens: 34, total_tokens: 1234 },
+        }),
+      ),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const response = await provider.chat({ messages: [{ role: "user", content: "Hi" }] });
+
+    expect(response.usage).toEqual({
+      promptTokens: 1200,
+      completionTokens: 34,
+      totalTokens: 1234,
+    });
+  });
+
+  it("requests and parses token usage from streamed completions", async () => {
+    const fetch = vi.fn(async () =>
+      streamResponse([
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+        'data: {"choices":[],"usage":{"prompt_tokens":900,"completion_tokens":12,"total_tokens":912}}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: "sf_test_key",
+      baseUrl: "https://models.example.test/v1",
+      model: "story-forge-small",
+      fetch,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of provider.streamChat({
+      messages: [{ role: "user", content: "Hi" }],
+    })) {
+      events.push(event);
+    }
+
+    const [, requestInit] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    const done = events.at(-1);
+    expect(done).toEqual({
+      type: "done",
+      response: {
+        content: "Hi",
+        toolCalls: [],
+        usage: { promptTokens: 900, completionTokens: 12, totalTokens: 912 },
+      },
+    });
   });
 });

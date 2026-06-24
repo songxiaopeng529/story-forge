@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   CommandExecutionMode,
+  ContextUsageEvent,
   ResponseMode,
   TurnId,
 } from "@story-forge/shared";
@@ -42,6 +43,7 @@ export function RunContextPanel(props: {
   const meta = commandModeMeta[props.commandExecutionMode];
   const recentFiles = collectRecentFiles(props.activities);
   const latestRequest = lastModelRequest(props.activities);
+  const contextUsage = latestContextUsage(props.activities);
   const tasks = latestTasks(props.session?.tasks ?? [], props.activities);
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
   const blockedTasks = tasks.filter((task) => task.status === "blocked").length;
@@ -75,6 +77,7 @@ export function RunContextPanel(props: {
           <Row label="Steps" value={runtime ? `${runtime.steps} steps` : "—"} />
           <Row label="Elapsed" value={runtime ? elapsed : "—"} />
           <Row label="Mode" value={props.responseMode} />
+          <ContextRow usage={contextUsage} />
         </Card>
 
         {tasks.length > 0 ? (
@@ -184,6 +187,33 @@ function Row(props: { label: string; value: string; tone?: "danger" }) {
   );
 }
 
+function ContextRow(props: { usage: ContextUsageEvent | undefined }) {
+  const { usage } = props;
+  if (!usage || usage.budgetTokens <= 0) {
+    return <Row label="Context" value="—" />;
+  }
+  const ratio = Math.min(1, Math.max(0, usage.usedTokens / usage.budgetTokens));
+  const percent = Math.round(ratio * 100);
+  const tone = percent >= 90 ? "danger" : percent >= 75 ? "warn" : "normal";
+  const barColor =
+    tone === "danger" ? "bg-forge-danger" : tone === "warn" ? "bg-forge-info" : "bg-forge-ink";
+  const textColor = tone === "danger" ? "text-forge-danger" : "text-forge-ink";
+  const title =
+    `${usage.usedTokens.toLocaleString()} / ${usage.budgetTokens.toLocaleString()} tokens`
+    + ` (${usage.source === "provider" ? "actual" : "estimated"}, window ${usage.windowTokens.toLocaleString()})`;
+  return (
+    <div className="pt-1" title={title}>
+      <div className="flex items-center justify-between py-0.5">
+        <span className="text-[11px] text-forge-muted">Context</span>
+        <span className={`text-[12px] font-medium ${textColor}`}>{percent}%</span>
+      </div>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-forge-line">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function Badge(props: { children: React.ReactNode }) {
   return (
     <span className="rounded-md bg-forge-info-bg px-1.5 py-0.5 text-[10px] font-medium text-forge-info">
@@ -263,6 +293,16 @@ function lastModelRequest(
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const event = activities[index];
     if (event?.type === "model.request") {
+      return event;
+    }
+  }
+  return undefined;
+}
+
+function latestContextUsage(activities: AgentEvent[]): ContextUsageEvent | undefined {
+  for (let index = activities.length - 1; index >= 0; index -= 1) {
+    const event = activities[index];
+    if (event?.type === "context.usage") {
       return event;
     }
   }

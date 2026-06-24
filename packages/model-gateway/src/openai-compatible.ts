@@ -6,6 +6,7 @@ import type {
   ChatStreamEvent,
   ModelCapabilities,
   ModelProvider,
+  TokenUsage,
   ToolSchema,
   UserChatContent,
 } from "./model-provider";
@@ -36,6 +37,12 @@ type OpenAICompatibleToolCall = {
   };
 };
 
+type OpenAICompatibleUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
 type OpenAICompatibleChatCompletion = {
   choices?: Array<{
     message?: {
@@ -44,6 +51,7 @@ type OpenAICompatibleChatCompletion = {
       tool_calls?: OpenAICompatibleToolCall[];
     };
   }>;
+  usage?: OpenAICompatibleUsage | null;
 };
 
 type OpenAICompatibleStreamDelta = {
@@ -62,6 +70,7 @@ type OpenAICompatibleStreamDelta = {
       }>;
     };
   }>;
+  usage?: OpenAICompatibleUsage | null;
 };
 
 type StreamingToolCallAccumulator = {
@@ -74,6 +83,7 @@ type StreamingParseState = {
   content: string;
   reasoningContent: string;
   toolCalls: Map<number, StreamingToolCallAccumulator>;
+  usage?: TokenUsage;
 };
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -138,6 +148,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (message.reasoning_content) {
       result.reasoningContent = message.reasoning_content;
     }
+    const usage = toTokenUsage(completion.usage);
+    if (usage) {
+      result.usage = usage;
+    }
     return result;
   }
 
@@ -156,6 +170,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         ...(request.tools ? { tools: request.tools.map((tool) => toOpenAICompatibleTool(tool, toolNameMap)) } : {}),
         ...this.extraBody,
         stream: true,
+        stream_options: { include_usage: true },
       }),
       ...(options.signal ? { signal: options.signal } : {}),
     });
@@ -173,6 +188,20 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+function toTokenUsage(usage: OpenAICompatibleUsage | null | undefined): TokenUsage | undefined {
+  if (!usage || typeof usage.prompt_tokens !== "number") {
+    return undefined;
+  }
+  const result: TokenUsage = { promptTokens: usage.prompt_tokens };
+  if (typeof usage.completion_tokens === "number") {
+    result.completionTokens = usage.completion_tokens;
+  }
+  if (typeof usage.total_tokens === "number") {
+    result.totalTokens = usage.total_tokens;
+  }
+  return result;
 }
 
 function toOpenAICompatibleMessage(
@@ -384,6 +413,7 @@ async function* parseOpenAICompatibleStream(
       content: state.content,
       ...(state.reasoningContent ? { reasoningContent: state.reasoningContent } : {}),
       toolCalls: parsedToolCalls,
+      ...(state.usage ? { usage: state.usage } : {}),
     },
   };
 }
@@ -416,6 +446,10 @@ function processSseFrame(
 
   const events: ChatStreamEvent[] = [];
   const payload = JSON.parse(trimmedData) as OpenAICompatibleStreamDelta;
+  const usage = toTokenUsage(payload.usage);
+  if (usage) {
+    state.usage = usage;
+  }
   const delta = payload.choices?.[0]?.delta;
   if (!delta) {
     return { done: false, events };

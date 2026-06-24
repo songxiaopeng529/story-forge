@@ -21,6 +21,7 @@ const DEFAULT_MAX_STEPS = 1000;
 const DEFAULT_MAX_DURATION_MS = 2 * 60 * 60 * 1000;
 const MAX_REPEATED_TOOL_CALLS = 3;
 const MAX_CONSECUTIVE_TOOL_FAILURES = 5;
+const CONTEXT_BUDGET_RATIO = 0.8;
 
 export type AgentLoopOptions = {
   provider: ModelProvider;
@@ -140,13 +141,22 @@ export class AgentLoop {
 
         steps += 1;
         const responseMode = input.responseMode ?? "auto";
+        const windowTokens = this.provider.capabilities.contextWindowTokens;
+        const budgetTokens = Math.floor(windowTokens * CONTEXT_BUDGET_RATIO);
+        const trimmedMessages = trimMessagesToContext(messages, budgetTokens);
         const request: ModelRequest = {
-          messages: trimMessagesToContext(
-            messages,
-            Math.floor(this.provider.capabilities.contextWindowTokens * 0.8),
-          ),
+          messages: trimmedMessages,
           tools: this.tools.schemas(),
         };
+        await emit(input, {
+          type: "context.usage",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          usedTokens: estimateRequestTokens(request),
+          budgetTokens,
+          windowTokens,
+          source: "estimate",
+        });
         await this.emitModelRequest({ runInput: input, request, responseMode });
         const response = await this.requestModelResponse({
           request,
@@ -156,6 +166,17 @@ export class AgentLoop {
           turnId: input.turnId,
           onEvent: input.onEvent,
         });
+        if (response.usage) {
+          await emit(input, {
+            type: "context.usage",
+            sessionId: input.sessionId,
+            turnId: input.turnId,
+            usedTokens: response.usage.promptTokens,
+            budgetTokens,
+            windowTokens,
+            source: "provider",
+          });
+        }
         const assistantMessage: AssistantChatMessage = {
           role: "assistant",
           content: response.content,
@@ -443,6 +464,17 @@ function groupConversationRounds(messages: ChatMessage[]): ChatMessage[][] {
 
 function estimateMessageTokens(message: ChatMessage): number {
   return Math.ceil(JSON.stringify(message).length / 4);
+}
+
+function estimateRequestTokens(request: ModelRequest): number {
+  const messageTokens = request.messages.reduce(
+    (total, message) => total + estimateMessageTokens(message),
+    0,
+  );
+  const toolTokens = request.tools.length
+    ? Math.ceil(JSON.stringify(request.tools).length / 4)
+    : 0;
+  return messageTokens + toolTokens;
 }
 
 function toInspectableMessage(message: ChatMessage): InspectableModelMessage {
