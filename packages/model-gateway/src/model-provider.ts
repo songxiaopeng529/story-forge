@@ -61,10 +61,17 @@ export type ChatRequest = {
   tools?: ToolSchema[];
 };
 
+export type TokenUsage = {
+  promptTokens: number;
+  completionTokens?: number;
+  totalTokens?: number;
+};
+
 export type ChatResponse = {
   content: string;
   reasoningContent?: string;
   toolCalls: ToolCall[];
+  usage?: TokenUsage;
 };
 
 export type ChatStreamEvent =

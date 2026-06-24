@@ -157,4 +157,29 @@ describe("AnthropicProvider", () => {
       ],
     });
   });
+
+  it("parses token usage from the Messages API", async () => {
+    const fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          content: [{ type: "text", text: "Hi" }],
+          usage: { input_tokens: 4096, output_tokens: 128 },
+        }),
+      ),
+    );
+    const provider = new AnthropicProvider({
+      apiKey: "claude_test_key",
+      baseUrl: "https://api.anthropic.com",
+      model: "claude-test",
+      fetch,
+    });
+
+    const response = await provider.chat({ messages: [{ role: "user", content: "Hi" }] });
+
+    expect(response.usage).toEqual({
+      promptTokens: 4096,
+      completionTokens: 128,
+      totalTokens: 4224,
+    });
+  });
 });

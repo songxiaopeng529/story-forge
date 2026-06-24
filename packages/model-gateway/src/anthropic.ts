@@ -26,6 +26,10 @@ type AnthropicContentBlock =
 
 type AnthropicResponse = {
   content?: AnthropicContentBlock[];
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+  } | null;
 };
 
 export class AnthropicProvider implements ModelProvider {
@@ -121,6 +125,19 @@ export class AnthropicProvider implements ModelProvider {
       content: text,
       ...(reasoningContent ? { reasoningContent } : {}),
       toolCalls,
+      ...(typeof payload.usage?.input_tokens === "number"
+        ? {
+            usage: {
+              promptTokens: payload.usage.input_tokens,
+              ...(typeof payload.usage.output_tokens === "number"
+                ? {
+                    completionTokens: payload.usage.output_tokens,
+                    totalTokens: payload.usage.input_tokens + payload.usage.output_tokens,
+                  }
+                : {}),
+            },
+          }
+        : {}),
     };
   }
 }

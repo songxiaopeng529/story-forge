@@ -132,6 +132,18 @@ export type ModelRequestEvent = {
   tools: InspectableModelTool[];
 };
 
+export type ContextUsageSource = "provider" | "estimate";
+
+export type ContextUsageEvent = {
+  type: "context.usage";
+  sessionId: SessionId;
+  turnId: TurnId;
+  usedTokens: number;
+  budgetTokens: number;
+  windowTokens: number;
+  source: ContextUsageSource;
+};
+
 export type AutomationProposalEvent = {
   type: "automation.proposal";
   sessionId: SessionId;
@@ -160,6 +172,7 @@ export type AgentEvent =
   | MemoryWriteEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
+  | ContextUsageEvent
   | AutomationProposalEvent
   | TaskListUpdatedEvent;
 
