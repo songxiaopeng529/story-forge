@@ -1,5 +1,7 @@
 import { Check, Clock3, FoldVertical, ListChecks, OctagonAlert, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
+import { code } from "@streamdown/code";
+import { Streamdown } from "streamdown";
 import type { TimelineItem } from "../timeline";
 import { useTypewriterText } from "../use-typewriter-text";
 
@@ -218,7 +220,9 @@ function AssistantMessage(props: { content: string; smooth: boolean }) {
   return (
     <article className="flex justify-start">
       <div className="max-w-full rounded-xl border border-forge-line bg-white px-3.5 py-3 text-[13px] leading-5 text-forge-ink">
-        <div className="whitespace-pre-wrap">{visibleText}</div>
+        <Streamdown mode="streaming" plugins={{ code }} isAnimating={props.smooth}>
+          {visibleText}
+        </Streamdown>
       </div>
     </article>
   );
