@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AutomationProposalView,
+  ContextCompactedEvent,
   MessageDeliveryMode,
   SessionTask,
   TurnId,
@@ -32,6 +33,7 @@ export type TimelineItem =
       delivery?: MessageDeliveryMode;
     }
   | { type: "reasoning"; id: string; content: string }
+  | { type: "summary"; id: string; content: string }
   | {
       type: "tool-step";
       id: string;
@@ -98,6 +100,17 @@ export function buildTimeline(input: {
     }
   }
 
+  for (const event of input.activities) {
+    if (event.type !== "context.compacted" || event.trigger !== "manual") {
+      continue;
+    }
+    items.push({
+      type: "notice",
+      id: `compacted-manual-${event.turnId}`,
+      message: formatCompactionNotice(event),
+    });
+  }
+
   for (const proposal of input.automationProposals ?? []) {
     items.push({
       type: "automation-proposal",
@@ -109,6 +122,15 @@ export function buildTimeline(input: {
   }
 
   return items;
+}
+
+function formatCompactionNotice(event: ContextCompactedEvent): string {
+  if (event.budgetTokens <= 0) {
+    return "已压缩上下文";
+  }
+  const before = Math.round((event.beforeTokens / event.budgetTokens) * 100);
+  const after = Math.round((event.afterTokens / event.budgetTokens) * 100);
+  return `已压缩上下文（约 ${before}% → ${after}%）`;
 }
 
 function createTaskListItem(sessionId: string, tasks: SessionTask[]): TimelineItem {
@@ -170,6 +192,15 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
         name: message.name,
         status: message.ok ? "completed" : "failed",
         output: message.content,
+      });
+      continue;
+    }
+
+    if (message.kind === "summary") {
+      items.push({
+        type: "summary",
+        id: message.id,
+        content: message.content,
       });
       continue;
     }
@@ -292,6 +323,15 @@ function appendActiveTurnItems(
         type: "notice",
         id: `fallback-${activeTurnId}-${items.length}`,
         message: "Switched to smooth playback",
+      });
+      continue;
+    }
+
+    if (event.type === "context.compacted") {
+      items.push({
+        type: "notice",
+        id: `compacted-${activeTurnId}-${items.length}`,
+        message: formatCompactionNotice(event),
       });
       continue;
     }

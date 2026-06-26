@@ -52,6 +52,7 @@ export type RuntimePersistedMessage =
       reasoningContent?: string | undefined;
       toolCalls?: ToolCall[] | undefined;
       error?: boolean | undefined;
+      kind?: "summary" | undefined;
       createdAt: string;
     }
   | {

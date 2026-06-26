@@ -35,6 +35,7 @@ export type AssistantChatMessage = {
   content: string;
   reasoningContent?: string;
   toolCalls?: ToolCall[];
+  kind?: "summary";
 };
 
 export type ToolChatMessage = {

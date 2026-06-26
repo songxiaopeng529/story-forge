@@ -3,6 +3,7 @@ import type { AgentEvent, SessionId, TurnId } from "@story-forge/shared";
 import { ToolRegistry } from "@story-forge/tools";
 import { describe, expect, it } from "vitest";
 import { AgentLoop, trimMessagesToContext } from "./agent-loop";
+import { ContextCompactor } from "./context-compactor";
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
@@ -114,6 +115,129 @@ describe("AgentLoop", () => {
       budgetTokens: 800,
       windowTokens: 1000,
     });
+  });
+
+  it("auto-compacts once when provider usage crosses the threshold", async () => {
+    const events: AgentEvent[] = [];
+    const checkpoints: ChatMessage[][] = [];
+    let summarizeCalls = 0;
+    const provider = compactionProvider({
+      onSummarize: () => {
+        summarizeCalls += 1;
+      },
+    });
+    const tools = new ToolRegistry([noopTool()]);
+
+    const result = await new AgentLoop({ provider, tools, compactor: new ContextCompactor() }).run({
+      sessionId,
+      turnId,
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "second" },
+      ],
+      contextCompaction: {
+        enabled: true,
+        getOpenTasks: async () => [],
+      },
+      onEvent: (event) => {
+        events.push(event);
+      },
+      onCheckpoint: (messages) => {
+        checkpoints.push(messages);
+      },
+    });
+
+    const compactedEvents = events.filter((event) => event.type === "context.compacted");
+    expect(compactedEvents).toHaveLength(1);
+    expect(compactedEvents[0]).toMatchObject({ trigger: "auto", retainedRounds: 1 });
+    expect(summarizeCalls).toBe(1);
+    expect(result.stopReason).toBe("completed");
+    const persisted = checkpoints.at(-1) ?? result.messages;
+    expect(persisted.some(
+      (message) => message.role === "assistant" && message.kind === "summary",
+    )).toBe(true);
+  });
+
+  it("does not auto-compact without a compactor configured", async () => {
+    const events: AgentEvent[] = [];
+    const provider = compactionProvider();
+
+    await new AgentLoop({ provider, tools: new ToolRegistry([noopTool()]) }).run({
+      sessionId,
+      turnId,
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "second" },
+      ],
+      contextCompaction: {
+        enabled: true,
+        getOpenTasks: async () => [],
+      },
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events.some((event) => event.type === "context.compacted")).toBe(false);
+  });
+
+  it("does not auto-compact when usage is only estimated", async () => {
+    const events: AgentEvent[] = [];
+    const provider = fakeProvider(async () => ({ content: "Done", toolCalls: [] }));
+
+    await new AgentLoop({ provider, tools: new ToolRegistry(), compactor: new ContextCompactor() }).run({
+      sessionId,
+      turnId,
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "second" },
+      ],
+      contextCompaction: {
+        enabled: true,
+        getOpenTasks: async () => [],
+      },
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events.some((event) => event.type === "context.compacted")).toBe(false);
+  });
+
+  it("continues the turn when summarization fails", async () => {
+    const events: AgentEvent[] = [];
+    const provider = compactionProvider({
+      onSummarize: () => {
+        throw new Error("summarize failed");
+      },
+    });
+
+    const result = await new AgentLoop({
+      provider,
+      tools: new ToolRegistry([noopTool()]),
+      compactor: new ContextCompactor(),
+    }).run({
+      sessionId,
+      turnId,
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "first answer" },
+        { role: "user", content: "second" },
+      ],
+      contextCompaction: {
+        enabled: true,
+        getOpenTasks: async () => [],
+      },
+      onEvent: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events.some((event) => event.type === "context.compacted")).toBe(false);
+    expect(result.stopReason).toBe("completed");
   });
 
   it("uses chat in smooth mode and ignores streamChat when available", async () => {
@@ -674,6 +798,45 @@ function fakeProvider(
       contextWindowTokens: 1000,
     },
     chat: ({ messages }) => response(messages),
+  };
+}
+
+function compactionProvider(options: { onSummarize?: () => void } = {}): ModelProvider {
+  let realCalls = 0;
+  return {
+    id: "compaction-fake",
+    capabilities: {
+      toolCalling: true,
+      streaming: false,
+      jsonSchema: false,
+      contextWindowTokens: 1000,
+    },
+    chat: async ({ messages }) => {
+      const last = messages.at(-1);
+      const lastText = typeof last?.content === "string" ? last.content : "";
+      if (lastText.includes("上下文压缩")) {
+        options.onSummarize?.();
+        return { content: "结构化摘要", toolCalls: [] };
+      }
+      realCalls += 1;
+      if (realCalls === 1) {
+        return {
+          content: "",
+          toolCalls: [{ id: `call_${realCalls}`, name: "test.noop", input: {} }],
+          usage: { promptTokens: 760 },
+        };
+      }
+      return { content: "Done", toolCalls: [] };
+    },
+  };
+}
+
+function noopTool() {
+  return {
+    name: "test.noop",
+    description: "No-op tool",
+    parameters: { type: "object" },
+    execute: async () => ({ ok: true }),
   };
 }
 

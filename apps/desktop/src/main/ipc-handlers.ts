@@ -257,6 +257,9 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.turnsStop, turnIdSchema, (turnId) =>
     options.coordinator.stop(turnId)
   );
+  handle(options.ipc, IPC_CHANNELS.turnsCompact, sessionIdSchema, (sessionId) =>
+    options.coordinator.compactSession(sessionId)
+  );
   handle(
     options.ipc,
     IPC_CHANNELS.permissionRespond,

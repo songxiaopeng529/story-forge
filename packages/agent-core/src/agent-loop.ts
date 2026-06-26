@@ -13,15 +13,19 @@ import type {
   MessageDeliveryMode,
   ResponseMode,
   SessionId,
+  SessionTask,
   TurnId,
 } from "@story-forge/shared";
 import type { ToolRegistry } from "@story-forge/tools";
+import type { ContextCompactor } from "./context-compactor";
 
 const DEFAULT_MAX_STEPS = 1000;
 const DEFAULT_MAX_DURATION_MS = 2 * 60 * 60 * 1000;
 const MAX_REPEATED_TOOL_CALLS = 3;
 const MAX_CONSECUTIVE_TOOL_FAILURES = 5;
 const CONTEXT_BUDGET_RATIO = 0.8;
+const DEFAULT_COMPACTION_THRESHOLD_RATIO = 0.9;
+const DEFAULT_COMPACTION_RETAIN_ROUNDS = 1;
 
 export type AgentLoopOptions = {
   provider: ModelProvider;
@@ -29,6 +33,14 @@ export type AgentLoopOptions = {
   maxSteps?: number;
   maxDurationMs?: number;
   now?: () => number;
+  compactor?: ContextCompactor;
+};
+
+export type AgentLoopContextCompaction = {
+  enabled: boolean;
+  thresholdRatio?: number;
+  retainRounds?: number;
+  getOpenTasks: () => Promise<SessionTask[]>;
 };
 
 export type AgentLoopRunInput = {
@@ -42,6 +54,7 @@ export type AgentLoopRunInput = {
   };
   messages: ChatMessage[];
   signal?: AbortSignal;
+  contextCompaction?: AgentLoopContextCompaction;
   onEvent?: (event: AgentEvent) => void | Promise<void>;
   onCheckpoint?: (messages: ChatMessage[]) => void | Promise<void>;
   onBeforeFinish?: (messages: ChatMessage[]) => Promise<FinishGuardDecision> | FinishGuardDecision;
@@ -87,6 +100,7 @@ export class AgentLoop {
   private readonly maxSteps: number;
   private readonly maxDurationMs: number;
   private readonly now: () => number;
+  private readonly compactor: ContextCompactor | undefined;
   private nextModelRequestIndex = 1;
 
   constructor(options: AgentLoopOptions) {
@@ -95,6 +109,7 @@ export class AgentLoop {
     this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
     this.maxDurationMs = options.maxDurationMs ?? DEFAULT_MAX_DURATION_MS;
     this.now = options.now ?? Date.now;
+    this.compactor = options.compactor;
   }
 
   async run(input: AgentLoopRunInput): Promise<AgentLoopResult> {
@@ -105,6 +120,8 @@ export class AgentLoop {
     let previousToolSignature: string | undefined;
     let repeatedToolCalls = 0;
     let consecutiveToolFailures = 0;
+    let lastProviderUsedTokens: number | undefined;
+    let compactedThisTurn = false;
 
     await emit(input, {
       type: "runtime.started",
@@ -143,6 +160,24 @@ export class AgentLoop {
         const responseMode = input.responseMode ?? "auto";
         const windowTokens = this.provider.capabilities.contextWindowTokens;
         const budgetTokens = Math.floor(windowTokens * CONTEXT_BUDGET_RATIO);
+
+        if (
+          !compactedThisTurn
+          && this.shouldAutoCompact(input.contextCompaction, lastProviderUsedTokens, budgetTokens)
+        ) {
+          compactedThisTurn = true;
+          const compacted = await this.tryCompact({
+            input,
+            messages,
+            budgetTokens,
+            signal: abort.signal,
+          });
+          if (compacted) {
+            lastProviderUsedTokens = undefined;
+            await checkpoint(input, messages);
+          }
+        }
+
         const trimmedMessages = trimMessagesToContext(messages, budgetTokens);
         const request: ModelRequest = {
           messages: trimmedMessages,
@@ -167,6 +202,7 @@ export class AgentLoop {
           onEvent: input.onEvent,
         });
         if (response.usage) {
+          lastProviderUsedTokens = response.usage.promptTokens;
           await emit(input, {
             type: "context.usage",
             sessionId: input.sessionId,
@@ -417,6 +453,67 @@ export class AgentLoop {
       delivery: "live",
     });
   }
+
+  private shouldAutoCompact(
+    compaction: AgentLoopContextCompaction | undefined,
+    lastProviderUsedTokens: number | undefined,
+    budgetTokens: number,
+  ): boolean {
+    if (!compaction?.enabled || !this.compactor) {
+      return false;
+    }
+    if (lastProviderUsedTokens === undefined || budgetTokens <= 0) {
+      return false;
+    }
+    const thresholdRatio = compaction.thresholdRatio ?? DEFAULT_COMPACTION_THRESHOLD_RATIO;
+    return lastProviderUsedTokens / budgetTokens >= thresholdRatio;
+  }
+
+  private async tryCompact(input: {
+    input: AgentLoopRunInput;
+    messages: ChatMessage[];
+    budgetTokens: number;
+    signal: AbortSignal;
+  }): Promise<boolean> {
+    const compaction = input.input.contextCompaction;
+    if (!compaction || !this.compactor) {
+      return false;
+    }
+    try {
+      const beforeTokens = estimateMessagesTokens(input.messages);
+      const openTasks = await compaction.getOpenTasks();
+      const result = await this.compactor.compact({
+        messages: input.messages,
+        openTasks,
+        retainRounds: compaction.retainRounds ?? DEFAULT_COMPACTION_RETAIN_ROUNDS,
+        summarize: ({ messages }) =>
+          this.provider
+            .chat({ messages }, { signal: input.signal })
+            .then((response) => response.content),
+      });
+      if (!result.compacted) {
+        return false;
+      }
+      const afterTokens = estimateMessagesTokens(result.messages);
+      if (afterTokens >= beforeTokens) {
+        return false;
+      }
+      input.messages.splice(0, input.messages.length, ...result.messages);
+      await emit(input.input, {
+        type: "context.compacted",
+        sessionId: input.input.sessionId,
+        turnId: input.input.turnId,
+        trigger: "auto",
+        beforeTokens,
+        afterTokens,
+        budgetTokens: input.budgetTokens,
+        retainedRounds: result.retainedRounds,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export function trimMessagesToContext(
@@ -462,8 +559,12 @@ function groupConversationRounds(messages: ChatMessage[]): ChatMessage[][] {
   return rounds;
 }
 
-function estimateMessageTokens(message: ChatMessage): number {
+export function estimateMessageTokens(message: ChatMessage): number {
   return Math.ceil(JSON.stringify(message).length / 4);
+}
+
+export function estimateMessagesTokens(messages: ChatMessage[]): number {
+  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
 
 function estimateRequestTokens(request: ModelRequest): number {

@@ -1,10 +1,14 @@
 import {
   type AgentRuntime,
   type AgentRuntimeTurnInput,
+  ContextCompactor,
+  estimateMessagesTokens,
   NativeAgentRuntime,
   RuntimeContextAssembler,
   type RuntimeContext,
   type RuntimeToolFactoryHelpers,
+  toChatMessage,
+  toRuntimePersistedMessages,
 } from "@story-forge/agent-core";
 import type {
   ModelProvider,
@@ -91,6 +95,8 @@ export class AgentCoordinator {
   private readonly commandHome: string | undefined;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly runtime: AgentRuntime;
+  private readonly providerStore: ProviderConfigStore | undefined;
+  private readonly providerFactory: ProviderFactory | undefined;
   private readonly maxSteps: number | undefined;
   private readonly maxDurationMs: number | undefined;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
@@ -108,6 +114,8 @@ export class AgentCoordinator {
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
     this.commandHome = options.commandHome;
     this.emitEvent = options.emit;
+    this.providerStore = options.providerStore;
+    this.providerFactory = options.providerFactory;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
     this.runtime = options.runtime ?? this.createNativeRuntime(options);
@@ -186,6 +194,77 @@ export class AgentCoordinator {
 
   async stop(turnId: TurnId): Promise<void> {
     this.activeTurns.get(turnId)?.controller.abort();
+  }
+
+  async compactSession(sessionId: SessionId): Promise<void> {
+    if (this.reservedSessions.has(sessionId)) {
+      throw new Error(`Session already has an active turn: ${sessionId}`);
+    }
+    const providerStore = required(this.providerStore, "providerStore");
+    const providerFactory = required(this.providerFactory, "providerFactory");
+
+    this.reservedSessions.add(sessionId);
+    try {
+      const session = await this.loadSessionForCompaction(sessionId);
+      if (!session) {
+        return;
+      }
+      const resolvedProvider = await providerStore.resolve(session.providerId);
+      const provider = providerFactory.createProvider(
+        {
+          providerId: session.providerId,
+          baseUrl: resolvedProvider.baseUrl,
+          model: session.model,
+        },
+        resolvedProvider.apiKey,
+      );
+      const openTasks = (await this.sessionRepository.listTasks(sessionId)).filter(
+        (task) => task.status === "pending" || task.status === "in_progress",
+      );
+      const chatMessages = session.messages.map(toChatMessage);
+      const budgetTokens = Math.floor(provider.capabilities.contextWindowTokens * 0.8);
+      const beforeTokens = estimateMessagesTokens(chatMessages);
+
+      const result = await new ContextCompactor().compact({
+        messages: chatMessages,
+        openTasks,
+        retainRounds: 1,
+        summarize: ({ messages }) =>
+          provider.chat({ messages }).then((response) => response.content),
+      });
+      if (!result.compacted) {
+        return;
+      }
+
+      const persisted = toRuntimePersistedMessages(result.messages, session.messages, new Map());
+      await this.sessionRepository.replaceMessages(sessionId, persisted);
+
+      this.emitEvent({
+        type: "context.compacted",
+        sessionId,
+        turnId: createTurnId(),
+        trigger: "manual",
+        beforeTokens,
+        afterTokens: estimateMessagesTokens(result.messages),
+        budgetTokens,
+        retainedRounds: result.retainedRounds,
+      });
+    } finally {
+      this.reservedSessions.delete(sessionId);
+    }
+  }
+
+  private async loadSessionForCompaction(
+    sessionId: SessionId,
+  ): Promise<SessionRecord | undefined> {
+    try {
+      return await this.sessionRepository.get(sessionId);
+    } catch (error) {
+      if (isSessionNotFoundError(error)) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   async waitForTurn(turnId: TurnId): Promise<void> {
@@ -578,4 +657,17 @@ function required<T>(value: T | undefined, name: string): T {
     throw new Error(`AgentCoordinator requires ${name} when no runtime is injected`);
   }
   return value;
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if (error.message.startsWith("Session not found:")) {
+    return true;
+  }
+  const cause = error.cause;
+  return cause instanceof Error
+    && "code" in cause
+    && (cause as NodeJS.ErrnoException).code === "ENOENT";
 }

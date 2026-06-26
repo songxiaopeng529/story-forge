@@ -45,6 +45,8 @@ const api = {
     start: (input) => ipcRenderer.invoke(IPC_CHANNELS.turnsStart, input),
     stop: (turnId: TurnId) =>
       ipcRenderer.invoke(IPC_CHANNELS.turnsStop, turnId),
+    compact: (sessionId: SessionId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.turnsCompact, sessionId),
     onEvent: (listener: (event: AgentEvent) => void) => {
       const wrapped = (_event: Electron.IpcRendererEvent, event: AgentEvent) => {
         listener(event);

@@ -10,6 +10,7 @@ import type {
   RuntimeToolFactory,
 } from "./agent-runtime";
 import { AgentLoop } from "./agent-loop";
+import { ContextCompactor } from "./context-compactor";
 import { RuntimeContextAssembler, toRuntimePersistedMessages } from "./runtime-context";
 
 const MAX_UNFINISHED_TASK_GUARD_REMINDERS = 2;
@@ -96,6 +97,7 @@ export class NativeAgentRuntime implements AgentRuntime {
       const loop = new AgentLoop({
         provider,
         tools,
+        compactor: new ContextCompactor(),
         ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
         ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
       });
@@ -108,6 +110,15 @@ export class NativeAgentRuntime implements AgentRuntime {
           enabled: context.settings.developerMode,
           providerId: context.session.providerId,
           model: context.session.model,
+        },
+        contextCompaction: {
+          enabled: true,
+          getOpenTasks: async () => {
+            const tasks = await this.listTasks(input.sessionId, context);
+            return tasks.filter(
+              (task) => task.status === "pending" || task.status === "in_progress",
+            );
+          },
         },
         ...(input.signal ? { signal: input.signal } : {}),
         messages: context.messages,

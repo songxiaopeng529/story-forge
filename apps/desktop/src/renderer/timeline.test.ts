@@ -267,6 +267,54 @@ describe("buildTimeline", () => {
     }));
   });
 
+  it("renders a persisted summary message as a summary item", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        status: "completed",
+        messages: [
+          {
+            id: "summary-1",
+            role: "assistant",
+            content: "结构化摘要内容",
+            kind: "summary",
+            createdAt: "2026-06-19T00:00:01.000Z",
+          },
+          userMessage,
+        ],
+      },
+      activities: [],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "summary",
+      content: "结构化摘要内容",
+    }));
+  });
+
+  it("renders a manual context.compacted event as a notice", () => {
+    const items = buildTimeline({
+      session: { ...baseSession, status: "completed" },
+      activities: [{
+        type: "context.compacted",
+        sessionId: "sf_session_test",
+        turnId: "sf_turn_manual",
+        trigger: "manual",
+        beforeTokens: 9000,
+        afterTokens: 3000,
+        budgetTokens: 10000,
+        retainedRounds: 1,
+      }],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "notice",
+      message: "已压缩上下文（约 90% → 30%）",
+    }));
+  });
+
   it("uses live task events over persisted tasks for the active turn", () => {
     const items = buildTimeline({
       session: {

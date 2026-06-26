@@ -2,7 +2,7 @@
 
 import type { AgentRuntime } from "@story-forge/agent-core";
 import type { ModelProvider } from "@story-forge/model-gateway";
-import type { AgentEvent } from "@story-forge/shared";
+import type { AgentEvent, SessionId } from "@story-forge/shared";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1025,6 +1025,127 @@ describe("AgentCoordinator", () => {
     })).rejects.toThrow("Session already has an active turn");
     await coordinator.stop(first.turnId);
     await coordinator.waitForTurn(first.turnId);
+  });
+
+  it("compacts a session's history and emits a manual context.compacted event", async () => {
+    const fixture = await createFixture();
+    for (let index = 1; index <= 3; index += 1) {
+      await fixture.sessionRepository.appendMessage(fixture.session.id, {
+        id: `user-${index}`,
+        role: "user",
+        content: `request ${index}`,
+        createdAt: "2026-06-24T00:00:00.000Z",
+      });
+      await fixture.sessionRepository.appendMessage(fixture.session.id, {
+        id: `assistant-${index}`,
+        role: "assistant",
+        content: `answer ${index}`,
+        createdAt: "2026-06-24T00:00:01.000Z",
+      });
+    }
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({
+          content: "结构化摘要",
+          toolCalls: [],
+        })),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    await coordinator.compactSession(fixture.session.id);
+
+    const session = await fixture.sessionRepository.get(fixture.session.id);
+    expect(session.messages).toEqual([
+      expect.objectContaining({ role: "assistant", content: "结构化摘要", kind: "summary" }),
+      expect.objectContaining({ role: "user", content: "request 3", id: "user-3" }),
+      expect.objectContaining({ role: "assistant", content: "answer 3", id: "assistant-3" }),
+    ]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "context.compacted",
+      trigger: "manual",
+      retainedRounds: 1,
+    }));
+  });
+
+  it("rejects compaction while a turn is active", async () => {
+    const fixture = await createFixture();
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider((_messages, signal) =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          })
+        ),
+      },
+      emit: () => undefined,
+    });
+
+    const first = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "First",
+    });
+    await expect(coordinator.compactSession(fixture.session.id)).rejects.toThrow(
+      "Session already has an active turn",
+    );
+    await coordinator.stop(first.turnId);
+    await coordinator.waitForTurn(first.turnId);
+  });
+
+  it("does not emit an event when history is too short to compact", async () => {
+    const fixture = await createFixture();
+    await fixture.sessionRepository.appendMessage(fixture.session.id, {
+      id: "user-1",
+      role: "user",
+      content: "only request",
+      createdAt: "2026-06-24T00:00:00.000Z",
+    });
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unused", toolCalls: [] })),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    await coordinator.compactSession(fixture.session.id);
+
+    expect(events.some((event) => event.type === "context.compacted")).toBe(false);
+  });
+
+  it("ignores compaction for a session that is not persisted", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const coordinator = new AgentCoordinator({
+      providerStore: fixture.providerStore,
+      sessionRepository: fixture.sessionRepository,
+      workspaceRepository: fixture.workspaceRepository,
+      providerFactory: {
+        createProvider: () => fakeProvider(async () => ({ content: "unused", toolCalls: [] })),
+      },
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    await expect(
+      coordinator.compactSession("sf_session_missing" as SessionId),
+    ).resolves.toBeUndefined();
+    expect(events.some((event) => event.type === "context.compacted")).toBe(false);
   });
 });
 

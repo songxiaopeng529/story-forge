@@ -1,7 +1,12 @@
 import type { Config } from "tailwindcss";
 
 export default {
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./index.html",
+    "./src/**/*.{ts,tsx}",
+    "./node_modules/streamdown/dist/*.js",
+    "./node_modules/@streamdown/code/dist/*.js",
+  ],
   theme: {
     extend: {
       colors: {
