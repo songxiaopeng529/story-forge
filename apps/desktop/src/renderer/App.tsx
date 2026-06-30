@@ -11,7 +11,7 @@ import type {
   TurnMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type {
   ImageAttachmentView,
   PersistedMessageView,
@@ -38,6 +38,8 @@ type TurnRuntimeState = {
   endedAt?: string;
   steps: number;
 };
+
+type PageRenderer = () => ReactNode;
 
 export function App() {
   const [page, setPage] = useState<Page>("agent");
@@ -708,6 +710,153 @@ export function App() {
     }
   }
 
+  const pageRenderers = {
+    agent: () => (
+      <div
+        className="grid min-h-0 min-w-0 overflow-hidden"
+        data-testid="agent-layout"
+        style={{ gridTemplateColumns: agentColumns.replace(/_/g, " ") }}
+      >
+        {effectiveSidebarCollapsed ? null : (
+          <SessionSidebar
+            workspaces={workspaces}
+            sessions={sessions}
+            selectedWorkspaceId={selectedWorkspaceId}
+            selectedSessionId={selectedSessionId}
+            activeTurns={activeTurns}
+            commandExecutionMode={commandExecutionMode}
+            onCollapse={() => setSidebarCollapsed(true)}
+            onOpenWorkspace={() => void openWorkspace()}
+            onCreateSession={(workspaceId) => void createSession(workspaceId)}
+            onRemoveWorkspace={(workspaceId) => void removeWorkspace(workspaceId)}
+            onRemoveSession={(sessionId) => void removeSession(sessionId)}
+            onSelectWorkspace={(workspaceId) => {
+              setSelectedWorkspaceId(workspaceId);
+              setSelectedSessionId(
+                sessions.find((session) => session.workspaceId === workspaceId)?.id,
+              );
+            }}
+            onSelectSession={(sessionId, workspaceId) => {
+              setSelectedWorkspaceId(workspaceId);
+              setSelectedSessionId(sessionId);
+            }}
+          />
+        )}
+        <AgentWorkspace
+          loading={loading}
+          workspace={selectedWorkspace}
+          session={selectedSession}
+          activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+          automationProposals={
+            selectedSessionId ? automationProposals[selectedSessionId] ?? [] : []
+          }
+          modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
+          developerMode={developerMode}
+          commandExecutionMode={commandExecutionMode}
+          compacting={Boolean(selectedSessionId) && compactingSessionId === selectedSessionId}
+          modelInspectorOpen={modelInspectorOpen}
+          sessionTimerCount={selectedSessionTimerCount}
+          activeTurnId={activeTurnId}
+          navCollapsed={effectiveNavCollapsed}
+          sidebarCollapsed={effectiveSidebarCollapsed}
+          contextCollapsed={Boolean(selectedSession) && effectiveContextCollapsed}
+          onExpandNav={() => setNavCollapsed(false)}
+          onExpandSidebar={() => setSidebarCollapsed(false)}
+          onExpandContext={() => setContextCollapsed(false)}
+          prompt={prompt}
+          composerMode={composerMode}
+          imageAttachments={imageAttachments}
+          imageInputEnabled={Boolean(selectedSessionProvider?.supportsImageInput)}
+          error={error}
+          onPromptChange={setPrompt}
+          onComposerModeChange={setComposerMode}
+          onImageAttachmentsChange={setImageAttachments}
+          onPromptKeyDown={handlePromptKeyDown}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
+          onSend={() => void sendPrompt()}
+          onStop={() => void stopTurn()}
+          onRename={(title) => void renameSession(title)}
+          onDelete={() => void deleteSession()}
+          onOpenWorkspace={() => void openWorkspace()}
+          onOpenModels={() => setPage("models")}
+          onOpenExtensions={() => setPage("extensions")}
+          onOpenSettings={() => setPage("settings")}
+          onCompact={() => void compactSelectedSession()}
+          onModelInspectorOpen={() => setModelInspectorOpen(true)}
+          onModelInspectorClose={() => setModelInspectorOpen(false)}
+          onSessionTimerCreated={handleSessionTimerCreated}
+          onError={setError}
+          onCreateAutomationProposal={(proposalId) =>
+            void createAutomationFromProposal(proposalId)}
+          onCancelAutomationProposal={cancelAutomationProposal}
+        />
+        {selectedSession && !effectiveContextCollapsed ? (
+          <RunContextPanel
+            session={selectedSession}
+            provider={selectedSessionProvider}
+            responseMode={responseMode}
+            commandExecutionMode={commandExecutionMode}
+            runtime={selectedSessionId ? turnRuntimes[selectedSessionId] : undefined}
+            activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
+            developerMode={developerMode}
+            onCollapse={() => setContextCollapsed(true)}
+            onOpenInspector={() => setModelInspectorOpen(true)}
+          />
+        ) : null}
+      </div>
+    ),
+    models: () => (
+      <ModelsPage
+        providers={providers}
+        selectedProvider={selectedProvider}
+        onProvidersChange={setProviders}
+        onSelect={setSelectedProviderId}
+        onError={setError}
+        error={error}
+      />
+    ),
+    automations: () => (
+      <AutomationsPage
+        providers={providers}
+        sessions={sessions}
+        workspaces={workspaces}
+        error={error}
+        onError={setError}
+      />
+    ),
+    extensions: () => (
+      <McpSkillsPage
+        error={error}
+        onError={setError}
+      />
+    ),
+    settings: () => (
+      <SettingsPage
+        responseMode={responseMode}
+        developerMode={developerMode}
+        commandExecutionMode={commandExecutionMode}
+        webAccessEnabled={webAccessEnabled}
+        webSearchCoverage={webSearchCoverage}
+        saving={settingsSaving}
+        error={error}
+        onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
+        onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
+        onCommandExecutionModeChange={(nextCommandExecutionMode) =>
+          void saveCommandExecutionMode(nextCommandExecutionMode)}
+        onWebAccessEnabledChange={(nextWebAccessEnabled) =>
+          void saveWebAccessEnabled(nextWebAccessEnabled)}
+        onWebSearchCoverageChange={(nextWebSearchCoverage) =>
+          void saveWebSearchCoverage(nextWebSearchCoverage)}
+      />
+    ),
+  } satisfies Record<Page, PageRenderer>;
+  const renderCurrentPage = pageRenderers[page];
+
   return (
     <main
       className={`grid h-screen overflow-hidden bg-forge-canvas text-forge-ink ${
@@ -722,145 +871,7 @@ export function App() {
           onCollapse={() => setNavCollapsed(true)}
         />
       )}
-      {page === "settings" ? (
-        <SettingsPage
-          responseMode={responseMode}
-          developerMode={developerMode}
-          commandExecutionMode={commandExecutionMode}
-          webAccessEnabled={webAccessEnabled}
-          webSearchCoverage={webSearchCoverage}
-          saving={settingsSaving}
-          error={error}
-          onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
-          onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
-          onCommandExecutionModeChange={(nextCommandExecutionMode) =>
-            void saveCommandExecutionMode(nextCommandExecutionMode)}
-          onWebAccessEnabledChange={(nextWebAccessEnabled) =>
-            void saveWebAccessEnabled(nextWebAccessEnabled)}
-          onWebSearchCoverageChange={(nextWebSearchCoverage) =>
-            void saveWebSearchCoverage(nextWebSearchCoverage)}
-        />
-      ) : page === "models" ? (
-        <ModelsPage
-          providers={providers}
-          selectedProvider={selectedProvider}
-          onProvidersChange={setProviders}
-          onSelect={setSelectedProviderId}
-          onError={setError}
-          error={error}
-        />
-      ) : page === "extensions" ? (
-        <McpSkillsPage
-          error={error}
-          onError={setError}
-        />
-      ) : page === "automations" ? (
-        <AutomationsPage
-          providers={providers}
-          sessions={sessions}
-          workspaces={workspaces}
-          error={error}
-          onError={setError}
-        />
-      ) : (
-        <div
-          className="grid min-h-0 min-w-0 overflow-hidden"
-          data-testid="agent-layout"
-          style={{ gridTemplateColumns: agentColumns.replace(/_/g, " ") }}
-        >
-          {effectiveSidebarCollapsed ? null : (
-            <SessionSidebar
-              workspaces={workspaces}
-              sessions={sessions}
-              selectedWorkspaceId={selectedWorkspaceId}
-              selectedSessionId={selectedSessionId}
-              activeTurns={activeTurns}
-              commandExecutionMode={commandExecutionMode}
-              onCollapse={() => setSidebarCollapsed(true)}
-              onOpenWorkspace={() => void openWorkspace()}
-              onCreateSession={(workspaceId) => void createSession(workspaceId)}
-              onRemoveWorkspace={(workspaceId) => void removeWorkspace(workspaceId)}
-              onRemoveSession={(sessionId) => void removeSession(sessionId)}
-              onSelectWorkspace={(workspaceId) => {
-                setSelectedWorkspaceId(workspaceId);
-                setSelectedSessionId(
-                  sessions.find((session) => session.workspaceId === workspaceId)?.id,
-                );
-              }}
-              onSelectSession={(sessionId, workspaceId) => {
-                setSelectedWorkspaceId(workspaceId);
-                setSelectedSessionId(sessionId);
-              }}
-            />
-          )}
-          <AgentWorkspace
-            loading={loading}
-            workspace={selectedWorkspace}
-            session={selectedSession}
-            activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
-            automationProposals={
-              selectedSessionId ? automationProposals[selectedSessionId] ?? [] : []
-            }
-            modelRequests={selectedSessionId ? modelRequests[selectedSessionId] ?? [] : []}
-            developerMode={developerMode}
-            commandExecutionMode={commandExecutionMode}
-            compacting={Boolean(selectedSessionId) && compactingSessionId === selectedSessionId}
-            modelInspectorOpen={modelInspectorOpen}
-            sessionTimerCount={selectedSessionTimerCount}
-            activeTurnId={activeTurnId}
-            navCollapsed={effectiveNavCollapsed}
-            sidebarCollapsed={effectiveSidebarCollapsed}
-            contextCollapsed={Boolean(selectedSession) && effectiveContextCollapsed}
-            onExpandNav={() => setNavCollapsed(false)}
-            onExpandSidebar={() => setSidebarCollapsed(false)}
-            onExpandContext={() => setContextCollapsed(false)}
-            prompt={prompt}
-            composerMode={composerMode}
-            imageAttachments={imageAttachments}
-            imageInputEnabled={Boolean(selectedSessionProvider?.supportsImageInput)}
-            error={error}
-            onPromptChange={setPrompt}
-            onComposerModeChange={setComposerMode}
-            onImageAttachmentsChange={setImageAttachments}
-            onPromptKeyDown={handlePromptKeyDown}
-            onCompositionStart={() => {
-              composingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              composingRef.current = false;
-            }}
-            onSend={() => void sendPrompt()}
-            onStop={() => void stopTurn()}
-            onRename={(title) => void renameSession(title)}
-            onDelete={() => void deleteSession()}
-            onOpenWorkspace={() => void openWorkspace()}
-            onOpenModels={() => setPage("models")}
-            onOpenExtensions={() => setPage("extensions")}
-            onOpenSettings={() => setPage("settings")}
-            onCompact={() => void compactSelectedSession()}
-            onModelInspectorOpen={() => setModelInspectorOpen(true)}
-            onModelInspectorClose={() => setModelInspectorOpen(false)}
-            onSessionTimerCreated={handleSessionTimerCreated}
-            onError={setError}
-            onCreateAutomationProposal={(proposalId) =>
-              void createAutomationFromProposal(proposalId)}
-            onCancelAutomationProposal={cancelAutomationProposal}
-          />
-          {selectedSession && !effectiveContextCollapsed ? (
-            <RunContextPanel
-              session={selectedSession}
-              provider={selectedSessionProvider}
-              responseMode={responseMode}
-              commandExecutionMode={commandExecutionMode}
-              runtime={selectedSessionId ? turnRuntimes[selectedSessionId] : undefined}
-              activities={selectedSessionId ? activities[selectedSessionId] ?? [] : []}
-              developerMode={developerMode}
-              onCollapse={() => setContextCollapsed(true)}
-              onOpenInspector={() => setModelInspectorOpen(true)}
-            />
-          ) : null}
-        </div>
-      )}
+      {renderCurrentPage()}
       {currentPermissionRequest ? (
         <PermissionRequestPrompt
           request={currentPermissionRequest}
