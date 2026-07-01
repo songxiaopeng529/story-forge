@@ -39,8 +39,6 @@ type TurnRuntimeState = {
   steps: number;
 };
 
-type PageRenderer = () => ReactNode;
-
 export function App() {
   const [page, setPage] = useState<Page>("agent");
   const [providers, setProviders] = useState<ProviderView[]>([]);
@@ -710,7 +708,46 @@ export function App() {
     }
   }
 
-  const pageRenderers = {
+  const pageRenderers: Record<Page, () => ReactNode> = {
+    settings: () => (
+      <SettingsPage
+        responseMode={responseMode}
+        developerMode={developerMode}
+        commandExecutionMode={commandExecutionMode}
+        webAccessEnabled={webAccessEnabled}
+        webSearchCoverage={webSearchCoverage}
+        saving={settingsSaving}
+        error={error}
+        onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
+        onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
+        onCommandExecutionModeChange={(nextCommandExecutionMode) =>
+          void saveCommandExecutionMode(nextCommandExecutionMode)}
+        onWebAccessEnabledChange={(nextWebAccessEnabled) =>
+          void saveWebAccessEnabled(nextWebAccessEnabled)}
+        onWebSearchCoverageChange={(nextWebSearchCoverage) =>
+          void saveWebSearchCoverage(nextWebSearchCoverage)}
+      />
+    ),
+    models: () => (
+      <ModelsPage
+        providers={providers}
+        selectedProvider={selectedProvider}
+        onProvidersChange={setProviders}
+        onSelect={setSelectedProviderId}
+        onError={setError}
+        error={error}
+      />
+    ),
+    extensions: () => <McpSkillsPage error={error} onError={setError} />,
+    automations: () => (
+      <AutomationsPage
+        providers={providers}
+        sessions={sessions}
+        workspaces={workspaces}
+        error={error}
+        onError={setError}
+      />
+    ),
     agent: () => (
       <div
         className="grid min-h-0 min-w-0 overflow-hidden"
@@ -810,52 +847,7 @@ export function App() {
         ) : null}
       </div>
     ),
-    models: () => (
-      <ModelsPage
-        providers={providers}
-        selectedProvider={selectedProvider}
-        onProvidersChange={setProviders}
-        onSelect={setSelectedProviderId}
-        onError={setError}
-        error={error}
-      />
-    ),
-    automations: () => (
-      <AutomationsPage
-        providers={providers}
-        sessions={sessions}
-        workspaces={workspaces}
-        error={error}
-        onError={setError}
-      />
-    ),
-    extensions: () => (
-      <McpSkillsPage
-        error={error}
-        onError={setError}
-      />
-    ),
-    settings: () => (
-      <SettingsPage
-        responseMode={responseMode}
-        developerMode={developerMode}
-        commandExecutionMode={commandExecutionMode}
-        webAccessEnabled={webAccessEnabled}
-        webSearchCoverage={webSearchCoverage}
-        saving={settingsSaving}
-        error={error}
-        onResponseModeChange={(nextResponseMode) => void saveResponseMode(nextResponseMode)}
-        onDeveloperModeChange={(nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode)}
-        onCommandExecutionModeChange={(nextCommandExecutionMode) =>
-          void saveCommandExecutionMode(nextCommandExecutionMode)}
-        onWebAccessEnabledChange={(nextWebAccessEnabled) =>
-          void saveWebAccessEnabled(nextWebAccessEnabled)}
-        onWebSearchCoverageChange={(nextWebSearchCoverage) =>
-          void saveWebSearchCoverage(nextWebSearchCoverage)}
-      />
-    ),
-  } satisfies Record<Page, PageRenderer>;
-  const renderCurrentPage = pageRenderers[page];
+  };
 
   return (
     <main
@@ -871,7 +863,7 @@ export function App() {
           onCollapse={() => setNavCollapsed(true)}
         />
       )}
-      {renderCurrentPage()}
+      {pageRenderers[page]()}
       {currentPermissionRequest ? (
         <PermissionRequestPrompt
           request={currentPermissionRequest}
