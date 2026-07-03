@@ -153,8 +153,8 @@ describe("App", () => {
     expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument();
   });
 
-  it("offers enabled skills in the slash command menu and inserts the selected invocation", async () => {
-    installApi({
+  it("offers enabled skills in the slash command menu and shows a command pill when selected", async () => {
+    const fixture = installApi({
       skills: [
         {
           id: "agent-browser",
@@ -188,7 +188,68 @@ describe("App", () => {
 
     fireEvent.click(command);
 
-    expect(input).toHaveValue("/agent-browser ");
+    const pill = await screen.findByTestId("active-slash-command");
+    expect(pill).toHaveTextContent("/agent-browser");
+    expect(input).toHaveValue("");
+
+    fireEvent.change(input, { target: { value: "open the docs page" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "/agent-browser open the docs page",
+    }));
+  });
+
+  it("keeps the arrow-key highlight after key release in the slash menu", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/" } });
+    await screen.findByRole("listbox", { name: "Slash commands" });
+    const options = screen.getAllByRole("option");
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyUp(input, { key: "ArrowDown" });
+
+    const optionsAfter = screen.getAllByRole("option");
+    expect(optionsAfter[0]).toHaveAttribute("aria-selected", "false");
+    expect(optionsAfter[1]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("sends a skill command pill without extra arguments", async () => {
+    const fixture = installApi({
+      skills: [
+        {
+          id: "agent-browser",
+          name: "Agent Browser",
+          description: "Inspect and operate browser pages",
+          invocationName: "/agent-browser",
+          enabled: true,
+          installedAt: "2026-06-19T00:00:00.000Z",
+          updatedAt: "2026-06-19T00:00:00.000Z",
+        },
+      ],
+    });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/agent" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/agent-browser/i }));
+    await screen.findByTestId("active-slash-command");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
+      sessionId: "sf_session_existing",
+      prompt: "/agent-browser",
+    }));
   });
 
   it("runs built-in slash commands from the prompt", async () => {
@@ -217,6 +278,8 @@ describe("App", () => {
 
     expect(input).toHaveValue("");
     expect(screen.getByText("Plan")).toBeInTheDocument();
+    const pill = await screen.findByTestId("active-slash-command");
+    expect(pill).toHaveTextContent("/plan");
 
     fireEvent.change(input, { target: { value: "Investigate the runtime" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -226,6 +289,26 @@ describe("App", () => {
       prompt: "Investigate the runtime",
       mode: "plan",
     }));
+  });
+
+  it("clears the plan command pill and resets the mode when removed", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.change(input, { target: { value: "/plan" } });
+    fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
+    await screen.findByTestId("active-slash-command");
+    expect(screen.getByText("Plan")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove /plan command" }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId("active-slash-command")).not.toBeInTheDocument()
+    );
+    expect(screen.getByText("Agent")).toBeInTheDocument();
   });
 
   it("shows a progress indicator while the /compact command runs", async () => {

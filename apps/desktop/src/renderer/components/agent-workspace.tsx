@@ -96,6 +96,8 @@ export function AgentWorkspace(props: {
   const [slashRange, setSlashRange] = useState<SlashRange>();
   const [slashSkills, setSlashSkills] = useState<SkillView[]>([]);
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
+  const [activeSlashCommand, setActiveSlashCommand] = useState<ActiveSlashCommand>();
+  const pendingSendRef = useRef(false);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -120,6 +122,7 @@ export function AgentWorkspace(props: {
     setTitle(props.session?.title ?? "");
     setTimerDialogOpen(false);
     setSlashRange(undefined);
+    setActiveSlashCommand(undefined);
   }, [props.session?.id, props.session?.title]);
   useEffect(() => {
     const element = messageScrollRef.current;
@@ -149,6 +152,15 @@ export function AgentWorkspace(props: {
     };
   }, [Boolean(slashRange), props.session?.id]);
 
+  useEffect(() => {
+    if (!pendingSendRef.current) {
+      return;
+    }
+    pendingSendRef.current = false;
+    props.onSend();
+    setActiveSlashCommand(undefined);
+  }, [props.prompt]);
+
   const slashCommands = useMemo(() => {
     const builtInCommands: SlashCommandItem[] = [
       {
@@ -158,6 +170,7 @@ export function AgentWorkspace(props: {
         description: "Plan the work first without editing files.",
         kind: "builtin",
         icon: <ListChecks size={15} />,
+        pill: true,
         action: () => {
           props.onPromptChange("");
           props.onComposerModeChange("plan");
@@ -320,11 +333,45 @@ export function AgentWorkspace(props: {
         }
       }
     }
+    if (activeSlashCommand) {
+      const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent;
+      if (event.key === "Backspace" && props.prompt === "") {
+        event.preventDefault();
+        clearActiveSlashCommand();
+        return;
+      }
+      if (
+        event.key === "Enter"
+        && !event.shiftKey
+        && !nativeEvent.isComposing
+        && nativeEvent.keyCode !== 229
+      ) {
+        event.preventDefault();
+        if (canSend && !props.activeTurnId) {
+          handleSend();
+        }
+        return;
+      }
+    }
     props.onPromptKeyDown(event);
   }
 
   function handlePromptSelection(event: { currentTarget: HTMLTextAreaElement }): void {
     updateSlashRange(props.prompt, event.currentTarget.selectionStart ?? props.prompt.length);
+  }
+
+  function handlePromptKeyUp(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (
+      slashMenuOpen
+      && (event.key === "ArrowDown"
+        || event.key === "ArrowUp"
+        || event.key === "Enter"
+        || event.key === "Tab"
+        || event.key === "Escape")
+    ) {
+      return;
+    }
+    handlePromptSelection(event);
   }
 
   function updateSlashRange(value: string, cursor: number): void {
@@ -338,21 +385,47 @@ export function AgentWorkspace(props: {
     }
     setSlashRange(undefined);
     if (command.kind === "builtin") {
+      if (command.pill) {
+        setActiveSlashCommand({
+          invocation: command.invocation,
+          title: command.title,
+          icon: command.icon,
+          kind: "mode",
+        });
+        command.action?.();
+        requestAnimationFrame(() => promptInputRef.current?.focus());
+        return;
+      }
       command.action?.();
       return;
     }
-    const range = slashRange ?? findSlashRange(props.prompt, promptInputRef.current?.selectionStart ?? props.prompt.length);
-    if (!range) {
+    setActiveSlashCommand({
+      invocation: command.invocation,
+      title: command.title,
+      icon: command.icon,
+      kind: "skill",
+    });
+    props.onPromptChange("");
+    requestAnimationFrame(() => promptInputRef.current?.focus());
+  }
+
+  function clearActiveSlashCommand(): void {
+    if (activeSlashCommand?.kind === "mode") {
+      props.onComposerModeChange("normal");
+    }
+    setActiveSlashCommand(undefined);
+    requestAnimationFrame(() => promptInputRef.current?.focus());
+  }
+
+  function handleSend(): void {
+    if (activeSlashCommand?.kind === "skill") {
+      const merged = `${activeSlashCommand.invocation} ${props.prompt}`.trimEnd();
+      pendingSendRef.current = true;
+      props.onPromptChange(merged);
       return;
     }
-    const insertion = `${command.invocation} `;
-    const nextPrompt = `${props.prompt.slice(0, range.start)}${insertion}${props.prompt.slice(range.end)}`;
-    const nextCursor = range.start + insertion.length;
-    props.onPromptChange(nextPrompt);
-    requestAnimationFrame(() => {
-      promptInputRef.current?.focus();
-      promptInputRef.current?.setSelectionRange(nextCursor, nextCursor);
-    });
+    props.onSend();
+    setActiveSlashCommand(undefined);
   }
 
   async function handleImageInputChange(event: ChangeEvent<HTMLInputElement>): Promise<void> {
@@ -384,6 +457,10 @@ export function AgentWorkspace(props: {
       : props.activeTurnId
         ? "Wait for the current turn to finish"
         : "Attach image";
+  const canSend = Boolean(props.session)
+    && (Boolean(props.prompt.trim())
+      || props.imageAttachments.length > 0
+      || activeSlashCommand?.kind === "skill");
 
   return (
     <section
@@ -599,6 +676,27 @@ export function AgentWorkspace(props: {
                       )}
                     </div>
                   ) : null}
+                {activeSlashCommand ? (
+                  <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-md border border-forge-line bg-forge-canvas px-2 py-1 text-[12px] font-medium text-forge-ink"
+                      data-testid="active-slash-command"
+                    >
+                      <span className="flex h-4 w-4 items-center justify-center text-forge-muted">
+                        {activeSlashCommand.icon}
+                      </span>
+                      <span className="font-mono font-semibold">{activeSlashCommand.invocation}</span>
+                      <button
+                        aria-label={`Remove ${activeSlashCommand.invocation} command`}
+                        className="ml-0.5 text-forge-muted hover:text-forge-ink"
+                        onClick={clearActiveSlashCommand}
+                        type="button"
+                      >
+                        <X size={12} />
+                      </button>
+                    </span>
+                  </div>
+                ) : null}
                 <textarea
                   aria-autocomplete="list"
                   aria-controls={slashMenuOpen ? "slash-command-menu" : undefined}
@@ -610,8 +708,10 @@ export function AgentWorkspace(props: {
                   onCompositionStart={props.onCompositionStart}
                   onClick={handlePromptSelection}
                   onKeyDown={handlePromptKeyDown}
-                  onKeyUp={handlePromptSelection}
-                  placeholder="Ask StoryForge to inspect, explain, or change code..."
+                  onKeyUp={handlePromptKeyUp}
+                  placeholder={activeSlashCommand
+                    ? `为 ${activeSlashCommand.invocation} 补充说明…`
+                    : "Ask StoryForge to inspect, explain, or change code..."}
                   ref={promptInputRef}
                   value={props.prompt}
                 />
@@ -689,8 +789,8 @@ export function AgentWorkspace(props: {
                   ) : (
                     <button
                       className="inline-flex items-center gap-2 rounded-lg bg-forge-ink px-3.5 py-2 text-sm font-medium text-white disabled:opacity-40"
-                      disabled={!props.session || (!props.prompt.trim() && props.imageAttachments.length === 0)}
-                      onClick={props.onSend}
+                      disabled={!canSend}
+                      onClick={handleSend}
                       type="button"
                     >
                       <Play size={15} />
@@ -740,6 +840,14 @@ type SlashCommandItem = {
   kind: "builtin" | "skill";
   icon: ReactNode;
   action?: () => void;
+  pill?: boolean;
+};
+
+type ActiveSlashCommand = {
+  invocation: `/${string}`;
+  title: string;
+  icon: ReactNode;
+  kind: "mode" | "skill";
 };
 
 function findSlashRange(value: string, cursor: number): SlashRange | undefined {
