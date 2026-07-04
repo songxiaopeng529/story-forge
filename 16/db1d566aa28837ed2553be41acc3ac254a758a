@@ -1,0 +1,49 @@
+apps/desktop/src/main/__test__/agent-coordinator.test.ts
+  s_8151528cdd6ca2::t_8caaf1beddc86c 5,70-160
+apps/desktop/src/main/__test__/app-settings-store.test.ts
+  s_8151528cdd6ca2::t_5367b49f355372 3,11,44-83
+apps/desktop/src/main/agent-coordinator.ts
+  s_8151528cdd6ca2::t_e5a69dba08db48 7,10,23,71,73,90-113,120,140,152,365-378,403-418,422-444
+apps/desktop/src/main/app-settings-store.ts
+  s_8151528cdd6ca2::t_370e76940e058b 2,13,19,28,62
+apps/desktop/src/main/ipc-handlers.ts
+  s_8151528cdd6ca2::t_ad8680018e90aa 48,76
+apps/desktop/src/main/main.ts
+  s_8151528cdd6ca2::t_6b08473c990991 82
+apps/desktop/src/renderer/__test__/App.test.tsx
+  s_8151528cdd6ca2::t_01e1b8f2399d4f 1036-1069,1291,1371
+apps/desktop/src/renderer/components/settings-page.tsx
+  s_8151528cdd6ca2::t_edc0c809f1ea87 2,7,71,79,97-98,101,108-109,112-115,118,120,122,127-128,132-139,144,152-197
+apps/desktop/src/shared/story-forge-api.ts
+  s_8151528cdd6ca2::t_f5e5036d23f391 5,141
+packages/agent-core/package.json
+  s_8151528cdd6ca2::t_43cdc1e9ece8c1 21-22
+packages/agent-core/src/__test__/pi-agent-runtime.test.ts
+  s_8151528cdd6ca2::t_b1058d03d9750e 1-287
+packages/agent-core/src/index.ts
+  s_8151528cdd6ca2::t_40f4661e6dcc05 6
+packages/agent-core/src/pi-agent-runtime.ts
+  s_8151528cdd6ca2::t_f4eca98d3a1f25 1-1381
+packages/shared/src/__test__/events.test.ts
+  s_8151528cdd6ca2::t_fc67c9be38afc9 12-18,216,227-233
+packages/shared/src/settings.ts
+  s_8151528cdd6ca2::t_50972dfac99a4e 9-31,34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.5",
+  "base_commit_sha": "16db1d566aa28837ed2553be41acc3ac254a758a",
+  "prompts": {},
+  "sessions": {
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
