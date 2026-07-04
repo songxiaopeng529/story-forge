@@ -79,6 +79,7 @@ async function initializeApplication(): Promise<void> {
     workspaceRepository,
     providerFactory: registry,
     skillResolver: skillService,
+    getRuntimeKind: async () => (await settingsStore.get()).runtimeKind,
     getResponseMode: async () => (await settingsStore.get()).responseMode,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,

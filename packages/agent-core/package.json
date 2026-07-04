@@ -18,6 +18,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.80.3",
+    "@earendil-works/pi-ai": "0.80.3",
     "@story-forge/model-gateway": "workspace:*",
     "@story-forge/shared": "workspace:*",
     "@story-forge/tools": "workspace:*"

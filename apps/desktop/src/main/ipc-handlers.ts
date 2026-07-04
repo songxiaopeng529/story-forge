@@ -45,6 +45,7 @@ export type IpcHandlerOptions = {
 };
 
 const responseModeSchema = z.enum(["auto", "live", "smooth"]);
+const runtimeKindSchema = z.enum(["native", "pi"]);
 const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
@@ -72,6 +73,7 @@ const imageAttachmentSchema = z.object({
   size: z.number().int().nonnegative(),
 });
 const settingsSaveSchema = z.object({
+  runtimeKind: runtimeKindSchema.optional(),
   responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
   commandExecutionMode: commandExecutionModeSchema.optional(),

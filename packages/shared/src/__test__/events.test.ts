@@ -9,7 +9,13 @@ import {
   type TurnId,
 } from "../events";
 import type { AutomationView, CreateAutomationInput } from "../extensions";
-import type { AppSettingsView, CommandExecutionMode, ResponseMode } from "../settings";
+import {
+  AGENT_RUNTIMES,
+  type AgentRuntimeKind,
+  type AppSettingsView,
+  type CommandExecutionMode,
+  type ResponseMode,
+} from "../settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
@@ -207,6 +213,7 @@ describe("settings types", () => {
   it("accepts the developer mode default shape", () => {
     const settings = {
       schemaVersion: 1,
+      runtimeKind: "native",
       responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "sentinel",
@@ -215,6 +222,13 @@ describe("settings types", () => {
     } satisfies AppSettingsView;
 
     expect(settings.developerMode).toBe(false);
+  });
+
+  it("lists selectable agent runtimes", () => {
+    const runtimeKinds: AgentRuntimeKind[] = AGENT_RUNTIMES.map((runtime) => runtime.kind);
+
+    expect(runtimeKinds).toEqual(["native", "pi"]);
+    expect(AGENT_RUNTIMES.find((runtime) => runtime.kind === "pi")?.experimental).toBe(true);
   });
 
   it("accepts the three command execution modes", () => {
