@@ -2,7 +2,7 @@
 
 import type { AgentRuntime } from "@story-forge/agent-core";
 import type { ModelProvider } from "@story-forge/model-gateway";
-import type { AgentEvent, SessionId } from "@story-forge/shared";
+import type { AgentEvent, AgentRuntimeKind, SessionId } from "@story-forge/shared";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +65,97 @@ describe("AgentCoordinator", () => {
         expect.objectContaining({ role: "user", content: "hello runtime" }),
       ],
     });
+  });
+
+  it("selects the runtime at turn start and keeps active turns on their selected runtime", async () => {
+    const fixture = await createFixture();
+    const events: AgentEvent[] = [];
+    const selectedRuntimes: AgentRuntimeKind[] = [];
+    let runtimeKind: AgentRuntimeKind = "native";
+    let releaseNativeTurn: (() => void) | undefined;
+    let resolveNativeEntered: (() => void) | undefined;
+    const nativeTurnEntered = new Promise<void>((resolve) => {
+      resolveNativeEntered = resolve;
+    });
+    const nativeRuntime: AgentRuntime = {
+      async *runTurn(input) {
+        selectedRuntimes.push("native");
+        yield {
+          type: "runtime.started",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          createdAt: "2026-06-21T00:00:00.000Z",
+        };
+        await new Promise<void>((release) => {
+          releaseNativeTurn = release;
+          resolveNativeEntered?.();
+        });
+        yield {
+          type: "message.delta",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          content: "Native turn",
+        };
+        yield {
+          type: "runtime.completed",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          stopReason: "completed",
+        };
+      },
+    };
+    const piRuntime: AgentRuntime = {
+      async *runTurn(input) {
+        selectedRuntimes.push("pi");
+        yield {
+          type: "runtime.started",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          createdAt: "2026-06-21T00:00:00.000Z",
+        };
+        yield {
+          type: "message.delta",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          content: "PI turn",
+        };
+        yield {
+          type: "runtime.completed",
+          sessionId: input.sessionId,
+          turnId: input.turnId,
+          stopReason: "completed",
+        };
+      },
+    };
+    const coordinator = new AgentCoordinator({
+      sessionRepository: fixture.sessionRepository,
+      runtimes: { native: nativeRuntime, pi: piRuntime },
+      getRuntimeKind: async () => runtimeKind,
+      emit: (event) => {
+        events.push(event);
+      },
+    });
+
+    const firstTurn = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "first turn",
+    });
+    await nativeTurnEntered;
+    runtimeKind = "pi";
+    releaseNativeTurn?.();
+    await coordinator.waitForTurn(firstTurn.turnId);
+
+    const { turnId } = await coordinator.start({
+      sessionId: fixture.session.id,
+      prompt: "second turn",
+    });
+    await coordinator.waitForTurn(turnId);
+
+    expect(selectedRuntimes).toEqual(["native", "pi"]);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "message.delta",
+      content: "Native turn",
+    }));
   });
 
   it("passes the current response mode into the agent loop", async () => {

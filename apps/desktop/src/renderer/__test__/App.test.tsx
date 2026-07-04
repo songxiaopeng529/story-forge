@@ -1033,6 +1033,40 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
   });
 
+  it("loads and saves the selected agent runtime from Settings", async () => {
+    const fixture = installApi({
+      settings: {
+        schemaVersion: 1,
+        runtimeKind: "native",
+        responseMode: "auto",
+        developerMode: false,
+        commandExecutionMode: "sentinel",
+      },
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const runtimeGroup = await screen.findByRole("radiogroup", {
+      name: "Agent runtime",
+    });
+    expect(within(runtimeGroup).getByRole("radio", { name: "StoryForge Native Runtime" }))
+      .toHaveAttribute("aria-checked", "true");
+    expect(within(runtimeGroup).getByRole("radio", { name: "PI Agent Runtime Experimental" }))
+      .toHaveAccessibleDescription(
+        "Uses the PI Agent loop while keeping StoryForge tools and safety controls.",
+      );
+
+    fireEvent.click(within(runtimeGroup).getByRole("radio", {
+      name: "PI Agent Runtime Experimental",
+    }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      runtimeKind: "pi",
+    }));
+    expect(within(runtimeGroup).getByRole("radio", { name: "PI Agent Runtime Experimental" }))
+      .toHaveAttribute("aria-checked", "true");
+  });
+
   it("loads and saves developer mode from Settings", async () => {
     const fixture = installApi({
       settings: {
@@ -1254,6 +1288,7 @@ describe("App", () => {
     await act(async () => {
       pendingSave.resolve({
         schemaVersion: 1,
+        runtimeKind: "native",
         responseMode: "live",
         developerMode: false,
         commandExecutionMode: "sentinel",
@@ -1333,6 +1368,7 @@ function installApi(options: {
   const getSession = vi.fn(async () => session);
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
+    runtimeKind: "native" as const,
     responseMode: "auto" as const,
     developerMode: false,
     commandExecutionMode: "sentinel" as const,

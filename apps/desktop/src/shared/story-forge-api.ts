@@ -2,6 +2,7 @@ import type { ProviderId, ToolCall } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AgentStopReason,
+  AgentRuntimeKind,
   AppSettingsView,
   AutomationRunView,
   AutomationView,
@@ -137,6 +138,7 @@ export type StoryForgeApi = {
   settings: {
     get(): Promise<AppSettingsView>;
     save(input: {
+      runtimeKind?: AgentRuntimeKind;
       responseMode?: ResponseMode;
       developerMode?: boolean;
       commandExecutionMode?: CommandExecutionMode;
