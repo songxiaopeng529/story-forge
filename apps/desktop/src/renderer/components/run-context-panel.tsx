@@ -1,9 +1,11 @@
-import type {
-  AgentEvent,
-  CommandExecutionMode,
-  ContextUsageEvent,
-  ResponseMode,
-  TurnId,
+import {
+  AGENT_RUNTIMES,
+  type AgentEvent,
+  type AgentRuntimeKind,
+  type CommandExecutionMode,
+  type ContextUsageEvent,
+  type ResponseMode,
+  type TurnId,
 } from "@story-forge/shared";
 import { Braces, ChevronRight, FileCode2, PanelRightClose, Shield } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -27,11 +29,16 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   "waiting-approval": "Waiting for approval",
 };
 
+const RUNTIME_LABEL: Record<AgentRuntimeKind, string> = Object.fromEntries(
+  AGENT_RUNTIMES.map((runtime) => [runtime.kind, runtime.label]),
+) as Record<AgentRuntimeKind, string>;
+
 export function RunContextPanel(props: {
   session: SessionView | undefined;
   provider: ProviderView | undefined;
   responseMode: ResponseMode;
   commandExecutionMode: CommandExecutionMode;
+  runtimeKind: AgentRuntimeKind;
   runtime: TurnRuntime | undefined;
   activities: AgentEvent[];
   developerMode: boolean;
@@ -78,6 +85,7 @@ export function RunContextPanel(props: {
           <Row label="Elapsed" value={runtime ? elapsed : "—"} />
           <Row label="Mode" value={props.responseMode} />
           <ContextRow usage={contextUsage} />
+          <Row label="Runtime" value={RUNTIME_LABEL[props.runtimeKind] ?? props.runtimeKind} />
         </Card>
 
         {tasks.length > 0 ? (

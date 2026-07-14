@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentRuntimeKind,
   AutomationView,
   CommandExecutionMode,
   ModelRequestEvent,
@@ -48,6 +49,7 @@ export type AgentLayoutProps = {
   sessionTimerCount: number;
   commandExecutionMode: CommandExecutionMode;
   responseMode: ResponseMode;
+  runtimeKind: AgentRuntimeKind;
   developerMode: boolean;
   imageInputEnabled: boolean;
   navCollapsed: boolean;
@@ -111,6 +113,7 @@ export function AgentLayout(props: AgentLayoutProps) {
     sessionTimerCount,
     commandExecutionMode,
     responseMode,
+    runtimeKind,
     developerMode,
     imageInputEnabled,
     navCollapsed,
@@ -208,6 +211,7 @@ export function AgentLayout(props: AgentLayoutProps) {
           provider={selectedSessionProvider}
           responseMode={responseMode}
           commandExecutionMode={commandExecutionMode}
+          runtimeKind={runtimeKind}
           runtime={runtime}
           activities={activities}
           developerMode={developerMode}
