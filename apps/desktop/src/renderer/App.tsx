@@ -793,6 +793,7 @@ export function App() {
           sessionTimerCount: selectedSessionTimerCount,
           commandExecutionMode,
           responseMode,
+          runtimeKind,
           developerMode,
           imageInputEnabled: Boolean(selectedSessionProvider?.supportsImageInput),
           navCollapsed: effectiveNavCollapsed,
