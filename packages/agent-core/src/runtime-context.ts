@@ -49,7 +49,6 @@ export class RuntimeContextAssembler {
     const session = await this.sessionStore.get(input.sessionId);
     const [
       workspace,
-      responseMode,
       developerMode,
       commandExecutionMode,
       webAccessEnabled,
@@ -58,7 +57,6 @@ export class RuntimeContextAssembler {
     ] =
       await Promise.all([
         this.workspaceStore.get(session.workspaceId),
-        this.settings.getResponseMode(),
         this.settings.getDeveloperMode(),
         this.settings.getCommandExecutionMode(),
         this.settings.getWebAccessEnabled(),
@@ -90,7 +88,6 @@ export class RuntimeContextAssembler {
       session,
       workspace,
       settings: {
-        responseMode,
         developerMode,
         commandExecutionMode,
         webAccessEnabled,

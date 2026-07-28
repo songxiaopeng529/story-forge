@@ -44,8 +44,6 @@ export type IpcHandlerOptions = {
   selectSkillArchive: () => Promise<string | undefined>;
 };
 
-const responseModeSchema = z.enum(["auto", "live", "smooth"]);
-const runtimeKindSchema = z.enum(["native", "pi"]);
 const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
@@ -73,13 +71,11 @@ const imageAttachmentSchema = z.object({
   size: z.number().int().nonnegative(),
 });
 const settingsSaveSchema = z.object({
-  runtimeKind: runtimeKindSchema.optional(),
-  responseMode: responseModeSchema.optional(),
   developerMode: z.boolean().optional(),
   commandExecutionMode: commandExecutionModeSchema.optional(),
   webAccessEnabled: z.boolean().optional(),
   webSearchCoverage: webSearchCoverageSchema.optional(),
-});
+}).strict();
 const permissionResponseSchema = z.object({
   requestId: z.string().min(1),
   approved: z.boolean(),

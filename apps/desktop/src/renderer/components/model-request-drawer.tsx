@@ -110,14 +110,10 @@ export function ModelRequestDrawer(props: {
 
       {selected ? (
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-5">
-          <div className="grid flex-none grid-cols-4 gap-2 rounded-[10px] border border-forge-line bg-forge-canvas px-4 py-2.5">
+          <div className="grid flex-none grid-cols-3 gap-2 rounded-[10px] border border-forge-line bg-forge-canvas px-4 py-2.5">
             <SummaryCell label="Messages" value={`${selected.messages.length}`} />
             <SummaryCell label="Tools" value={`${selected.tools.length}`} />
             <SummaryCell label="Model" value={selected.model} />
-            <SummaryCell
-              label="Stream"
-              value={selected.responseMode === "smooth" ? "false" : "true"}
-            />
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-[188px_1fr] overflow-hidden rounded-[10px] border border-forge-line">
@@ -383,7 +379,6 @@ function rawPayloadJson(request: ModelRequestEvent): string {
   return JSON.stringify(
     {
       model: request.model,
-      stream: request.responseMode !== "smooth",
       messages: request.messages,
       tools: request.tools,
     },

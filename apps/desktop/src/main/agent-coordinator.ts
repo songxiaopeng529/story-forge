@@ -3,7 +3,6 @@ import {
   type AgentRuntimeTurnInput,
   ContextCompactor,
   estimateMessagesTokens,
-  NativeAgentRuntime,
   PiAgentRuntime,
   RuntimeContextAssembler,
   type RuntimeContext,
@@ -20,11 +19,9 @@ import type {
 import {
   createTurnId,
   type AgentEvent,
-  type AgentRuntimeKind,
   type AgentStopReason,
   type CommandExecutionMode,
   type InstalledSkillRecord,
-  type ResponseMode,
   type SessionId,
   type TaskId,
   type SkillView,
@@ -68,10 +65,7 @@ export type AgentCoordinatorOptions = {
   workspaceRepository?: WorkspaceRepository;
   providerFactory?: ProviderFactory;
   runtime?: AgentRuntime;
-  runtimes?: Partial<Record<AgentRuntimeKind, AgentRuntime>>;
   skillResolver?: SkillInvocationResolver;
-  getRuntimeKind?: () => Promise<AgentRuntimeKind>;
-  getResponseMode?: () => Promise<ResponseMode>;
   getDeveloperMode?: () => Promise<boolean>;
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   getWebAccessEnabled?: () => Promise<boolean>;
@@ -87,37 +81,11 @@ type ActiveTurn = {
   controller: AbortController;
 };
 
-type SelectableAgentRuntimeOptions = {
-  getRuntimeKind: () => Promise<AgentRuntimeKind>;
-  native: AgentRuntime;
-  pi: AgentRuntime;
-};
-
-class SelectableAgentRuntime implements AgentRuntime {
-  private readonly getRuntimeKind: () => Promise<AgentRuntimeKind>;
-  private readonly runtimes: Record<AgentRuntimeKind, AgentRuntime>;
-
-  constructor(options: SelectableAgentRuntimeOptions) {
-    this.getRuntimeKind = options.getRuntimeKind;
-    this.runtimes = {
-      native: options.native,
-      pi: options.pi,
-    };
-  }
-
-  async *runTurn(input: AgentRuntimeTurnInput): AsyncIterable<AgentEvent> {
-    const runtimeKind = await this.getRuntimeKind();
-    yield* this.runtimes[runtimeKind].runTurn(input);
-  }
-}
-
 const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class AgentCoordinator {
   private readonly sessionRepository: SessionRepository;
   private readonly skillResolver: SkillInvocationResolver | undefined;
-  private readonly getResponseMode: () => Promise<ResponseMode>;
-  private readonly getRuntimeKind: () => Promise<AgentRuntimeKind>;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly getWebAccessEnabled: () => Promise<boolean>;
@@ -137,8 +105,6 @@ export class AgentCoordinator {
   constructor(options: AgentCoordinatorOptions) {
     this.sessionRepository = options.sessionRepository;
     this.skillResolver = options.skillResolver;
-    this.getRuntimeKind = options.getRuntimeKind ?? (async () => "native");
-    this.getResponseMode = options.getResponseMode ?? (async () => "auto");
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
@@ -149,7 +115,7 @@ export class AgentCoordinator {
     this.providerFactory = options.providerFactory;
     this.maxSteps = options.maxSteps;
     this.maxDurationMs = options.maxDurationMs;
-    this.runtime = options.runtime ?? this.createSelectableRuntime(options);
+    this.runtime = options.runtime ?? this.createPiRuntime(options);
   }
 
   async start(input: {
@@ -362,14 +328,6 @@ export class AgentCoordinator {
     }
   }
 
-  private createSelectableRuntime(options: AgentCoordinatorOptions): AgentRuntime {
-    return new SelectableAgentRuntime({
-      getRuntimeKind: this.getRuntimeKind,
-      native: options.runtimes?.native ?? this.createNativeRuntime(options),
-      pi: options.runtimes?.pi ?? this.createPiRuntime(options),
-    });
-  }
-
   private createRuntimeContextAssembler(options: AgentCoordinatorOptions): {
     contextAssembler: RuntimeContextAssembler;
     providerStore: ProviderConfigStore;
@@ -391,7 +349,6 @@ export class AgentCoordinator {
         get: (workspaceId) => workspaceRepository.get(workspaceId),
       },
       settings: {
-        getResponseMode: this.getResponseMode,
         getDeveloperMode: this.getDeveloperMode,
         getCommandExecutionMode: this.getCommandExecutionMode,
         getWebAccessEnabled: this.getWebAccessEnabled,
@@ -406,29 +363,6 @@ export class AgentCoordinator {
       providerFactory,
       sessionStore,
     };
-  }
-
-  private createNativeRuntime(options: AgentCoordinatorOptions): AgentRuntime {
-    const {
-      contextAssembler,
-      providerStore,
-      providerFactory,
-      sessionStore,
-    } = this.createRuntimeContextAssembler(options);
-
-    return new NativeAgentRuntime({
-      contextAssembler,
-      providerResolver: {
-        resolve: (providerId) => providerStore.resolve(providerId),
-      },
-      providerFactory,
-      sessionStore,
-      toolFactory: {
-        createTools: (context, helpers) => this.createRuntimeTools(context, helpers),
-      },
-      ...(this.maxSteps === undefined ? {} : { maxSteps: this.maxSteps }),
-      ...(this.maxDurationMs === undefined ? {} : { maxDurationMs: this.maxDurationMs }),
-    });
   }
 
   private createPiRuntime(options: AgentCoordinatorOptions): AgentRuntime {

@@ -149,7 +149,6 @@ describe("PiAgentRuntime", () => {
   it("streams provider deltas as live StoryForge message deltas", async () => {
     const fixture = createRuntimeFixture({
       messages: [userMessage("Stream response")],
-      responseMode: "live",
       provider: {
         id: "streaming-fake",
         capabilities: {
@@ -198,7 +197,6 @@ function createRuntimeFixture(input: {
   provider: ModelProvider;
   tools?: ToolRegistry;
   developerMode?: boolean;
-  responseMode?: "auto" | "live" | "smooth";
   onCheckpoint?: (messages: RuntimePersistedMessage[]) => void;
 }) {
   let session: RuntimeSession = {
@@ -222,7 +220,6 @@ function createRuntimeFixture(input: {
       get: async () => ({ id: "workspace-1", path: "/tmp/story-forge" }),
     },
     settings: {
-      getResponseMode: async () => input.responseMode ?? "smooth",
       getDeveloperMode: async () => input.developerMode ?? false,
       getCommandExecutionMode: async () => "sentinel",
       getWebAccessEnabled: async () => false,

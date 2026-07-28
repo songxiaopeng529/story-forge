@@ -43,7 +43,6 @@ import type {
   SessionId,
 } from "@story-forge/shared";
 import type { ToolRegistry } from "@story-forge/tools";
-import { estimateMessagesTokens, trimMessagesToContext } from "./agent-loop";
 import type {
   AgentRuntime,
   AgentRuntimeTurnInput,
@@ -53,6 +52,7 @@ import type {
   RuntimeSessionStore,
   RuntimeToolFactory,
 } from "./agent-runtime";
+import { estimateMessagesTokens, trimMessagesToContext } from "./message-context";
 import { RuntimeContextAssembler, toRuntimePersistedMessages } from "./runtime-context";
 
 const DEFAULT_MAX_STEPS = 1000;
@@ -94,7 +94,6 @@ type PiRuntimeState = {
   turnId: AgentRuntimeTurnInput["turnId"];
   providerId: string;
   model: string;
-  responseMode: "auto" | "live" | "smooth";
   developerMode: boolean;
   provider: ModelProvider;
   tools: ToolRegistry;
@@ -192,7 +191,6 @@ export class PiAgentRuntime implements AgentRuntime {
         turnId: input.turnId,
         providerId: context.session.providerId,
         model: context.session.model,
-        responseMode: context.settings.responseMode,
         developerMode: context.settings.developerMode,
         provider,
         tools,
@@ -344,7 +342,7 @@ export class PiAgentRuntime implements AgentRuntime {
     this.emitModelRequest(runtimeState, request, emitEvent);
 
     try {
-      if (runtimeState.responseMode !== "smooth" && runtimeState.provider.streamChat) {
+      if (runtimeState.provider.streamChat) {
         const response = await this.streamProviderResponse(
           runtimeState,
           request,
@@ -366,7 +364,8 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         return;
       }
-      const response = await this.requestModelResponse(runtimeState, request, signal, emitEvent);
+      runtimeState.deliveryMode = "smooth";
+      const response = await runtimeState.provider.chat(request, signal ? { signal } : undefined);
       if (response.usage) {
         runtimeState.lastProviderUsedTokens = response.usage.promptTokens;
         emitEvent({
@@ -484,7 +483,7 @@ export class PiAgentRuntime implements AgentRuntime {
         }
       }
     } catch (error) {
-      if (runtimeState.responseMode === "auto" && !emittedLiveContent && !signal?.aborted) {
+      if (!emittedLiveContent && !signal?.aborted) {
         emitEvent({
           type: "response.fallback",
           sessionId: runtimeState.sessionId,
@@ -552,78 +551,6 @@ export class PiAgentRuntime implements AgentRuntime {
     return response;
   }
 
-  private async requestModelResponse(
-    runtimeState: PiRuntimeState,
-    request: ChatRequest,
-    signal: AbortSignal | undefined,
-    emitEvent: (event: AgentEvent) => void,
-  ): Promise<ChatResponse> {
-    if (runtimeState.responseMode === "smooth") {
-      runtimeState.deliveryMode = "smooth";
-      return runtimeState.provider.chat(request, signal ? { signal } : undefined);
-    }
-    if (!runtimeState.provider.streamChat) {
-      if (runtimeState.responseMode === "live") {
-        throw new Error(`Live streaming is not available for ${runtimeState.provider.id}.`);
-      }
-      runtimeState.deliveryMode = "smooth";
-      return runtimeState.provider.chat(request, signal ? { signal } : undefined);
-    }
-
-    try {
-      runtimeState.deliveryMode = "live";
-      return await this.requestStreamingModelResponse(runtimeState, request, signal);
-    } catch (error) {
-      if (runtimeState.responseMode === "auto" && !signal?.aborted) {
-        emitEvent({
-          type: "response.fallback",
-          sessionId: runtimeState.sessionId,
-          turnId: runtimeState.turnId,
-          from: "live",
-          to: "smooth",
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        runtimeState.deliveryMode = "smooth";
-        return runtimeState.provider.chat(request, signal ? { signal } : undefined);
-      }
-      throw error;
-    }
-  }
-
-  private async requestStreamingModelResponse(
-    runtimeState: PiRuntimeState,
-    request: ChatRequest,
-    signal: AbortSignal | undefined,
-  ): Promise<ChatResponse> {
-    let finalResponse: ChatResponse | undefined;
-    const contentParts: string[] = [];
-    const reasoningParts: string[] = [];
-    const toolCalls: ToolCall[] = [];
-    const stream = runtimeState.provider.streamChat?.(request, signal ? { signal } : undefined) ?? [];
-    for await (const event of stream) {
-      if (event.type === "content.delta") {
-        contentParts.push(event.content);
-      } else if (event.type === "reasoning.delta") {
-        reasoningParts.push(event.content);
-      } else if (event.type === "tool.call") {
-        toolCalls.push(event.toolCall);
-      } else if (event.type === "done") {
-        finalResponse = event.response;
-      }
-    }
-    if (finalResponse) {
-      return finalResponse;
-    }
-    if (contentParts.length > 0 || reasoningParts.length > 0 || toolCalls.length > 0) {
-      return {
-        content: contentParts.join(""),
-        ...(reasoningParts.length ? { reasoningContent: reasoningParts.join("") } : {}),
-        toolCalls,
-      };
-    }
-    throw new Error("Streaming response ended before a final response was received");
-  }
-
   private emitModelRequest(
     runtimeState: PiRuntimeState,
     request: ChatRequest,
@@ -639,7 +566,6 @@ export class PiAgentRuntime implements AgentRuntime {
       requestId: `model-request-${runtimeState.nextModelRequestIndex++}`,
       providerId: runtimeState.providerId,
       model: runtimeState.model,
-      responseMode: runtimeState.responseMode,
       messages: request.messages.map(toInspectableMessage),
       tools: (request.tools ?? []).map((tool) => ({
         name: tool.name,

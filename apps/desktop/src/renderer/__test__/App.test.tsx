@@ -371,7 +371,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "live",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -422,7 +421,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "live",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -474,7 +472,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "smooth",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -521,7 +518,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: true,
         commandExecutionMode: "sentinel",
       },
@@ -542,7 +538,6 @@ describe("App", () => {
         requestId: "model-request-1",
         providerId: "deepseek",
         model: "deepseek-v4-pro",
-        responseMode: "auto",
         messages: [
           { role: "system", content: "You are StoryForge." },
           { role: "user", content: "Inspect auth" },
@@ -560,7 +555,6 @@ describe("App", () => {
     installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -577,7 +571,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: true,
         commandExecutionMode: "sentinel",
       },
@@ -595,7 +588,6 @@ describe("App", () => {
         requestId: "model-request-1",
         providerId: "deepseek",
         model: "deepseek-v4-pro",
-        responseMode: "auto",
         messages: [{ role: "user", content: "Inspect auth" }],
         tools: [],
       });
@@ -621,7 +613,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: true,
         commandExecutionMode: "sentinel",
       },
@@ -639,7 +630,6 @@ describe("App", () => {
         requestId: "model-request-1",
         providerId: "deepseek",
         model: "deepseek-v4-pro",
-        responseMode: "auto",
         messages: [{ role: "user", content: "Inspect auth" }],
         tools: [],
       });
@@ -1002,76 +992,10 @@ describe("App", () => {
     expect(await screen.findByText("Thread timer created")).toBeInTheDocument();
   });
 
-  it("loads and saves the global response mode from Settings", async () => {
-    const fixture = installApi({
-      settings: {
-        schemaVersion: 1,
-        responseMode: "auto",
-        developerMode: false,
-        commandExecutionMode: "sentinel",
-      },
-    });
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const responseModeGroup = await screen.findByRole("radiogroup", {
-      name: "Response mode",
-    });
-    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
-      .toHaveAttribute("aria-checked", "true");
-    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
-      .toHaveAccessibleDescription(
-        "Show waiting status, then play back completed responses.",
-      );
-
-    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
-
-    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
-      responseMode: "smooth",
-    }));
-    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
-      .toHaveAttribute("aria-checked", "true");
-  });
-
-  it("loads and saves the selected agent runtime from Settings", async () => {
-    const fixture = installApi({
-      settings: {
-        schemaVersion: 1,
-        runtimeKind: "native",
-        responseMode: "auto",
-        developerMode: false,
-        commandExecutionMode: "sentinel",
-      },
-    });
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const runtimeGroup = await screen.findByRole("radiogroup", {
-      name: "Agent runtime",
-    });
-    expect(within(runtimeGroup).getByRole("radio", { name: "StoryForge Native Runtime" }))
-      .toHaveAttribute("aria-checked", "true");
-    expect(within(runtimeGroup).getByRole("radio", { name: "PI Agent Runtime Experimental" }))
-      .toHaveAccessibleDescription(
-        "Uses the PI Agent loop while keeping StoryForge tools and safety controls.",
-      );
-
-    fireEvent.click(within(runtimeGroup).getByRole("radio", {
-      name: "PI Agent Runtime Experimental",
-    }));
-
-    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
-      runtimeKind: "pi",
-    }));
-    expect(within(runtimeGroup).getByRole("radio", { name: "PI Agent Runtime Experimental" }))
-      .toHaveAttribute("aria-checked", "true");
-  });
-
   it("loads and saves developer mode from Settings", async () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -1094,7 +1018,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: false,
         commandExecutionMode: "sentinel",
       },
@@ -1128,7 +1051,6 @@ describe("App", () => {
     const fixture = installApi({
       settings: {
         schemaVersion: 1,
-        responseMode: "auto",
         developerMode: false,
         commandExecutionMode: "sentinel",
         webAccessEnabled: false,
@@ -1226,79 +1148,6 @@ describe("App", () => {
     }));
   });
 
-  it("rolls back the response mode and shows an error when saving fails", async () => {
-    const fixture = installApi({
-      settings: {
-        schemaVersion: 1,
-        responseMode: "auto",
-        developerMode: false,
-        commandExecutionMode: "sentinel",
-      },
-      saveSettings: vi.fn(async () => {
-        throw new Error("Unable to save settings");
-      }),
-    });
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const responseModeGroup = await screen.findByRole("radiogroup", {
-      name: "Response mode",
-    });
-    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
-
-    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
-      responseMode: "smooth",
-    }));
-    expect(await screen.findByText("Unable to save settings")).toBeInTheDocument();
-    expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
-      .toHaveAttribute("aria-checked", "true");
-    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" }))
-      .toHaveAttribute("aria-checked", "false");
-  });
-
-  it("disables response mode choices while settings are saving", async () => {
-    const pendingSave = createDeferred<AppSettingsView>();
-    const fixture = installApi({
-      settings: {
-        schemaVersion: 1,
-        responseMode: "auto",
-        developerMode: false,
-        commandExecutionMode: "sentinel",
-      },
-      saveSettings: vi.fn(async (input) => ({
-        ...(await pendingSave.promise),
-        ...input,
-      })),
-    });
-    render(<App />);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    const responseModeGroup = await screen.findByRole("radiogroup", {
-      name: "Response mode",
-    });
-    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Live" }));
-    fireEvent.click(within(responseModeGroup).getByRole("radio", { name: "Smooth" }));
-    expect(fixture.saveSettings).toHaveBeenCalledTimes(1);
-
-    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Auto" }))
-      .toBeDisabled());
-    expect(within(responseModeGroup).getByRole("radio", { name: "Live" })).toBeDisabled();
-    expect(within(responseModeGroup).getByRole("radio", { name: "Smooth" })).toBeDisabled();
-
-    await act(async () => {
-      pendingSave.resolve({
-        schemaVersion: 1,
-        runtimeKind: "native",
-        responseMode: "live",
-        developerMode: false,
-        commandExecutionMode: "sentinel",
-        webAccessEnabled: false,
-        webSearchCoverage: "focused",
-      });
-    });
-    await waitFor(() => expect(within(responseModeGroup).getByRole("radio", { name: "Live" }))
-      .not.toBeDisabled());
-  });
 });
 
 function installApi(options: {
@@ -1368,8 +1217,6 @@ function installApi(options: {
   const getSession = vi.fn(async () => session);
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
-    runtimeKind: "native" as const,
-    responseMode: "auto" as const,
     developerMode: false,
     commandExecutionMode: "sentinel" as const,
     webAccessEnabled: false,

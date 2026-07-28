@@ -97,23 +97,12 @@ describe("registerIpcHandlers", () => {
     });
   });
 
-  it("registers settings APIs and validates response mode input", async () => {
+  it("registers settings APIs and validates PI desktop settings input", async () => {
     const fixture = createFixture();
     registerIpcHandlers(fixture.options);
 
     await expect(fixture.invoke(IPC_CHANNELS.settingsGet)).resolves.toEqual({
       schemaVersion: 1,
-      responseMode: "auto",
-      developerMode: false,
-      commandExecutionMode: "sentinel",
-      webAccessEnabled: false,
-      webSearchCoverage: "focused",
-    });
-    await expect(
-      fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
-    ).resolves.toEqual({
-      schemaVersion: 1,
-      responseMode: "smooth",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
@@ -123,7 +112,6 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
     ).resolves.toEqual({
       schemaVersion: 1,
-      responseMode: "auto",
       developerMode: true,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
@@ -133,7 +121,6 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "cruise" }),
     ).resolves.toEqual({
       schemaVersion: 1,
-      responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "cruise",
       webAccessEnabled: false,
@@ -146,17 +133,19 @@ describe("registerIpcHandlers", () => {
       }),
     ).resolves.toEqual({
       schemaVersion: 1,
-      responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: true,
       webSearchCoverage: "wide",
     });
     await expect(
-      fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "unsupported" }),
-    ).rejects.toThrow();
-    await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: "yes" }),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { runtimeKind: "native" }),
     ).rejects.toThrow("Invalid IPC payload");
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "chaos" }),
@@ -303,7 +292,6 @@ function createFixture() {
   const settings = {
     get: vi.fn(async () => ({
       schemaVersion: 1 as const,
-      responseMode: "auto" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,
@@ -311,7 +299,6 @@ function createFixture() {
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
-      responseMode: "auto" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,
