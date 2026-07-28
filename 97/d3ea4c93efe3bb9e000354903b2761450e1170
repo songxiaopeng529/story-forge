@@ -1,0 +1,47 @@
+apps/desktop/src/main/__test__/agent-coordinator.test.ts
+  s_8151528cdd6ca2::t_ddb7c8d649bdd8 5,70
+apps/desktop/src/main/__test__/app-settings-store.test.ts
+  s_8151528cdd6ca2::t_de986a418f573f 18,25,29,45-48,51
+apps/desktop/src/main/__test__/ipc-handlers.test.ts
+  s_8151528cdd6ca2::t_fab85e9b520588 100,144-149
+apps/desktop/src/main/agent-coordinator.ts
+  s_8151528cdd6ca2::t_e4d8bef826578d 118
+apps/desktop/src/main/ipc-handlers.ts
+  s_8151528cdd6ca2::t_1e5afeaf0ab478 78
+apps/desktop/src/renderer/components/__test__/run-context-panel.test.tsx
+  s_8151528cdd6ca2::t_98886f6b0ae2d5 26-38,40-42
+apps/desktop/src/renderer/components/model-request-drawer.tsx
+  s_8151528cdd6ca2::t_3393650a1586a0 113
+apps/desktop/src/renderer/components/run-context-panel.tsx
+  s_8151528cdd6ca2::t_226a711e1119c7 1-5,78,102
+apps/desktop/src/renderer/components/settings-page.tsx
+  s_8151528cdd6ca2::t_7c28ac2ef672b9 66-68,75-76
+packages/agent-core/src/__test__/message-context.test.ts
+  s_8151528cdd6ca2::t_81a211de682a9e 2-7,9-16,18-34
+packages/agent-core/src/index.ts
+  s_8151528cdd6ca2::t_12c70f36c82395 3
+packages/agent-core/src/message-context.ts
+  s_8151528cdd6ca2::t_722359e1ce1f01 1,29-36
+packages/agent-core/src/pi-agent-runtime.ts
+  s_8151528cdd6ca2::t_046f7998ed7c52 55,345,367-368,486
+packages/shared/src/events.ts
+  s_8151528cdd6ca2::t_7c40cfb8349fd2 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "97d3ea4c93efe3bb9e000354903b2761450e1170",
+  "prompts": {},
+  "sessions": {
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
