@@ -1,12 +1,10 @@
 import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
-  AgentRuntimeKind,
   AutomationView,
   CommandExecutionMode,
   ModelRequestEvent,
   PermissionRequestEvent,
-  ResponseMode,
   SessionId,
   TurnId,
   TurnMode,
@@ -46,8 +44,6 @@ export function App() {
   const [prompt, setPrompt] = useState("");
   const [composerMode, setComposerMode] = useState<TurnMode>("normal");
   const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
-  const [runtimeKind, setRuntimeKind] = useState<AgentRuntimeKind>("native");
-  const [responseMode, setResponseMode] = useState<ResponseMode>("auto");
   const [developerMode, setDeveloperMode] = useState(false);
   const [commandExecutionMode, setCommandExecutionMode] =
     useState<CommandExecutionMode>("sentinel");
@@ -64,8 +60,6 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextCollapsed, setContextCollapsed] = useState(false);
   const composingRef = useRef(false);
-  const persistedResponseModeRef = useRef<ResponseMode>("auto");
-  const persistedRuntimeKindRef = useRef<AgentRuntimeKind>("native");
   const persistedDeveloperModeRef = useRef(false);
   const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const persistedWebAccessEnabledRef = useRef(false);
@@ -216,14 +210,10 @@ export function App() {
         if (disposed) {
           return;
         }
-        persistedRuntimeKindRef.current = nextSettings.runtimeKind;
-        persistedResponseModeRef.current = nextSettings.responseMode;
         persistedDeveloperModeRef.current = nextSettings.developerMode;
         persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
         persistedWebAccessEnabledRef.current = nextSettings.webAccessEnabled;
         persistedWebSearchCoverageRef.current = nextSettings.webSearchCoverage;
-        setRuntimeKind(nextSettings.runtimeKind);
-        setResponseMode(nextSettings.responseMode);
         setDeveloperMode(nextSettings.developerMode);
         setCommandExecutionMode(nextSettings.commandExecutionMode);
         setWebAccessEnabled(nextSettings.webAccessEnabled);
@@ -397,60 +387,6 @@ export function App() {
       setError(formatError(compactError));
     } finally {
       setCompactingSessionId((current) => (current === sessionId ? undefined : current));
-    }
-  }
-
-  async function saveResponseMode(nextResponseMode: ResponseMode): Promise<void> {
-    if (
-      settingsSaveInFlightRef.current
-      || nextResponseMode === persistedResponseModeRef.current
-    ) {
-      return;
-    }
-    const previousResponseMode = persistedResponseModeRef.current;
-    settingsSaveInFlightRef.current = true;
-    setResponseMode(nextResponseMode);
-    setSettingsSaving(true);
-    setError(undefined);
-    try {
-      const saved = await window.storyForge.settings.save({
-        responseMode: nextResponseMode,
-      });
-      persistedResponseModeRef.current = saved.responseMode;
-      setResponseMode(saved.responseMode);
-    } catch (settingsError) {
-      setResponseMode(previousResponseMode);
-      setError(formatError(settingsError));
-    } finally {
-      settingsSaveInFlightRef.current = false;
-      setSettingsSaving(false);
-    }
-  }
-
-  async function saveRuntimeKind(nextRuntimeKind: AgentRuntimeKind): Promise<void> {
-    if (
-      settingsSaveInFlightRef.current
-      || nextRuntimeKind === persistedRuntimeKindRef.current
-    ) {
-      return;
-    }
-    const previousRuntimeKind = persistedRuntimeKindRef.current;
-    settingsSaveInFlightRef.current = true;
-    setRuntimeKind(nextRuntimeKind);
-    setSettingsSaving(true);
-    setError(undefined);
-    try {
-      const saved = await window.storyForge.settings.save({
-        runtimeKind: nextRuntimeKind,
-      });
-      persistedRuntimeKindRef.current = saved.runtimeKind;
-      setRuntimeKind(saved.runtimeKind);
-    } catch (settingsError) {
-      setRuntimeKind(previousRuntimeKind);
-      setError(formatError(settingsError));
-    } finally {
-      settingsSaveInFlightRef.current = false;
-      setSettingsSaving(false);
     }
   }
 
@@ -737,16 +673,12 @@ export function App() {
       <PageRouter
         page={page}
         settings={{
-          runtimeKind,
-          responseMode,
           developerMode,
           commandExecutionMode,
           webAccessEnabled,
           webSearchCoverage,
           saving: settingsSaving,
           error,
-          onRuntimeKindChange: (nextRuntimeKind) => void saveRuntimeKind(nextRuntimeKind),
-          onResponseModeChange: (nextResponseMode) => void saveResponseMode(nextResponseMode),
           onDeveloperModeChange: (nextDeveloperMode) => void saveDeveloperMode(nextDeveloperMode),
           onCommandExecutionModeChange: (nextCommandExecutionMode) =>
             void saveCommandExecutionMode(nextCommandExecutionMode),
@@ -792,8 +724,6 @@ export function App() {
           modelInspectorOpen,
           sessionTimerCount: selectedSessionTimerCount,
           commandExecutionMode,
-          responseMode,
-          runtimeKind,
           developerMode,
           imageInputEnabled: Boolean(selectedSessionProvider?.supportsImageInput),
           navCollapsed: effectiveNavCollapsed,

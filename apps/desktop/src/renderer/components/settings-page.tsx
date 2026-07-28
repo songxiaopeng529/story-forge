@@ -1,32 +1,7 @@
 import type {
-  AgentRuntimeKind,
   CommandExecutionMode,
-  ResponseMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
-import { AGENT_RUNTIMES } from "@story-forge/shared";
-
-const responseModes: Array<{
-  value: ResponseMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "auto",
-    label: "Auto",
-    description: "Use live streaming when available, otherwise smooth playback.",
-  },
-  {
-    value: "live",
-    label: "Live",
-    description: "Prefer true model streaming and show unsupported-provider errors.",
-  },
-  {
-    value: "smooth",
-    label: "Smooth",
-    description: "Show waiting status, then play back completed responses.",
-  },
-];
 
 const commandExecutionModes: Array<{
   value: CommandExecutionMode;
@@ -68,16 +43,12 @@ const webSearchCoverageModes: Array<{
 ];
 
 export function SettingsPage(props: {
-  runtimeKind: AgentRuntimeKind;
-  responseMode: ResponseMode;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
   saving: boolean;
   error: string | undefined;
-  onRuntimeKindChange: (runtimeKind: AgentRuntimeKind) => void;
-  onResponseModeChange: (responseMode: ResponseMode) => void;
   onDeveloperModeChange: (developerMode: boolean) => void;
   onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
   onWebAccessEnabledChange: (enabled: boolean) => void;
@@ -92,116 +63,17 @@ export function SettingsPage(props: {
         </p>
 
         <div className="mt-7 rounded-lg border border-forge-line bg-white p-5 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-semibold" id="agent-runtime-label">
-                Agent runtime
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Choose which runtime powers new turns. Running turns keep their current runtime.
-              </p>
-            </div>
-            {props.saving ? <span className="text-xs text-slate-500">Saving...</span> : null}
-          </div>
-
-          <div
-            aria-labelledby="agent-runtime-label"
-            className="mt-4 grid gap-2 sm:grid-cols-2"
-            role="radiogroup"
-          >
-            {AGENT_RUNTIMES.map((runtime) => {
-              const descriptionId = `agent-runtime-${runtime.kind}-description`;
-              const isExperimental = "experimental" in runtime && runtime.experimental;
-              const label = `${runtime.label}${isExperimental ? " Experimental" : ""}`;
-              return (
-                <button
-                  aria-checked={props.runtimeKind === runtime.kind}
-                  aria-describedby={descriptionId}
-                  aria-label={label}
-                  className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
-                    props.runtimeKind === runtime.kind
-                      ? "border-forge-ember bg-orange-50 text-forge-ember"
-                      : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
-                  }`}
-                  disabled={props.saving}
-                  key={runtime.kind}
-                  onClick={() => props.onRuntimeKindChange(runtime.kind)}
-                  role="radio"
-                  type="button"
-                >
-                  <span className="flex items-center gap-2 text-sm font-medium">
-                    {runtime.label}
-                    {isExperimental ? (
-                      <span className="rounded border border-orange-200 px-1.5 py-0.5 text-[10px] uppercase tracking-normal text-forge-ember">
-                        Experimental
-                      </span>
-                    ) : null}
-                  </span>
-                  <span
-                    className="mt-1 block text-xs text-slate-500"
-                    id={descriptionId}
-                  >
-                    {runtime.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 border-t border-forge-line pt-5">
-            <div>
-              <h3 className="text-sm font-semibold" id="response-mode-label">
-                Response mode
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Choose how model responses appear while an agent turn is running.
-              </p>
-            </div>
-
-            <div
-              aria-labelledby="response-mode-label"
-              className="mt-4 grid gap-2 sm:grid-cols-3"
-              role="radiogroup"
-            >
-              {responseModes.map((mode) => {
-                const descriptionId = `response-mode-${mode.value}-description`;
-                return (
-                  <button
-                    aria-checked={props.responseMode === mode.value}
-                    aria-describedby={descriptionId}
-                    aria-label={mode.label}
-                    className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
-                      props.responseMode === mode.value
-                        ? "border-forge-ember bg-orange-50 text-forge-ember"
-                        : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
-                    }`}
-                    disabled={props.saving}
-                    key={mode.value}
-                    onClick={() => props.onResponseModeChange(mode.value)}
-                    role="radio"
-                    type="button"
-                  >
-                    <span className="block text-sm font-medium">{mode.label}</span>
-                    <span
-                      className="mt-1 block text-xs text-slate-500"
-                      id={descriptionId}
-                    >
-                      {mode.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-5 border-t border-forge-line pt-5">
-            <div>
+          <div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
               <h3 className="text-sm font-semibold" id="command-execution-mode-label">
                 Command execution
               </h3>
               <p className="mt-1 text-sm text-slate-500">
                 Choose how often StoryForge asks before running workspace commands.
               </p>
+              </div>
+              {props.saving ? <span className="text-xs text-slate-500">Saving...</span> : null}
             </div>
 
             <div

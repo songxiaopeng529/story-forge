@@ -1,4 +1,4 @@
-import type { CommandExecutionMode, MessageDeliveryMode, ResponseMode } from "./settings";
+import type { CommandExecutionMode, MessageDeliveryMode } from "./settings";
 import type { AutomationProposalView } from "./extensions";
 import type { SessionTask, TaskId } from "./tasks";
 
@@ -127,7 +127,6 @@ export type ModelRequestEvent = {
   requestId: string;
   providerId: string;
   model: string;
-  responseMode: ResponseMode;
   messages: InspectableModelMessage[];
   tools: InspectableModelTool[];
 };

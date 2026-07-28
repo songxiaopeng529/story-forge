@@ -2,7 +2,6 @@ import type { ProviderId, ToolCall } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AgentStopReason,
-  AgentRuntimeKind,
   AppSettingsView,
   AutomationRunView,
   AutomationView,
@@ -10,7 +9,6 @@ import type {
   CreateAutomationInput,
   McpConfigView,
   McpServerView,
-  ResponseMode,
   ScheduleValidationResult,
   SessionId,
   SessionTask,
@@ -138,8 +136,6 @@ export type StoryForgeApi = {
   settings: {
     get(): Promise<AppSettingsView>;
     save(input: {
-      runtimeKind?: AgentRuntimeKind;
-      responseMode?: ResponseMode;
       developerMode?: boolean;
       commandExecutionMode?: CommandExecutionMode;
       webAccessEnabled?: boolean;

@@ -9,7 +9,6 @@ import type {
   AgentEvent,
   CommandExecutionMode,
   InstalledSkillRecord,
-  ResponseMode,
   SessionId,
   SessionTask,
   SkillView,
@@ -80,7 +79,6 @@ export type RuntimeWorkspace = {
 };
 
 export type RuntimeSettings = {
-  responseMode: ResponseMode;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
@@ -118,7 +116,6 @@ export type RuntimeWorkspaceStore = {
 };
 
 export type RuntimeSettingsProvider = {
-  getResponseMode(): Promise<ResponseMode>;
   getDeveloperMode(): Promise<boolean>;
   getCommandExecutionMode(): Promise<CommandExecutionMode>;
   getWebAccessEnabled(): Promise<boolean>;

@@ -76,7 +76,6 @@ function createRequest(
     requestId: "model-request-test",
     providerId: "deepseek",
     model: "deepseek-v4-pro",
-    responseMode: "auto",
     messages: [],
     tools: [],
     ...overrides,

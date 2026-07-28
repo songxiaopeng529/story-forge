@@ -1,5 +1,4 @@
 import "@testing-library/jest-dom/vitest";
-import type { AgentRuntimeKind } from "@story-forge/shared";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionView } from "../../../shared/story-forge-api";
@@ -23,40 +22,23 @@ const session: SessionView = {
   tasks: [],
 };
 
-function renderPanel(runtimeKind: AgentRuntimeKind) {
-  return render(
-    <RunContextPanel
-      session={session}
-      provider={undefined}
-      responseMode="auto"
-      commandExecutionMode="sentinel"
-      runtimeKind={runtimeKind}
-      runtime={undefined}
-      activities={[]}
-      developerMode={false}
-      onCollapse={() => {}}
-      onOpenInspector={() => {}}
-    />,
-  );
-}
-
-function runtimeRowValue(): HTMLElement {
-  const label = screen.getByText("Runtime");
-  const row = label.parentElement;
-  if (!row) {
-    throw new Error("Runtime row not found");
-  }
-  return row;
-}
-
 describe("RunContextPanel runtime row", () => {
-  it("shows the native runtime label below the context field", () => {
-    renderPanel("native");
-    expect(within(runtimeRowValue()).getByText("StoryForge Native Runtime")).toBeInTheDocument();
-  });
+  it("shows PI as the desktop runtime", () => {
+    render(
+      <RunContextPanel
+        session={session}
+        provider={undefined}
+        commandExecutionMode="sentinel"
+        runtime={undefined}
+        activities={[]}
+        developerMode={false}
+        onCollapse={() => {}}
+        onOpenInspector={() => {}}
+      />,
+    );
 
-  it("shows the PI runtime label", () => {
-    renderPanel("pi");
-    expect(within(runtimeRowValue()).getByText("PI Agent Runtime")).toBeInTheDocument();
+    const row = screen.getByText("Runtime").parentElement;
+    expect(row).not.toBeNull();
+    expect(within(row as HTMLElement).getByText("PI Agent Runtime")).toBeInTheDocument();
   });
 });
