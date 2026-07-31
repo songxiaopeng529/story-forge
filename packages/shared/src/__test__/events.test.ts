@@ -10,11 +10,8 @@ import {
 } from "../events";
 import type { AutomationView, CreateAutomationInput } from "../extensions";
 import {
-  AGENT_RUNTIMES,
-  type AgentRuntimeKind,
   type AppSettingsView,
   type CommandExecutionMode,
-  type ResponseMode,
 } from "../settings";
 
 const sessionId = "sf_session_test" satisfies SessionId;
@@ -113,7 +110,6 @@ const modelRequestEvent = {
   requestId: "model-request-1",
   providerId: "deepseek",
   model: "deepseek-v4-pro",
-  responseMode: "live",
   messages: [
     { role: "system", content: "You are StoryForge." },
     { role: "user", content: "Inspect auth" },
@@ -204,17 +200,9 @@ describe("createTurnId", () => {
 });
 
 describe("settings types", () => {
-  it("accepts the three global response modes", () => {
-    const modes: ResponseMode[] = ["auto", "live", "smooth"];
-
-    expect(modes).toEqual(["auto", "live", "smooth"]);
-  });
-
   it("accepts the developer mode default shape", () => {
     const settings = {
       schemaVersion: 1,
-      runtimeKind: "native",
-      responseMode: "auto",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
@@ -222,13 +210,6 @@ describe("settings types", () => {
     } satisfies AppSettingsView;
 
     expect(settings.developerMode).toBe(false);
-  });
-
-  it("lists selectable agent runtimes", () => {
-    const runtimeKinds: AgentRuntimeKind[] = AGENT_RUNTIMES.map((runtime) => runtime.kind);
-
-    expect(runtimeKinds).toEqual(["native", "pi"]);
-    expect(AGENT_RUNTIMES.find((runtime) => runtime.kind === "pi")?.experimental).toBe(true);
   });
 
   it("accepts the three command execution modes", () => {

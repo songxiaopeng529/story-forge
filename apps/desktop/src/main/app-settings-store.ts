@@ -1,23 +1,17 @@
 import type {
-  AgentRuntimeKind,
   AppSettingsView,
   CommandExecutionMode,
-  ResponseMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { join } from "node:path";
 import { z } from "zod";
 import { readJson, writeJsonAtomic } from "./atomic-json";
 
-const responseModeSchema = z.enum(["auto", "live", "smooth"]);
-const runtimeKindSchema = z.enum(["native", "pi"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 
 const appSettingsSchema = z.object({
   schemaVersion: z.literal(1),
-  runtimeKind: runtimeKindSchema.default("native"),
-  responseMode: responseModeSchema,
   developerMode: z.boolean().default(false),
   commandExecutionMode: commandExecutionModeSchema.default("sentinel"),
   webAccessEnabled: z.boolean().default(false),
@@ -25,8 +19,6 @@ const appSettingsSchema = z.object({
 });
 
 export type SaveAppSettingsInput = {
-  runtimeKind?: AgentRuntimeKind | undefined;
-  responseMode?: ResponseMode | undefined;
   developerMode?: boolean | undefined;
   commandExecutionMode?: CommandExecutionMode | undefined;
   webAccessEnabled?: boolean | undefined;
@@ -59,8 +51,6 @@ export class AppSettingsStore {
 function createDefaultSettings(): AppSettingsView {
   return {
     schemaVersion: 1,
-    runtimeKind: "native",
-    responseMode: "auto",
     developerMode: false,
     commandExecutionMode: "sentinel",
     webAccessEnabled: false,

@@ -8,8 +8,6 @@ import { AppSettingsStore } from "../app-settings-store";
 
 const defaultSettings = {
   schemaVersion: 1,
-  runtimeKind: "native",
-  responseMode: "auto",
   developerMode: false,
   commandExecutionMode: "sentinel",
   webAccessEnabled: false,
@@ -17,51 +15,18 @@ const defaultSettings = {
 } as const;
 
 describe("AppSettingsStore", () => {
-  it("defaults response mode to auto", async () => {
+  it("defaults PI desktop settings", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
     const store = new AppSettingsStore({ rootDir });
 
     await expect(store.get()).resolves.toEqual(defaultSettings);
   });
 
-  it("persists the selected response mode", async () => {
-    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
-    const store = new AppSettingsStore({ rootDir });
-
-    await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
-      ...defaultSettings,
-      responseMode: "smooth",
-    });
-    await expect(new AppSettingsStore({ rootDir }).get()).resolves.toEqual({
-      ...defaultSettings,
-      responseMode: "smooth",
-    });
-    await expect(readFile(join(rootDir, "settings.json"), "utf8")).resolves.toContain(
-      "\"responseMode\": \"smooth\"",
-    );
-  });
-
-  it("persists the selected agent runtime", async () => {
-    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
-    const store = new AppSettingsStore({ rootDir });
-
-    await expect(store.save({ runtimeKind: "pi" })).resolves.toEqual({
-      ...defaultSettings,
-      runtimeKind: "pi",
-    });
-    await expect(new AppSettingsStore({ rootDir }).get()).resolves.toEqual({
-      ...defaultSettings,
-      runtimeKind: "pi",
-    });
-    await expect(readFile(join(rootDir, "settings.json"), "utf8")).resolves.toContain(
-      "\"runtimeKind\": \"pi\"",
-    );
-  });
-
-  it("defaults old settings files to the native runtime", async () => {
+  it("drops legacy runtime selector fields from old settings files", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
     await writeFile(join(rootDir, "settings.json"), `${JSON.stringify({
       schemaVersion: 1,
+      runtimeKind: "native",
       responseMode: "smooth",
       developerMode: true,
       commandExecutionMode: "cruise",
@@ -72,26 +37,23 @@ describe("AppSettingsStore", () => {
 
     await expect(store.get()).resolves.toEqual({
       ...defaultSettings,
-      runtimeKind: "native",
-      responseMode: "smooth",
       developerMode: true,
       commandExecutionMode: "cruise",
       webAccessEnabled: true,
       webSearchCoverage: "wide",
     });
+    await store.save({ developerMode: false });
+    const persisted = await readFile(join(rootDir, "settings.json"), "utf8");
+    expect(persisted).not.toContain("runtimeKind");
+    expect(persisted).not.toContain("responseMode");
   });
 
-  it("persists developer mode without changing the response mode", async () => {
+  it("persists developer mode without changing other settings", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
     const store = new AppSettingsStore({ rootDir });
 
     await expect(store.save({ developerMode: true })).resolves.toEqual({
       ...defaultSettings,
-      developerMode: true,
-    });
-    await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
-      ...defaultSettings,
-      responseMode: "smooth",
       developerMode: true,
     });
   });
@@ -120,12 +82,6 @@ describe("AppSettingsStore", () => {
       webSearchCoverage: "wide",
     })).resolves.toEqual({
       ...defaultSettings,
-      webAccessEnabled: true,
-      webSearchCoverage: "wide",
-    });
-    await expect(store.save({ responseMode: "smooth" })).resolves.toEqual({
-      ...defaultSettings,
-      responseMode: "smooth",
       webAccessEnabled: true,
       webSearchCoverage: "wide",
     });
