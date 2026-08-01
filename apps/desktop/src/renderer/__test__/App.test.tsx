@@ -647,6 +647,8 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Models" }));
     const keyInput = await screen.findByLabelText("API key");
 
+    expect(screen.getByTestId("models-page")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("model-provider-list")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
     expect(keyInput).toHaveAttribute("type", "password");
     expect(keyInput).toHaveValue("************");
     fireEvent.focus(keyInput);

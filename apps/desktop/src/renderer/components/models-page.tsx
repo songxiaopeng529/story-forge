@@ -125,13 +125,16 @@ export function ModelsPage(props: {
   }
 
   return (
-    <div className="grid min-w-0 grid-cols-[250px_1fr]">
-      <aside className="border-r border-forge-line bg-white p-3">
-        <div className="px-2 py-3">
+    <div
+      className="grid min-h-0 min-w-0 grid-cols-[250px_1fr] overflow-hidden"
+      data-testid="models-page"
+    >
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-forge-line bg-white p-3">
+        <div className="flex-none px-2 py-3">
           <h2 className="text-sm font-semibold">Model providers</h2>
           <p className="mt-1 text-xs text-slate-500">Keys stay encrypted in Electron.</p>
         </div>
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" data-testid="model-provider-list">
           {props.providers.map((provider) => (
             <button
               className={`flex w-full items-center justify-between rounded-md px-3 py-3 text-left ${
@@ -158,7 +161,7 @@ export function ModelsPage(props: {
           ))}
         </div>
       </aside>
-      <section className="min-w-0 overflow-y-auto p-8">
+      <section className="min-h-0 min-w-0 overflow-y-auto p-8">
         {props.selectedProvider ? (
           <div className="mx-auto max-w-2xl">
             <div className="flex items-start justify-between">
