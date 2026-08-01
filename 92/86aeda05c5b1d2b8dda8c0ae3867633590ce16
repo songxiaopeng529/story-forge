@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/__test__/App.test.tsx
+  s_8151528cdd6ca2::t_fd585705016d27 650-651
+apps/desktop/src/renderer/components/models-page.tsx
+  s_8151528cdd6ca2::t_9c956619a0175e 128-133,137,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "9286aeda05c5b1d2b8dda8c0ae3867633590ce16",
+  "prompts": {},
+  "sessions": {
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
