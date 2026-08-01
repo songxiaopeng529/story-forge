@@ -1,0 +1,135 @@
+apps/desktop/package.json
+  s_8151528cdd6ca2::t_9049f440f214eb 15-16
+apps/desktop/src/main/__test__/ipc-handlers.test.ts
+  s_8151528cdd6ca2::t_167678d0e04e42 9-10,101-127,272,292,301
+apps/desktop/src/main/agent-coordinator.ts
+  s_8151528cdd6ca2::t_1b9e45af44dcee 1-7
+apps/desktop/src/main/automation-repository.ts
+  s_8151528cdd6ca2::t_8a47bd71151a36 12
+apps/desktop/src/main/automation-service.ts
+  s_8151528cdd6ca2::t_1b9d07b6932ae4 16
+apps/desktop/src/main/ipc-handlers.ts
+  s_8151528cdd6ca2::t_35f3d75b9e3d49 2,5,49,149,156,355-356,360,362
+apps/desktop/src/main/main.ts
+  s_8151528cdd6ca2::t_9f227b85e3ca49 11-16,58-60,66-71,79,83-84
+apps/desktop/src/main/mcp-config-service.ts
+  s_8151528cdd6ca2::t_06477f0e17b32d 5
+apps/desktop/src/main/provider-service.ts
+  s_8151528cdd6ca2::t_2cb7073eb05fbd 1-9,12,14-15,19,23-27,31,35,38-39,42-43
+apps/desktop/src/main/skill-service.ts
+  s_8151528cdd6ca2::t_314dd15e43a8d0 1
+apps/desktop/src/renderer/App.tsx
+  s_8151528cdd6ca2::t_f0adca63a7430d 16
+apps/desktop/src/renderer/__test__/App.test.tsx
+  s_8151528cdd6ca2::t_c26bb49c42abc7 184,211,243,262,276,301,322,1153-1165,1210
+apps/desktop/src/renderer/__test__/timeline.test.ts
+  s_8151528cdd6ca2::t_19f838f91e3f6d 16
+apps/desktop/src/renderer/components/__test__/run-context-panel.test.tsx
+  s_8151528cdd6ca2::t_89e96b0ac2ce5c 12
+apps/desktop/src/renderer/components/automations-page.tsx
+  s_8151528cdd6ca2::t_67409221048bba 16,38
+apps/desktop/src/renderer/components/models-page.tsx
+  s_8151528cdd6ca2::t_0956e2dc0c8618 3
+apps/desktop/src/renderer/timeline.ts
+  s_8151528cdd6ca2::t_b42c365cffe996 128-133
+apps/desktop/src/shared/story-forge-api.ts
+  s_8151528cdd6ca2::t_51e2dc825e3ab8 11-12,14,18,25-26,103
+packages/agent/package.json
+  s_8151528cdd6ca2::t_d695316b8de2d4 2,21-22,24
+packages/agent/src/__test__/session-repository.test.ts
+  s_8151528cdd6ca2::t_a732f9bb18626d 7-11,16-20,32,37,116,127-128,134,136,222-245
+packages/agent/src/atomic-json.ts
+  s_8151528cdd6ca2::t_42ad15f09d38cd 1-33
+packages/agent/src/create-storyforge-session.ts
+  s_8151528cdd6ca2::t_ec1ebd215b289d 2-7,9,11-22,24-25,27-35,37-52
+packages/agent/src/event-mapper.ts
+  s_8151528cdd6ca2::t_37a52781240de8 3-6,9-14,17-39,41-52,54-78,80-91,93-97,99-103,105-119,121-125
+packages/agent/src/host.ts
+  s_8151528cdd6ca2::t_f7824cae3fe245 1-8
+packages/agent/src/index.ts
+  s_8151528cdd6ca2::t_1cc94bb3107941 1-13
+packages/agent/src/pi-model-service.ts
+  s_8151528cdd6ca2::t_0782ca8f1b7a4f 2-5,8-9,11,16-21,24,26,29,34-45,47-49,51-53,55-61,65-102,105-110,112-113,115-117,119-121,123-124,126-130,132-133,137-139,142-155,158-162,165-176,178,181-191,193-213,217-228
+packages/agent/src/pi-session-adapter.ts
+  s_8151528cdd6ca2::t_16cb3b04ea934b 1-6,8-15,17-24,26-63,65-68,70-77,80-97,99-116,118-119,121-123,125-136,138-141,144-151,153-181,183-187,189,191-193,197-202,204,207-237,240-263,265-276,278-295,298,301-321,324-338,341-344,347-348
+packages/agent/src/session-repository.ts
+  s_8151528cdd6ca2::t_734fd6cb72b0dc 13,19,82-91,96,98,107-127,129-132,149-167,170,173,175,185-187,191-198,203-206,208,235-236,239-250,253-257,262,354-355,359-432,435,438-439,444,448-449
+packages/agent/src/storyforge-agent-harness.ts
+  s_8151528cdd6ca2::t_9a5f7eac1332bf 1-18,20-47,50-60,63-70,74-79,81-117,119-122,125-128,130-132,134-135,137-140,143-158,160-162,164-165,169-202,204-221,225-234,237-239,242-253,255-272,275-282,284-286,288-292,294-295,297-302,306-347,349-351,353-368,370-371,373-389,391,393-396,400-451,453-482,485-500,502-503,505-523,528-540,542-544,546-556,558-559,561-611,615-620,622,624-625,630-633,635-638,644-645,647-648,656,658-659,663,667-668,671-677,680-683,687-707,709-715,718-735,739-740,744-750,752-753,759-767,770-772,774-775,777,780-786,789-793,797-800,802,805-807,810-813,816-817,820-822,825-826,829-830,833-834,837-838,841-842
+packages/agent/tsconfig.json
+  s_8151528cdd6ca2::t_a95927f195cfe0 4
+packages/agent/vitest.config.ts
+  s_8151528cdd6ca2::t_742abf5b954ba1 5
+packages/extensions/package.json
+  s_8151528cdd6ca2::t_5462e03db7e057 2,4,19-22
+packages/extensions/src/__test__/automation-proposal-tool.test.ts
+  s_8151528cdd6ca2::t_f9ccfa48873dbf 2-3,13,15,55,57,87-90,92,104-114
+packages/extensions/src/__test__/command-policy.test.ts
+  s_8151528cdd6ca2::t_175929e301dc68 1-2
+packages/extensions/src/__test__/disabled-mcp-client.test.ts
+  s_8151528cdd6ca2::t_b9b491f0797e16 2
+packages/extensions/src/__test__/mcp-client.test.ts
+  s_8151528cdd6ca2::t_02ff851c5c6676 2
+packages/extensions/src/__test__/mcp-config.test.ts
+  s_8151528cdd6ca2::t_28c62a380f7095 2
+packages/extensions/src/__test__/skill-manifest.test.ts
+  s_8151528cdd6ca2::t_d5abf517c52628 2
+packages/extensions/src/__test__/task-tools.test.ts
+  s_8151528cdd6ca2::t_b69e50661b15b8 9
+packages/extensions/src/__test__/web-search-providers.test.ts
+  s_8151528cdd6ca2::t_4042bd48086506 6
+packages/extensions/src/__test__/web-tools.test.ts
+  s_8151528cdd6ca2::t_338bfc73e5a064 2-3,7,12,14,25,30,32,66,71,73,92,97,99,101,105-131
+packages/extensions/src/__test__/web-url-policy.test.ts
+  s_8151528cdd6ca2::t_f0451799660029 2
+packages/extensions/src/automation/proposal-tool.ts
+  s_8151528cdd6ca2::t_96752b213a145f 1
+packages/extensions/src/index.ts
+  s_8151528cdd6ca2::t_9298a3e2c5baee 1-15
+packages/extensions/src/mcp/client.ts
+  s_8151528cdd6ca2::t_1c437f08d3b171 3
+packages/extensions/src/permissions/shell-command.ts
+  s_8151528cdd6ca2::t_05c2934d67ae6c 1-3,5-18
+packages/extensions/src/subagents/index.ts
+  s_8151528cdd6ca2::t_36322caa204c41 1-7
+packages/extensions/src/tasks/task-tools.ts
+  s_8151528cdd6ca2::t_69b93d68268cf0 1
+packages/extensions/src/tool-definition.ts
+  s_8151528cdd6ca2::t_8fe33dbb926952 7-10
+packages/extensions/src/web/web-tools.ts
+  s_8151528cdd6ca2::t_72aae09a673d29 1
+packages/extensions/src/workspace/guard.ts
+  s_8151528cdd6ca2::t_ea7b183acac71c 1,3,5,7-18,20-21,24,27-29,32-34,37-40
+packages/extensions/tsconfig.json
+  s_8151528cdd6ca2::t_8d5c3e33c85167 4
+packages/shared/src/events.ts
+  s_8151528cdd6ca2::t_83b28775fa5072 143-146
+packages/shared/src/extensions.ts
+  s_8151528cdd6ca2::t_4944d57312a905 60
+packages/shared/src/index.ts
+  s_8151528cdd6ca2::t_b21f2518b2e65c 3
+packages/shared/src/models.ts
+  s_8151528cdd6ca2::t_89dad7a32d73fe 1-14,19,22-24,27
+pnpm-lock.yaml
+  s_8151528cdd6ca2::t_e4257fae0945bb 16,25,28,32,34-35,37,100,102-105,107,111-113,115-122,398-403,405,407-408,412-415,781-848,1176-1178,1536-1539,1561-1564,1604-1607,1667-1670,1885-1888,2041-2044,2057-2060,2109-2115,2198-2200,2205-2208,2391-2395,2543-2550,2637-2640,2644-2647,2737-2739,2834-2837,2885-2889,2895-2902,2909-2911,3097-3100,3293-3297,3423,3749,3751-3752,3764,3785-3819,4045-4088,4311-4312,4653,4659,4721-4722,4737-4740,4772-4773,4826-4831,5062-5063,5262-5263,5276-5281,5398-5403,5475-5476,5479-5480,5630-5631,6011-6016,6098-6099,6102-6106,6154-6161,6188-6193,6317-6318,6402-6403,6406-6411,6425-6426,6586,6597,6635-6636,6695,6700,6720,6731,6734,6737,6754,6783-6786
+tsconfig.base.json
+  s_8151528cdd6ca2::t_1fd728719843c9 16-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1922fd8f508524a30c77d17932976befbd0f9955",
+  "prompts": {},
+  "sessions": {
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
