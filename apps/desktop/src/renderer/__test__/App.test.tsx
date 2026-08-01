@@ -181,7 +181,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/agent" } });
+    changePrompt(input, "/agent");
 
     const command = await screen.findByRole("option", { name: /\/agent-browser/i });
     expect(screen.queryByRole("option", { name: /\/drafting/i })).not.toBeInTheDocument();
@@ -208,7 +208,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/" } });
+    changePrompt(input, "/");
     await screen.findByRole("listbox", { name: "Slash commands" });
     const options = screen.getAllByRole("option");
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -240,7 +240,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/agent" } });
+    changePrompt(input, "/agent");
     fireEvent.click(await screen.findByRole("option", { name: /\/agent-browser/i }));
     await screen.findByTestId("active-slash-command");
 
@@ -259,7 +259,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/timer" } });
+    changePrompt(input, "/timer");
     fireEvent.click(await screen.findByRole("option", { name: /\/timer/i }));
 
     expect(await screen.findByLabelText("Schedule description")).toBeInTheDocument();
@@ -273,7 +273,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/plan" } });
+    changePrompt(input, "/plan");
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
 
     expect(input).toHaveValue("");
@@ -298,7 +298,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/plan" } });
+    changePrompt(input, "/plan");
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
     await screen.findByTestId("active-slash-command");
     expect(screen.getByText("Plan")).toBeInTheDocument();
@@ -319,7 +319,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/compact" } });
+    changePrompt(input, "/compact");
     fireEvent.click(await screen.findByRole("option", { name: /\/compact/i }));
 
     expect(await screen.findByTestId("compaction-indicator")).toBeInTheDocument();
@@ -1150,6 +1150,19 @@ describe("App", () => {
 
 });
 
+function changePrompt(input: HTMLElement, value: string): void {
+  const textarea = input as HTMLTextAreaElement;
+  fireEvent.change(textarea, {
+    target: {
+      value,
+      selectionStart: value.length,
+      selectionEnd: value.length,
+    },
+  });
+  textarea.setSelectionRange(value.length, value.length);
+  fireEvent.keyUp(textarea, { key: value.at(-1) ?? "" });
+}
+
 function installApi(options: {
   settings?: Partial<AppSettingsView>;
   saveSettings?: StoryForgeApi["settings"]["save"];
@@ -1194,7 +1207,7 @@ function installApi(options: {
     },
   ];
   const session: SessionView = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "sf_session_existing",
     workspaceId: workspace.id,
     title: "Project session",

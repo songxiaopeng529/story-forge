@@ -125,7 +125,12 @@ export function buildTimeline(input: {
 }
 
 function formatCompactionNotice(event: ContextCompactedEvent): string {
-  if (event.budgetTokens <= 0) {
+  if (
+    event.budgetTokens === undefined
+    || event.beforeTokens === undefined
+    || event.afterTokens === undefined
+    || event.budgetTokens <= 0
+  ) {
     return "已压缩上下文";
   }
   const before = Math.round((event.beforeTokens / event.budgetTokens) * 100);

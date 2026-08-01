@@ -2,7 +2,7 @@ import {
   NodeMcpConnectionTester,
   parseMcpConfig,
   type McpConnectionTester,
-} from "@story-forge/mcp";
+} from "@story-forge/extensions";
 import type { McpConfigView, McpServerView, McpToolView } from "@story-forge/shared";
 import { join } from "node:path";
 import { z } from "zod";

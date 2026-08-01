@@ -1,7 +1,6 @@
-import type { ProviderId } from "@story-forge/model-gateway";
 import { Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { ProviderView } from "../../shared/story-forge-api";
+import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
 import { formatError } from "../renderer-utils";
 
 const SAVED_API_KEY_MASK = "************";

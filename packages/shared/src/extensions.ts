@@ -57,7 +57,7 @@ export type AutomationView = {
   name: string;
   status: AutomationStatus;
   workspaceId: string;
-  providerId: "deepseek" | "openai" | "anthropic" | "openrouter" | "volcano";
+  providerId: string;
   model: string;
   sessionId?: `sf_session_${string}` | undefined;
   schedule: AutomationScheduleView;

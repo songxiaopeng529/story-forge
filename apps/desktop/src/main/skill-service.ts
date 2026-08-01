@@ -1,4 +1,4 @@
-import { parseSkillManifest } from "@story-forge/skills";
+import { parseSkillManifest } from "@story-forge/extensions";
 import type { InstalledSkillRecord, SkillView } from "@story-forge/shared";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";

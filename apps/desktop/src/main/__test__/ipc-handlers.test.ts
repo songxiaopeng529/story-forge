@@ -6,7 +6,8 @@ import type { AgentCoordinator } from "../agent-coordinator";
 import type { AppSettingsStore } from "../app-settings-store";
 import { registerIpcHandlers, type IpcRegistrar } from "../ipc-handlers";
 import type { ProviderService } from "../provider-service";
-import type { SessionRepository } from "../session-repository";
+import type { SessionRepository } from "@story-forge/agent";
+import type { ProviderView } from "@story-forge/shared";
 import type { WorkspaceRepository } from "../workspace-repository";
 
 describe("registerIpcHandlers", () => {
@@ -94,6 +95,33 @@ describe("registerIpcHandlers", () => {
       workspaceId: "workspace-1",
       providerId: "deepseek",
       model: "deepseek-v4-pro",
+    });
+  });
+
+  it("creates sessions with the first available PI provider when no default is configured", async () => {
+    const fixture = createFixture({
+      providers: [{
+        providerId: "anthropic",
+        displayName: "Anthropic",
+        baseUrl: "https://api.anthropic.com",
+        model: "claude-sonnet-4-5",
+        recommendedModels: ["claude-sonnet-4-5"],
+        isDefault: false,
+        hasSecret: false,
+        lastTestStatus: "untested",
+        supportsImageInput: true,
+      }],
+    });
+    registerIpcHandlers(fixture.options);
+
+    await fixture.invoke(IPC_CHANNELS.sessionsCreate, {
+      workspaceId: "workspace-1",
+    });
+
+    expect(fixture.createSession).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      providerId: "anthropic",
+      model: "claude-sonnet-4-5",
     });
   });
 
@@ -241,7 +269,7 @@ describe("registerIpcHandlers", () => {
   });
 });
 
-function createFixture() {
+function createFixture(options: { providers?: ProviderView[] } = {}) {
   const handlers = new Map<string, (event: unknown, input: unknown) => unknown>();
   const ipc: IpcRegistrar = {
     handle: (channel, listener) => {
@@ -261,7 +289,7 @@ function createFixture() {
     ...input,
   }));
   const providers = {
-    list: vi.fn(async () => [{
+    list: vi.fn(async () => options.providers ?? [{
       providerId: "deepseek",
       displayName: "DeepSeek",
       baseUrl: "https://api.deepseek.com",
@@ -270,6 +298,7 @@ function createFixture() {
       isDefault: true,
       hasSecret: true,
       lastTestStatus: "success",
+      supportsImageInput: false,
     }]),
     save: vi.fn(),
     test: vi.fn(),

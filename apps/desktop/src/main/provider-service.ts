@@ -1,66 +1,45 @@
-import {
-  ProviderRegistry,
-  type ProviderId,
-} from "@story-forge/model-gateway";
-import type {
-  ProviderConfigStore,
-  ProviderView,
-  SaveProviderInput,
-} from "./provider-config-store";
+import type { PiModelService } from "@story-forge/agent";
+import type { ProviderId, ProviderView } from "@story-forge/shared";
+
+export type SaveProviderInput = {
+  providerId: ProviderId;
+  baseUrl?: string;
+  model: string;
+  apiKey?: string;
+};
 
 export class ProviderService {
-  private readonly store: ProviderConfigStore;
-  private readonly registry: Pick<ProviderRegistry, "discoverModels">;
+  private readonly piModels: PiModelService;
 
-  constructor(options: {
-    store: ProviderConfigStore;
-    registry: Pick<ProviderRegistry, "discoverModels">;
-  }) {
-    this.store = options.store;
-    this.registry = options.registry;
+  constructor(options: { piModels: PiModelService }) {
+    this.piModels = options.piModels;
   }
 
   list(): Promise<ProviderView[]> {
-    return this.store.list();
+    return this.piModels.list();
   }
 
   save(input: SaveProviderInput): Promise<ProviderView> {
-    return this.store.save(input);
+    return this.piModels.save({
+      providerId: input.providerId,
+      model: input.model,
+      ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+    });
   }
 
   setDefault(providerId: ProviderId): Promise<void> {
-    return this.store.setDefault(providerId);
+    return this.piModels.setDefault(providerId);
   }
 
   clearSecret(providerId: ProviderId): Promise<void> {
-    return this.store.clearSecret(providerId);
+    return this.piModels.clearSecret(providerId);
   }
 
-  async test(providerId: ProviderId): Promise<{ models: string[] }> {
-    try {
-      const models = await this.discoverModels(providerId);
-      await this.store.recordTest(providerId, "success");
-      return { models };
-    } catch (error) {
-      await this.store.recordTest(providerId, "failed");
-      throw error;
-    }
+  test(providerId: ProviderId): Promise<{ models: string[] }> {
+    return this.piModels.test(providerId);
   }
 
-  async discoverModels(providerId: ProviderId): Promise<string[]> {
-    const resolved = await this.store.resolve(providerId);
-    try {
-      return await this.registry.discoverModels(
-        {
-          providerId,
-          baseUrl: resolved.baseUrl,
-          model: resolved.model,
-        },
-        resolved.apiKey,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message.split(resolved.apiKey).join("[REDACTED]"), { cause: error });
-    }
+  discoverModels(providerId: ProviderId): Promise<string[]> {
+    return this.piModels.discoverModels(providerId);
   }
 }

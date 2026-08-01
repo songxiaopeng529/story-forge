@@ -80,14 +80,6 @@ export type PermissionRequestEvent = {
   risk: "unknown" | "high" | "destructive" | "elevated";
 };
 
-export type MemoryWriteEvent = {
-  type: "memory.write";
-  sessionId: SessionId;
-  turnId: TurnId;
-  key: string;
-  value: string;
-};
-
 export type ResponseFallbackEvent = {
   type: "response.fallback";
   sessionId: SessionId;
@@ -148,10 +140,10 @@ export type ContextCompactedEvent = {
   sessionId: SessionId;
   turnId: TurnId;
   trigger: "auto" | "manual";
-  beforeTokens: number;
-  afterTokens: number;
-  budgetTokens: number;
-  retainedRounds: number;
+  beforeTokens?: number;
+  afterTokens?: number;
+  budgetTokens?: number;
+  retainedRounds?: number;
 };
 
 export type AutomationProposalEvent = {
@@ -179,7 +171,6 @@ export type AgentEvent =
   | ToolCallEvent
   | ToolResultEvent
   | PermissionRequestEvent
-  | MemoryWriteEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
   | ContextUsageEvent

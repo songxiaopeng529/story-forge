@@ -1,4 +1,3 @@
-import { ProviderRegistry } from "@story-forge/model-gateway";
 import {
   app,
   BrowserWindow,
@@ -9,7 +8,12 @@ import {
 } from "electron";
 import { join } from "node:path";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
-import { AgentCoordinator } from "./agent-coordinator";
+import {
+  AgentCoordinator,
+  PiModelService,
+  PiSessionAdapter,
+  SessionRepository,
+} from "@story-forge/agent";
 import { AppSettingsStore } from "./app-settings-store";
 import { AutomationRepository } from "./automation-repository";
 import { AutomationScheduler } from "./automation-scheduler";
@@ -17,9 +21,7 @@ import { AutomationService } from "./automation-service";
 import { loadStoryForgeDotEnv } from "./env-loader";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { McpConfigService } from "./mcp-config-service";
-import { ProviderConfigStore } from "./provider-config-store";
 import { ProviderService } from "./provider-service";
-import { SessionRepository } from "./session-repository";
 import { SkillService } from "./skill-service";
 import { WorkspaceRepository } from "./workspace-repository";
 
@@ -52,18 +54,21 @@ function createWindow(): BrowserWindow {
 async function initializeApplication(): Promise<void> {
   await loadStoryForgeDotEnv(app.getAppPath());
   const rootDir = app.getPath("userData");
-  const commandHome = join(rootDir, "command-home");
   const settingsStore = new AppSettingsStore({ rootDir });
-  const providerStore = new ProviderConfigStore({
-    rootDir,
+  const piModels = new PiModelService({ rootDir });
+  const workspaceRepository = new WorkspaceRepository({ rootDir });
+  await piModels.migrateLegacyCredentials({
     crypto: {
       isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
-      encryptString: (value) => safeStorage.encryptString(value),
       decryptString: (value) => safeStorage.decryptString(value),
     },
   });
-  const workspaceRepository = new WorkspaceRepository({ rootDir });
-  const sessionRepository = new SessionRepository({ rootDir });
+  const piSessions = new PiSessionAdapter({
+    rootDir,
+    workspaces: workspaceRepository,
+    piModels,
+  });
+  const sessionRepository = new SessionRepository({ rootDir, piAdapter: piSessions });
   const skillService = new SkillService({ rootDir });
   const mcpConfigService = new McpConfigService({ rootDir });
   const automationService = new AutomationService({
@@ -71,19 +76,17 @@ async function initializeApplication(): Promise<void> {
   });
   await sessionRepository.recoverInterruptedSessions();
   await automationService.recoverRunningRuns();
-  const registry = new ProviderRegistry();
-  const providerService = new ProviderService({ store: providerStore, registry });
+  const providerService = new ProviderService({ piModels });
   const coordinator = new AgentCoordinator({
-    providerStore,
     sessionRepository,
     workspaceRepository,
-    providerFactory: registry,
+    piModels,
+    piSessions,
     skillResolver: skillService,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
     getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,
     getWebSearchCoverage: async () => (await settingsStore.get()).webSearchCoverage,
-    commandHome,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);
