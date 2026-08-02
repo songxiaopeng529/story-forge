@@ -90,7 +90,7 @@ export function SettingsPage(props: {
                     aria-label={mode.label}
                     className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
                       props.commandExecutionMode === mode.value
-                        ? "border-forge-ember bg-orange-50 text-forge-ember"
+                        ? "border-2 border-forge-ember text-forge-ember"
                         : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
                     }`}
                     disabled={props.saving}
@@ -178,7 +178,7 @@ export function SettingsPage(props: {
                       aria-label={mode.label}
                       className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
                         props.webSearchCoverage === mode.value
-                          ? "border-forge-ember bg-orange-50 text-forge-ember"
+                          ? "border-2 border-forge-ember text-forge-ember"
                           : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
                       }`}
                       disabled={disabled}

@@ -168,6 +168,12 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   );
   handle(
     options.ipc,
+    IPC_CHANNELS.providersRevealSecret,
+    providerIdSchema,
+    (providerId) => options.providers.revealSecret(providerId),
+  );
+  handle(
+    options.ipc,
     IPC_CHANNELS.providersSetDefault,
     providerIdSchema,
     (providerId) => options.providers.setDefault(providerId),

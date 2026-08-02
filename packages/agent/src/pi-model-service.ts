@@ -1,11 +1,13 @@
 import {
   ModelRuntime,
+  readStoredCredential,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { ProviderId, ProviderView } from "@story-forge/shared";
+import { writeJsonAtomic } from "./atomic-json";
 import type { CreateStoryForgeAgentSessionInput } from "./create-storyforge-session";
 
 export type LegacyCredentialCrypto = {
@@ -14,6 +16,19 @@ export type LegacyCredentialCrypto = {
 };
 
 export type ResolvedPiModel = NonNullable<CreateStoryForgeAgentSessionInput["model"]>;
+type ProviderRegistration = Parameters<ModelRuntime["registerProvider"]>[1];
+type ProviderModelRegistration = NonNullable<ProviderRegistration["models"]>[number];
+type RuntimeModel = ReturnType<ModelRuntime["getModels"]>[number];
+
+const VOLCANO_PROVIDER_ID = "volcano";
+const VOLCANO_PROVIDER_NAME = "Volcano Engine (火山引擎)";
+const VOLCANO_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const VOLCANO_DEFAULT_MODEL = "doubao-seed-2-0-lite-260215";
+const VOLCANO_RECOMMENDED_MODELS = [
+  VOLCANO_DEFAULT_MODEL,
+  "doubao-seed-1-6-250615",
+  "ep-your-endpoint-id",
+];
 
 const legacyProviderRecordSchema = z.object({
   providerId: z.string().min(1),
@@ -30,6 +45,21 @@ const legacySecretsFileSchema = z.object({
   schemaVersion: z.literal(1),
   secrets: z.record(z.string(), z.string()),
 });
+
+const providerOverrideSchema = z.object({
+  baseUrl: z.string().optional(),
+  model: z.string().optional(),
+});
+
+const providerOverridesFileSchema = z.object({
+  schemaVersion: z.literal(1),
+  providers: z.record(z.string(), providerOverrideSchema),
+});
+
+const authStorageFileSchema = z.record(z.string(), z.unknown());
+
+type ProviderOverridesFile = z.infer<typeof providerOverridesFileSchema>;
+type ProviderOverride = z.infer<typeof providerOverrideSchema>;
 
 export class PiModelService {
   private readonly rootDir: string;
@@ -53,12 +83,18 @@ export class PiModelService {
   }
 
   async getModelRuntime(): Promise<ModelRuntime> {
-    this.modelRuntimePromise ??= ModelRuntime.create({
-      authPath: join(this.agentDir, "auth.json"),
+    this.modelRuntimePromise ??= this.createModelRuntime();
+    return this.modelRuntimePromise;
+  }
+
+  private async createModelRuntime(): Promise<ModelRuntime> {
+    const runtime = await ModelRuntime.create({
+      authPath: this.getAuthPath(),
       modelsPath: join(this.agentDir, "models.json"),
       allowModelNetwork: false,
     });
-    return this.modelRuntimePromise;
+    await this.registerStoryForgeProviders(runtime);
+    return runtime;
   }
 
   async list(): Promise<ProviderView[]> {
@@ -98,19 +134,25 @@ export class PiModelService {
         if (left.hasSecret !== right.hasSecret) {
           return left.hasSecret ? -1 : 1;
         }
+        const rankDelta = providerListRank(left.providerId) - providerListRank(right.providerId);
+        if (rankDelta !== 0) {
+          return rankDelta;
+        }
         return left.displayName.localeCompare(right.displayName);
       });
   }
 
   async save(input: {
     providerId: ProviderId;
+    baseUrl?: string;
     model: string;
     apiKey?: string;
   }): Promise<ProviderView> {
     const runtime = await this.getModelRuntime();
+    await this.updateManagedProvider(runtime, input);
     const apiKey = input.apiKey?.trim();
     if (apiKey) {
-      await runtime.setRuntimeApiKey(input.providerId, apiKey, { allowNetwork: false });
+      await this.persistApiKey(input.providerId, apiKey);
     }
     if (input.model.trim()) {
       this.settingsManager.setDefaultModelAndProvider(input.providerId, input.model.trim());
@@ -134,9 +176,24 @@ export class PiModelService {
   }
 
   async clearSecret(providerId: ProviderId): Promise<void> {
-    const runtime = await this.getModelRuntime();
-    await runtime.removeRuntimeApiKey(providerId);
+    await this.deletePersistedApiKey(providerId);
+    this.modelRuntimePromise = undefined;
     this.lastTestStatus.set(providerId, "untested");
+  }
+
+  async revealSecret(providerId: ProviderId): Promise<string | undefined> {
+    const credential = readStoredCredential(providerId, this.getAuthPath());
+    if (credential?.type === "api_key" && credential.key) {
+      return credential.key;
+    }
+    const runtime = await this.getModelRuntime();
+    if (!runtime.isUsingOAuth(providerId)) {
+      const auth = await runtime.getAuth(providerId);
+      if (auth?.auth.apiKey) {
+        return auth.auth.apiKey;
+      }
+    }
+    return undefined;
   }
 
   async test(providerId: ProviderId): Promise<{ models: string[] }> {
@@ -198,7 +255,7 @@ export class PiModelService {
       }
       const apiKey = options.crypto.decryptString(Buffer.from(encrypted, "base64"));
       if (apiKey.trim()) {
-        await runtime.setRuntimeApiKey(provider.providerId, apiKey, { allowNetwork: false });
+        await this.persistApiKey(provider.providerId, apiKey);
       }
       if (provider.isDefault && provider.model) {
         this.settingsManager.setDefaultModelAndProvider(provider.providerId, provider.model);
@@ -212,6 +269,239 @@ export class PiModelService {
       "utf8",
     );
   }
+
+  private getAuthPath(): string {
+    return join(this.agentDir, "auth.json");
+  }
+
+  private getProviderOverridesPath(): string {
+    return join(this.agentDir, "storyforge-provider-overrides.json");
+  }
+
+  private async registerStoryForgeProviders(runtime: ModelRuntime): Promise<void> {
+    const overrides = await this.readProviderOverrides();
+    runtime.registerProvider(
+      VOLCANO_PROVIDER_ID,
+      createVolcanoProviderConfig(overrides.providers[VOLCANO_PROVIDER_ID]),
+    );
+    for (const [providerId, override] of Object.entries(overrides.providers)) {
+      if (providerId === VOLCANO_PROVIDER_ID) {
+        continue;
+      }
+      registerProviderOverride(runtime, providerId, override);
+    }
+  }
+
+  private async updateManagedProvider(
+    runtime: ModelRuntime,
+    input: { providerId: ProviderId; baseUrl?: string; model: string },
+  ): Promise<void> {
+    const overrides = await this.readProviderOverrides();
+    const previous = overrides.providers[input.providerId] ?? {};
+    const next: ProviderOverride = { ...previous };
+    const trimmedModel = input.model.trim();
+    if (trimmedModel) {
+      next.model = trimmedModel;
+    }
+    if (input.baseUrl !== undefined) {
+      const trimmedBaseUrl = input.baseUrl.trim();
+      if (trimmedBaseUrl) {
+        next.baseUrl = trimmedBaseUrl;
+      } else {
+        delete next.baseUrl;
+      }
+    }
+    const providers = {
+      ...overrides.providers,
+    };
+    if (next.model || next.baseUrl) {
+      providers[input.providerId] = next;
+    } else {
+      delete providers[input.providerId];
+    }
+    const updated: ProviderOverridesFile = {
+      schemaVersion: 1,
+      providers,
+    };
+    await writeJsonAtomic(this.getProviderOverridesPath(), updated, { mode: 0o600 });
+    if (input.providerId === VOLCANO_PROVIDER_ID) {
+      runtime.registerProvider(VOLCANO_PROVIDER_ID, createVolcanoProviderConfig(next));
+      return;
+    }
+    registerProviderOverride(runtime, input.providerId, next);
+  }
+
+  private async readProviderOverrides(): Promise<ProviderOverridesFile> {
+    return await readOptionalJson(
+      this.getProviderOverridesPath(),
+      providerOverridesFileSchema,
+    ) ?? {
+      schemaVersion: 1,
+      providers: {},
+    };
+  }
+
+  private async persistApiKey(
+    providerId: ProviderId,
+    apiKey: string,
+  ): Promise<void> {
+    const authPath = this.getAuthPath();
+    const current = await readOptionalJson(authPath, authStorageFileSchema) ?? {};
+    await writeJsonAtomic(authPath, {
+      ...current,
+      [providerId]: {
+        type: "api_key",
+        key: apiKey,
+      },
+    }, { mode: 0o600 });
+    this.modelRuntimePromise = undefined;
+  }
+
+  private async deletePersistedApiKey(providerId: ProviderId): Promise<void> {
+    const authPath = this.getAuthPath();
+    const current = await readOptionalJson(authPath, authStorageFileSchema);
+    if (!current || !(providerId in current)) {
+      return;
+    }
+    const next = { ...current };
+    delete next[providerId];
+    await writeJsonAtomic(authPath, next, { mode: 0o600 });
+    this.modelRuntimePromise = undefined;
+  }
+}
+
+function createVolcanoProviderConfig(override?: ProviderOverride): ProviderRegistration {
+  const baseUrl = override?.baseUrl?.trim() || VOLCANO_DEFAULT_BASE_URL;
+  const modelIds = unique([
+    override?.model?.trim(),
+    ...VOLCANO_RECOMMENDED_MODELS,
+  ].filter((modelId): modelId is string => Boolean(modelId)));
+
+  return {
+    name: VOLCANO_PROVIDER_NAME,
+    baseUrl,
+    api: "openai-completions",
+    apiKey: "$ARK_API_KEY",
+    models: modelIds.map((modelId) => ({
+      id: modelId,
+      name: modelId,
+      reasoning: false,
+      input: ["text" as const],
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      contextWindow: 128000,
+      maxTokens: 16384,
+    })),
+  };
+}
+
+function registerProviderOverride(
+  runtime: ModelRuntime,
+  providerId: ProviderId,
+  override: ProviderOverride,
+): void {
+  const baseUrl = override.baseUrl?.trim();
+  const modelId = override.model?.trim();
+  if (!baseUrl && !modelId) {
+    return;
+  }
+
+  const provider = runtime.getProvider(providerId);
+  if (!provider) {
+    return;
+  }
+
+  const config: ProviderRegistration = {
+    ...(provider.name ? { name: provider.name } : {}),
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+  if (modelId) {
+    config.models = createProviderModelRegistrations(runtime.getModels(providerId), {
+      baseUrl,
+      modelId,
+    });
+  }
+  runtime.registerProvider(providerId, config);
+}
+
+function createProviderModelRegistrations(
+  existingModels: readonly RuntimeModel[],
+  custom: { baseUrl: string | undefined; modelId: string },
+): ProviderModelRegistration[] {
+  const modelDefinitions = existingModels.map((model) => toProviderModelRegistration(model));
+  if (!modelDefinitions.some((definition) => definition.id === custom.modelId)) {
+    modelDefinitions.unshift(createCustomProviderModelRegistration({
+      baseUrl: custom.baseUrl,
+      modelId: custom.modelId,
+      template: existingModels[0],
+    }));
+  }
+  return uniqueById(modelDefinitions);
+}
+
+function toProviderModelRegistration(model: RuntimeModel): ProviderModelRegistration {
+  return {
+    id: model.id,
+    name: model.name || model.id,
+    api: model.api,
+    reasoning: model.reasoning,
+    input: [...model.input],
+    cost: model.cost,
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    ...(model.headers ? { headers: model.headers } : {}),
+    ...(model.thinkingLevelMap ? { thinkingLevelMap: model.thinkingLevelMap } : {}),
+    ...(model.compat ? { compat: model.compat } : {}),
+  };
+}
+
+function createCustomProviderModelRegistration(input: {
+  baseUrl: string | undefined;
+  modelId: string;
+  template: RuntimeModel | undefined;
+}): ProviderModelRegistration {
+  return {
+    id: input.modelId,
+    name: input.modelId,
+    api: input.template?.api ?? "openai-completions",
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    reasoning: input.template?.reasoning ?? false,
+    input: [...(input.template?.input ?? ["text" as const])],
+    cost: input.template?.cost ?? {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: input.template?.contextWindow ?? 128000,
+    maxTokens: input.template?.maxTokens ?? 16384,
+    ...(input.template?.headers ? { headers: input.template.headers } : {}),
+    ...(input.template?.thinkingLevelMap ? { thinkingLevelMap: input.template.thinkingLevelMap } : {}),
+    ...(input.template?.compat ? { compat: input.template.compat } : {}),
+  };
+}
+
+function uniqueById(models: ProviderModelRegistration[]): ProviderModelRegistration[] {
+  const seen = new Set<string>();
+  return models.filter((model) => {
+    if (seen.has(model.id)) {
+      return false;
+    }
+    seen.add(model.id);
+    return true;
+  });
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function providerListRank(providerId: ProviderId): number {
+  return providerId === VOLCANO_PROVIDER_ID ? 0 : 1;
 }
 
 async function readOptionalJson<Schema extends z.ZodType>(

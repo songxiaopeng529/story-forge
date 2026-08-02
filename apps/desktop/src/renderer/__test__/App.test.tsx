@@ -649,6 +649,22 @@ describe("App", () => {
 
     expect(screen.getByTestId("models-page")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("model-provider-list")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+    expect(screen.getByRole("img", { name: "DeepSeek provider logo" })).toBeInTheDocument();
+    expect(screen.getByTestId("provider-model-options")).toHaveTextContent("deepseek-v4-flash");
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText("Connection succeeded · 2 models")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "deepseek-v4-flash" }));
+    expect(screen.getByLabelText("Model ID")).toHaveValue("deepseek-v4-flash");
+    fireEvent.change(screen.getByLabelText("Model ID"), {
+      target: { value: "deepseek-v4-pro" },
+    });
+    expect(keyInput).toHaveAttribute("type", "password");
+    expect(keyInput).toHaveValue("************");
+    fireEvent.click(screen.getByRole("button", { name: "Show API key" }));
+    await waitFor(() => expect(fixture.revealSecret).toHaveBeenCalledWith("deepseek"));
+    expect(keyInput).toHaveAttribute("type", "text");
+    expect(keyInput).toHaveValue("saved-local-secret");
+    fireEvent.click(screen.getByRole("button", { name: "Hide API key" }));
     expect(keyInput).toHaveAttribute("type", "password");
     expect(keyInput).toHaveValue("************");
     fireEvent.focus(keyInput);
@@ -1247,6 +1263,7 @@ function installApi(options: {
     model: input.model,
     hasSecret: provider.hasSecret || Boolean(input.apiKey),
   }));
+  const revealSecret = vi.fn(async () => "saved-local-secret");
   let currentSkills = options.skills ?? [];
   let currentMcpConfig = options.mcpConfig ?? {
     schemaVersion: 1 as const,
@@ -1359,6 +1376,7 @@ function installApi(options: {
       save: saveProvider,
       test: vi.fn(async () => ({ models: provider.recommendedModels })),
       clearSecret: vi.fn(async () => undefined),
+      revealSecret,
       setDefault: vi.fn(async () => undefined),
       discoverModels: vi.fn(async () => provider.recommendedModels),
     },
@@ -1422,6 +1440,7 @@ function installApi(options: {
     getSession,
     saveSettings,
     saveProvider,
+    revealSecret,
     importSkill,
     setSkillEnabled,
     saveMcp,

@@ -31,6 +31,7 @@ export const IPC_CHANNELS = {
   providersSave: "story-forge:providers:save",
   providersTest: "story-forge:providers:test",
   providersClearSecret: "story-forge:providers:clear-secret",
+  providersRevealSecret: "story-forge:providers:reveal-secret",
   providersSetDefault: "story-forge:providers:set-default",
   providersDiscoverModels: "story-forge:providers:discover-models",
   workspacesList: "story-forge:workspaces:list",
@@ -136,6 +137,7 @@ export type StoryForgeApi = {
     }): Promise<ProviderView>;
     test(providerId: ProviderId): Promise<{ models: string[] }>;
     clearSecret(providerId: ProviderId): Promise<void>;
+    revealSecret(providerId: ProviderId): Promise<string | undefined>;
     setDefault(providerId: ProviderId): Promise<void>;
     discoverModels(providerId: ProviderId): Promise<string[]>;
   };

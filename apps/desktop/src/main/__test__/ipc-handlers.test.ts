@@ -16,6 +16,7 @@ describe("registerIpcHandlers", () => {
     registerIpcHandlers(fixture.options);
 
     expect(fixture.handlers.has(IPC_CHANNELS.providersList)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.providersRevealSecret)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.turnsStart)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.automationsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.skillsList)).toBe(true);
@@ -50,6 +51,12 @@ describe("registerIpcHandlers", () => {
         mode: "chaos",
       }),
     ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.providersRevealSecret, ""),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.providersRevealSecret, "deepseek"),
+    ).resolves.toBe("saved-local-secret");
   });
 
   it("registers Skills and MCP APIs with payload validation", async () => {
@@ -303,6 +310,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     save: vi.fn(),
     test: vi.fn(),
     clearSecret: vi.fn(),
+    revealSecret: vi.fn(async () => "saved-local-secret"),
     setDefault: vi.fn(),
     discoverModels: vi.fn(),
   } as unknown as ProviderService;
