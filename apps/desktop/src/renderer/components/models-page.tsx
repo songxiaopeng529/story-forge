@@ -1,7 +1,7 @@
-import type { ProviderId } from "@story-forge/model-gateway";
-import { Save } from "lucide-react";
+import { Eye, EyeOff, Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { ProviderView } from "../../shared/story-forge-api";
+import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
+import { getProviderIconUrl } from "../provider-icons";
 import { formatError } from "../renderer-utils";
 
 const SAVED_API_KEY_MASK = "************";
@@ -18,6 +18,7 @@ export function ModelsPage(props: {
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeyDirty, setApiKeyDirty] = useState(false);
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -27,6 +28,7 @@ export function ModelsPage(props: {
     setModel(props.selectedProvider?.model ?? "");
     setApiKey(props.selectedProvider?.hasSecret ? SAVED_API_KEY_MASK : "");
     setApiKeyDirty(false);
+    setApiKeyVisible(false);
     setModels(props.selectedProvider?.recommendedModels ?? []);
     setNotice(undefined);
   }, [props.selectedProvider?.providerId, props.selectedProvider?.hasSecret]);
@@ -54,6 +56,7 @@ export function ModelsPage(props: {
       updateProvider(saved);
       setApiKey(saved.hasSecret ? SAVED_API_KEY_MASK : "");
       setApiKeyDirty(false);
+      setApiKeyVisible(false);
       setNotice("Provider saved");
     } catch (saveError) {
       props.onError(formatError(saveError));
@@ -109,6 +112,7 @@ export function ModelsPage(props: {
       props.onProvidersChange(await window.storyForge.providers.list());
       setApiKey("");
       setApiKeyDirty(false);
+      setApiKeyVisible(false);
       setNotice("API key cleared");
     } catch (clearError) {
       props.onError(formatError(clearError));
@@ -125,14 +129,55 @@ export function ModelsPage(props: {
     props.onProvidersChange(await window.storyForge.providers.list());
   }
 
+  async function toggleApiKeyVisibility(): Promise<void> {
+    if (!props.selectedProvider) {
+      return;
+    }
+
+    props.onError(undefined);
+    if (apiKeyVisible) {
+      setApiKeyVisible(false);
+      if (!apiKeyDirty && props.selectedProvider.hasSecret) {
+        setApiKey(SAVED_API_KEY_MASK);
+      }
+      return;
+    }
+
+    if (!apiKeyDirty && props.selectedProvider.hasSecret) {
+      setBusy("reveal");
+      try {
+        const secret = await window.storyForge.providers.revealSecret(
+          props.selectedProvider.providerId,
+        );
+        if (!secret) {
+          props.onError("No saved API key is available to reveal for this provider.");
+          return;
+        }
+        setApiKey(secret);
+        setApiKeyDirty(false);
+        setApiKeyVisible(true);
+      } catch (revealError) {
+        props.onError(formatError(revealError));
+      } finally {
+        setBusy(undefined);
+      }
+      return;
+    }
+
+    setApiKeyVisible(true);
+  }
+
   return (
-    <div className="grid min-w-0 grid-cols-[250px_1fr]">
-      <aside className="border-r border-forge-line bg-white p-3">
-        <div className="px-2 py-3">
+    <div
+      className="grid min-h-0 min-w-0 grid-cols-[250px_1fr] overflow-hidden"
+      data-testid="models-page"
+    >
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-forge-line bg-white p-3">
+        <div className="flex-none px-2 py-3">
           <h2 className="text-sm font-semibold">Model providers</h2>
-          <p className="mt-1 text-xs text-slate-500">Keys stay encrypted in Electron.</p>
+          <p className="mt-1 text-xs text-slate-500">Keys stay local in PI auth storage.</p>
         </div>
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" data-testid="model-provider-list">
           {props.providers.map((provider) => (
             <button
               className={`flex w-full items-center justify-between rounded-md px-3 py-3 text-left ${
@@ -144,14 +189,17 @@ export function ModelsPage(props: {
               onClick={() => props.onSelect(provider.providerId)}
               type="button"
             >
-              <span>
-                <span className="block text-sm font-medium">{provider.displayName}</span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  {provider.hasSecret ? "Key configured" : "Not configured"}
+              <span className="flex min-w-0 items-center gap-2.5">
+                <ProviderLogo provider={provider} />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{provider.displayName}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    {provider.hasSecret ? "Key configured" : "Not configured"}
+                  </span>
                 </span>
               </span>
               {provider.isDefault ? (
-                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-white">
+                <span className="ml-2 flex-none rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-white">
                   Default
                 </span>
               ) : null}
@@ -159,7 +207,7 @@ export function ModelsPage(props: {
           ))}
         </div>
       </aside>
-      <section className="min-w-0 overflow-y-auto p-8">
+      <section className="min-h-0 min-w-0 overflow-y-auto p-8">
         {props.selectedProvider ? (
           <div className="mx-auto max-w-2xl">
             <div className="flex items-start justify-between">
@@ -188,6 +236,7 @@ export function ModelsPage(props: {
               ) : null}
               <Field label="Base URL">
                 <input
+                  aria-label="Base URL"
                   className="form-input"
                   onChange={(event) => setBaseUrl(event.target.value)}
                   value={baseUrl}
@@ -195,6 +244,7 @@ export function ModelsPage(props: {
               </Field>
               <Field label="Model ID">
                 <input
+                  aria-label="Model ID"
                   className="form-input"
                   list="provider-models"
                   onChange={(event) => setModel(event.target.value)}
@@ -204,31 +254,48 @@ export function ModelsPage(props: {
                   {models.map((modelId) => <option key={modelId} value={modelId} />)}
                 </datalist>
               </Field>
+              <ModelOptions
+                models={models}
+                selectedModel={model}
+                onSelect={setModel}
+              />
               <Field label="API key">
-                <input
-                  aria-label="API key"
-                  autoComplete="off"
-                  className="form-input"
-                  onBlur={() => {
-                    if (!apiKeyDirty && props.selectedProvider?.hasSecret) {
-                      setApiKey(SAVED_API_KEY_MASK);
-                    }
-                  }}
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setApiKeyDirty(true);
-                  }}
-                  onFocus={() => {
-                    if (!apiKeyDirty && apiKey === SAVED_API_KEY_MASK) {
-                      setApiKey("");
-                    }
-                  }}
-                  placeholder={props.selectedProvider.hasSecret ? "Saved key" : "Enter API key"}
-                  type="password"
-                  value={apiKey}
-                />
+                <div className="relative">
+                  <input
+                    aria-label="API key"
+                    autoComplete="off"
+                    className="form-input pr-11"
+                    onBlur={() => {
+                      if (!apiKeyDirty && !apiKeyVisible && props.selectedProvider?.hasSecret) {
+                        setApiKey(SAVED_API_KEY_MASK);
+                      }
+                    }}
+                    onChange={(event) => {
+                      setApiKey(event.target.value);
+                      setApiKeyDirty(true);
+                    }}
+                    onFocus={() => {
+                      if (!apiKeyDirty && apiKey === SAVED_API_KEY_MASK) {
+                        setApiKey("");
+                      }
+                    }}
+                    placeholder={props.selectedProvider.hasSecret ? "Saved key" : "Enter API key"}
+                    type={apiKeyVisible ? "text" : "password"}
+                    value={apiKey}
+                  />
+                  <button
+                    aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
+                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                    disabled={Boolean(busy)}
+                    onClick={() => void toggleApiKeyVisibility()}
+                    title={apiKeyVisible ? "Hide API key" : "Show API key"}
+                    type="button"
+                  >
+                    {apiKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Leave blank to keep the current key. StoryForge never reads it back.
+                  Leave blank to keep the current key. Click the visibility button to reveal a saved key.
                 </p>
               </Field>
 
@@ -291,11 +358,71 @@ export function ModelsPage(props: {
   );
 }
 
+function ModelOptions(props: {
+  models: string[];
+  selectedModel: string;
+  onSelect: (modelId: string) => void;
+}) {
+  if (props.models.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2" data-testid="provider-model-options">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-700">Available models</span>
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+          {props.models.length}
+        </span>
+      </div>
+      <div className="max-h-44 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-1">
+        {props.models.map((modelId) => {
+          const selected = modelId === props.selectedModel;
+          return (
+            <button
+              aria-pressed={selected}
+              className={`block w-full rounded px-2.5 py-1.5 text-left text-xs font-medium ${
+                selected
+                  ? "bg-white text-forge-ember shadow-sm"
+                  : "text-slate-600 hover:bg-white"
+              }`}
+              key={modelId}
+              onClick={() => props.onSelect(modelId)}
+              title={modelId}
+              type="button"
+            >
+              <span className="block truncate">{modelId}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProviderLogo(props: { provider: ProviderView }) {
+  const iconUrl = getProviderIconUrl(props.provider.providerId);
+  if (!iconUrl) {
+    return null;
+  }
+
+  return (
+    <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-slate-200 bg-white p-1">
+      <img
+        alt={`${props.provider.displayName} provider logo`}
+        className="h-full w-full object-contain"
+        draggable={false}
+        src={iconUrl}
+      />
+    </span>
+  );
+}
+
 function Field(props: { label: string; children: ReactNode }) {
   return (
-    <label className="block">
+    <div className="block">
       <span className="mb-1.5 block text-sm font-medium text-slate-700">{props.label}</span>
       {props.children}
-    </label>
+    </div>
   );
 }

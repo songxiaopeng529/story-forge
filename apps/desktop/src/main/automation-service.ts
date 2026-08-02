@@ -13,7 +13,7 @@ import {
 import {
   interpretSchedule,
   validateSchedule,
-} from "./automation-schedule";
+} from "@story-forge/extensions";
 
 export class AutomationService {
   private readonly repository: AutomationRepository;

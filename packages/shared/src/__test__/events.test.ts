@@ -95,14 +95,6 @@ const permissionRequestEvent = {
   risk: "high",
 } satisfies AgentEvent;
 
-const memoryWriteEvent = {
-  type: "memory.write",
-  sessionId,
-  turnId,
-  key: "preference",
-  value: "Use pnpm.",
-} satisfies AgentEvent;
-
 const modelRequestEvent = {
   type: "model.request",
   sessionId,
@@ -180,7 +172,6 @@ const agentEventFixtures = [
   toolCallEvent,
   toolResultEvent,
   permissionRequestEvent,
-  memoryWriteEvent,
   modelRequestEvent,
   contextUsageEvent,
   contextCompactedEvent,

@@ -1,4 +1,3 @@
-import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AutomationView,
   ScheduleValidationResult,
@@ -14,6 +13,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type {
   ProviderView,
+  ProviderId,
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
@@ -35,7 +35,7 @@ export function AutomationsPage(props: {
   const [name, setName] = useState("");
   const [workspaceId, setWorkspaceId] = useState(defaultWorkspace?.id ?? "");
   const [providerId, setProviderId] = useState<ProviderId>(
-    defaultProvider?.providerId ?? "deepseek",
+    defaultProvider?.providerId ?? "",
   );
   const [model, setModel] = useState(defaultProvider?.model ?? "");
   const [scheduleText, setScheduleText] = useState("");

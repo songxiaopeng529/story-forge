@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { readJson, writeJsonAtomic } from "./atomic-json";
 
-const providerIdSchema = z.enum(["deepseek", "openai", "anthropic", "openrouter", "volcano"]);
+const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<`sf_session_${string}`>(
   (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
   { message: "Invalid session id" },

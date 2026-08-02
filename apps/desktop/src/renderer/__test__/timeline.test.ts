@@ -13,7 +13,7 @@ const userMessage: PersistedMessageView = {
 };
 
 const baseSession: SessionView = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "sf_session_test",
   workspaceId: "workspace",
   title: "Timeline",

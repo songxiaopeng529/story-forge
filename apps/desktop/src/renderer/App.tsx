@@ -1,4 +1,3 @@
-import type { ProviderId } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AutomationView,
@@ -14,6 +13,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
   ImageAttachmentView,
   PersistedMessageView,
+  ProviderId,
   ProviderView,
   SessionView,
   WorkspaceView,

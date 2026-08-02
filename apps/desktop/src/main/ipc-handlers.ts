@@ -1,12 +1,11 @@
-import type { ProviderId } from "@story-forge/model-gateway";
 import type { SessionId, TurnId } from "@story-forge/shared";
+import type { ProviderId } from "../shared/story-forge-api";
 import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
-import type { AgentCoordinator } from "./agent-coordinator";
+import type { AgentCoordinator, SessionRepository } from "@story-forge/agent";
 import type { AppSettingsStore } from "./app-settings-store";
 import type { McpConfigService } from "./mcp-config-service";
 import type { ProviderService } from "./provider-service";
-import type { SessionRepository } from "./session-repository";
 import type { SkillService } from "./skill-service";
 import type { WorkspaceRepository } from "./workspace-repository";
 
@@ -47,13 +46,7 @@ export type IpcHandlerOptions = {
 const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
-const providerIdSchema = z.enum([
-  "deepseek",
-  "openai",
-  "anthropic",
-  "openrouter",
-  "volcano",
-]);
+const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<SessionId>(
   (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
   { message: "Invalid session id" },
@@ -153,14 +146,14 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     IPC_CHANNELS.providersSave,
     z.object({
       providerId: providerIdSchema,
-      baseUrl: z.string().min(1),
+      baseUrl: z.string().optional(),
       model: z.string().min(1),
       apiKey: z.string().optional(),
     }),
     (input) => options.providers.save({
       providerId: input.providerId,
-      baseUrl: input.baseUrl,
       model: input.model,
+      ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
       ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
     }),
   );
@@ -172,6 +165,12 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     IPC_CHANNELS.providersClearSecret,
     providerIdSchema,
     (providerId) => options.providers.clearSecret(providerId),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.providersRevealSecret,
+    providerIdSchema,
+    (providerId) => options.providers.revealSecret(providerId),
   );
   handle(
     options.ipc,
@@ -359,13 +358,14 @@ async function selectProvider(
   const available = await providers.list();
   const selected = providerId
     ? available.find((provider) => provider.providerId === providerId)
-    : available.find((provider) => provider.isDefault);
+    : available.find((provider) => provider.isDefault)
+      ?? available.find((provider) => provider.model.trim());
   if (!selected) {
     throw new Error(providerId
       ? `Provider configuration not found: ${providerId}`
-      : "No default provider configured");
+      : "No provider with a model is available");
   }
-  if (!selected.model) {
+  if (!selected.model.trim()) {
     throw new Error(`No model configured for ${selected.displayName}`);
   }
   return selected;

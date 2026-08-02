@@ -181,7 +181,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/agent" } });
+    changePrompt(input, "/agent");
 
     const command = await screen.findByRole("option", { name: /\/agent-browser/i });
     expect(screen.queryByRole("option", { name: /\/drafting/i })).not.toBeInTheDocument();
@@ -208,7 +208,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/" } });
+    changePrompt(input, "/");
     await screen.findByRole("listbox", { name: "Slash commands" });
     const options = screen.getAllByRole("option");
     expect(options[0]).toHaveAttribute("aria-selected", "true");
@@ -240,7 +240,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/agent" } });
+    changePrompt(input, "/agent");
     fireEvent.click(await screen.findByRole("option", { name: /\/agent-browser/i }));
     await screen.findByTestId("active-slash-command");
 
@@ -259,7 +259,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/timer" } });
+    changePrompt(input, "/timer");
     fireEvent.click(await screen.findByRole("option", { name: /\/timer/i }));
 
     expect(await screen.findByLabelText("Schedule description")).toBeInTheDocument();
@@ -273,7 +273,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/plan" } });
+    changePrompt(input, "/plan");
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
 
     expect(input).toHaveValue("");
@@ -298,7 +298,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/plan" } });
+    changePrompt(input, "/plan");
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
     await screen.findByTestId("active-slash-command");
     expect(screen.getByText("Plan")).toBeInTheDocument();
@@ -319,7 +319,7 @@ describe("App", () => {
       "Ask StoryForge to inspect, explain, or change code...",
     );
 
-    fireEvent.change(input, { target: { value: "/compact" } });
+    changePrompt(input, "/compact");
     fireEvent.click(await screen.findByRole("option", { name: /\/compact/i }));
 
     expect(await screen.findByTestId("compaction-indicator")).toBeInTheDocument();
@@ -647,6 +647,24 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Models" }));
     const keyInput = await screen.findByLabelText("API key");
 
+    expect(screen.getByTestId("models-page")).toHaveClass("min-h-0", "overflow-hidden");
+    expect(screen.getByTestId("model-provider-list")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+    expect(screen.getByRole("img", { name: "DeepSeek provider logo" })).toBeInTheDocument();
+    expect(screen.getByTestId("provider-model-options")).toHaveTextContent("deepseek-v4-flash");
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(screen.getByText("Connection succeeded · 2 models")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "deepseek-v4-flash" }));
+    expect(screen.getByLabelText("Model ID")).toHaveValue("deepseek-v4-flash");
+    fireEvent.change(screen.getByLabelText("Model ID"), {
+      target: { value: "deepseek-v4-pro" },
+    });
+    expect(keyInput).toHaveAttribute("type", "password");
+    expect(keyInput).toHaveValue("************");
+    fireEvent.click(screen.getByRole("button", { name: "Show API key" }));
+    await waitFor(() => expect(fixture.revealSecret).toHaveBeenCalledWith("deepseek"));
+    expect(keyInput).toHaveAttribute("type", "text");
+    expect(keyInput).toHaveValue("saved-local-secret");
+    fireEvent.click(screen.getByRole("button", { name: "Hide API key" }));
     expect(keyInput).toHaveAttribute("type", "password");
     expect(keyInput).toHaveValue("************");
     fireEvent.focus(keyInput);
@@ -1150,6 +1168,19 @@ describe("App", () => {
 
 });
 
+function changePrompt(input: HTMLElement, value: string): void {
+  const textarea = input as HTMLTextAreaElement;
+  fireEvent.change(textarea, {
+    target: {
+      value,
+      selectionStart: value.length,
+      selectionEnd: value.length,
+    },
+  });
+  textarea.setSelectionRange(value.length, value.length);
+  fireEvent.keyUp(textarea, { key: value.at(-1) ?? "" });
+}
+
 function installApi(options: {
   settings?: Partial<AppSettingsView>;
   saveSettings?: StoryForgeApi["settings"]["save"];
@@ -1194,7 +1225,7 @@ function installApi(options: {
     },
   ];
   const session: SessionView = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "sf_session_existing",
     workspaceId: workspace.id,
     title: "Project session",
@@ -1232,6 +1263,7 @@ function installApi(options: {
     model: input.model,
     hasSecret: provider.hasSecret || Boolean(input.apiKey),
   }));
+  const revealSecret = vi.fn(async () => "saved-local-secret");
   let currentSkills = options.skills ?? [];
   let currentMcpConfig = options.mcpConfig ?? {
     schemaVersion: 1 as const,
@@ -1344,6 +1376,7 @@ function installApi(options: {
       save: saveProvider,
       test: vi.fn(async () => ({ models: provider.recommendedModels })),
       clearSecret: vi.fn(async () => undefined),
+      revealSecret,
       setDefault: vi.fn(async () => undefined),
       discoverModels: vi.fn(async () => provider.recommendedModels),
     },
@@ -1407,6 +1440,7 @@ function installApi(options: {
     getSession,
     saveSettings,
     saveProvider,
+    revealSecret,
     importSkill,
     setSkillEnabled,
     saveMcp,

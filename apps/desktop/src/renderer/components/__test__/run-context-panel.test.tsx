@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 const session: SessionView = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "sf_session_1",
   workspaceId: "workspace-1",
   title: "Session",

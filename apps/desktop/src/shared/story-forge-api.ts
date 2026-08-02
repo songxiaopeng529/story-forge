@@ -1,4 +1,3 @@
-import type { ProviderId, ToolCall } from "@story-forge/model-gateway";
 import type {
   AgentEvent,
   AgentStopReason,
@@ -9,15 +8,21 @@ import type {
   CreateAutomationInput,
   McpConfigView,
   McpServerView,
+  ProviderId,
+  ProviderView,
   ScheduleValidationResult,
+  ImageAttachmentView,
   SessionId,
   SessionTask,
   SkillView,
+  ToolCall,
   TurnId,
   TurnMode,
   UpdateAutomationInput,
   WebSearchCoverage,
 } from "@story-forge/shared";
+
+export type { ProviderId, ProviderView, ToolCall, ImageAttachmentView } from "@story-forge/shared";
 
 export const IPC_CHANNELS = {
   settingsGet: "story-forge:settings:get",
@@ -26,6 +31,7 @@ export const IPC_CHANNELS = {
   providersSave: "story-forge:providers:save",
   providersTest: "story-forge:providers:test",
   providersClearSecret: "story-forge:providers:clear-secret",
+  providersRevealSecret: "story-forge:providers:reveal-secret",
   providersSetDefault: "story-forge:providers:set-default",
   providersDiscoverModels: "story-forge:providers:discover-models",
   workspacesList: "story-forge:workspaces:list",
@@ -58,33 +64,12 @@ export const IPC_CHANNELS = {
   mcpTestServer: "story-forge:mcp:test-server",
 } as const;
 
-export type ProviderView = {
-  providerId: ProviderId;
-  displayName: string;
-  baseUrl: string;
-  model: string;
-  recommendedModels: string[];
-  supportsImageInput: boolean;
-  isDefault: boolean;
-  hasSecret: boolean;
-  lastTestStatus: "untested" | "success" | "failed";
-  lastTestedAt?: string;
-};
-
 export type WorkspaceView = {
   id: string;
   path: string;
   displayName: string;
   createdAt: string;
   lastOpenedAt: string;
-};
-
-export type ImageAttachmentView = {
-  id: string;
-  name: string;
-  mediaType: string;
-  data: string;
-  size: number;
 };
 
 export type PersistedMessageView =
@@ -116,7 +101,7 @@ export type PersistedMessageView =
     };
 
 export type SessionView = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: SessionId;
   workspaceId: string;
   title: string;
@@ -152,6 +137,7 @@ export type StoryForgeApi = {
     }): Promise<ProviderView>;
     test(providerId: ProviderId): Promise<{ models: string[] }>;
     clearSecret(providerId: ProviderId): Promise<void>;
+    revealSecret(providerId: ProviderId): Promise<string | undefined>;
     setDefault(providerId: ProviderId): Promise<void>;
     discoverModels(providerId: ProviderId): Promise<string[]>;
   };
