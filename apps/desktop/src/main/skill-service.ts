@@ -51,6 +51,13 @@ export class SkillService {
     return index.skills.map(toView);
   }
 
+  async listEnabledSkillPaths(): Promise<string[]> {
+    const index = await this.readIndex();
+    return index.skills
+      .filter((skill) => skill.enabled)
+      .map((skill) => skill.entrypointPath);
+  }
+
   async importZip(archivePath: string): Promise<SkillView> {
     const stagingDir = join(this.skillsDir, `.import-${process.pid}-${Date.now()}`);
     await rm(stagingDir, { recursive: true, force: true });

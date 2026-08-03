@@ -21,7 +21,7 @@ export function createAutomationProposalTool(options: {
   emit: (proposal: AutomationProposalValidated) => void;
 }): ToolDefinition {
   return {
-    name: "automation.proposeCreate",
+    name: "automation_propose_create",
     description:
       "Propose a scheduled automation for the user to review and confirm. This does not create the automation.",
     parameters: {
@@ -76,12 +76,12 @@ function readKind(value: unknown): AutomationProposalKind {
   if (value === "scheduled_chat" || value === "thread_chat") {
     return value;
   }
-  throw new Error("automation.proposeCreate kind must be scheduled_chat or thread_chat");
+  throw new Error("automation_propose_create kind must be scheduled_chat or thread_chat");
 }
 
 function readString(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`automation.proposeCreate requires a non-empty string ${field}`);
+    throw new Error(`automation_propose_create requires a non-empty string ${field}`);
   }
   return value.trim();
 }

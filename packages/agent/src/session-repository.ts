@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { ProviderId } from "@story-forge/shared";
 import { readJsonOrQuarantine, writeJsonAtomic } from "./atomic-json";
+import { resolveStoryForgePaths } from "./storyforge-home";
 
 const toolCallSchema = z.object({
   id: z.string(),
@@ -171,7 +172,9 @@ export class SessionRepository {
   private readonly updateTails = new Map<SessionId, Promise<void>>();
 
   constructor(options: { rootDir: string; piAdapter?: SessionPiAdapter }) {
-    this.sessionsDir = join(options.rootDir, "sessions");
+    this.sessionsDir = resolveStoryForgePaths({
+      homeDir: options.rootDir,
+    }).sessionMetadataDir;
     this.piAdapter = options.piAdapter;
   }
 
@@ -209,25 +212,18 @@ export class SessionRepository {
   }
 
   async list(workspaceId?: string): Promise<SessionRecord[]> {
-    await mkdir(this.sessionsDir, { recursive: true });
-    const names = await readdir(this.sessionsDir);
+    const metadata = (await this.listMetadata())
+      .filter((session) => !workspaceId || session.workspaceId === workspaceId);
     const sessions = await Promise.all(
-      names
-        .filter((name) => /^sf_session_[a-z0-9]+\.json$/.test(name))
-        .map(async (name) => {
-          try {
-            return await this.get(name.slice(0, -5) as SessionId);
-          } catch (error) {
-            if (isCorruptSessionError(error)) {
-              return undefined;
-            }
-            throw error;
-          }
-        }),
+      metadata.map(async (session) => {
+        try {
+          return await this.materialize(session);
+        } catch (error) {
+          return materializationFailure(session, error);
+        }
+      }),
     );
     return sessions
-      .filter((session): session is SessionRecord => Boolean(session))
-      .filter((session) => !workspaceId || session.workspaceId === workspaceId)
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
@@ -337,14 +333,18 @@ export class SessionRepository {
   }
 
   async recoverInterruptedSessions(): Promise<void> {
-    const sessions = await this.list();
+    const sessions = await this.listMetadata();
     await Promise.all(
       sessions
         .filter((session) => session.status === "running")
         .map((session) =>
-          this.markStatus(session.id, {
-            status: "interrupted",
-            stopReason: "application-restarted",
+          this.updateMetadata(session.id, (current) => {
+            const { currentTurnId: _currentTurnId, ...rest } = current;
+            return {
+              ...rest,
+              status: "interrupted",
+              stopReason: "application-restarted",
+            };
           }),
         ),
     );
@@ -373,6 +373,26 @@ export class SessionRepository {
       }
       throw error;
     }
+  }
+
+  private async listMetadata(): Promise<SessionMetadataRecord[]> {
+    await mkdir(this.sessionsDir, { recursive: true });
+    const names = await readdir(this.sessionsDir);
+    const sessions = await Promise.all(
+      names
+        .filter((name) => /^sf_session_[a-z0-9]+\.json$/.test(name))
+        .map(async (name) => {
+          try {
+            return await this.readMetadata(name.slice(0, -5) as SessionId);
+          } catch (error) {
+            if (isCorruptSessionError(error)) {
+              return undefined;
+            }
+            throw error;
+          }
+        }),
+    );
+    return sessions.filter((session): session is SessionMetadataRecord => Boolean(session));
   }
 
   private async migrateLegacyMetadata(legacy: LegacySessionRecord): Promise<SessionMetadataRecord> {
@@ -434,6 +454,13 @@ export class SessionRepository {
     sessionId: SessionId,
     updater: (session: SessionMetadataRecord) => SessionMetadataRecord,
   ): Promise<SessionRecord> {
+    return this.materialize(await this.updateMetadata(sessionId, updater));
+  }
+
+  private async updateMetadata(
+    sessionId: SessionId,
+    updater: (session: SessionMetadataRecord) => SessionMetadataRecord,
+  ): Promise<SessionMetadataRecord> {
     return this.enqueueUpdate(sessionId, async () => {
       const current = await this.readMetadata(sessionId);
       const updated = sessionMetadataSchema.parse({
@@ -441,7 +468,7 @@ export class SessionRepository {
         updatedAt: new Date().toISOString(),
       });
       await this.write(updated);
-      return this.materialize(updated);
+      return updated;
     });
   }
 
@@ -542,4 +569,18 @@ function isValidSessionId(value: unknown): value is SessionId {
 
 function isCorruptSessionError(error: unknown): boolean {
   return error instanceof Error && error.message.startsWith("Session file is corrupt:");
+}
+
+function materializationFailure(
+  session: SessionMetadataRecord,
+  error: unknown,
+): SessionRecord {
+  return {
+    ...session,
+    status: "error",
+    stopReason: "session-materialization-failed",
+    migrationStatus: "failed",
+    migrationError: error instanceof Error ? error.message : String(error),
+    messages: [],
+  };
 }

@@ -47,7 +47,7 @@ export function createTaskTools(options: {
 }): ToolDefinition[] {
   return [
     {
-      name: "task.create",
+      name: "task_create",
       description: "Create a task in the current StoryForge task list.",
       parameters: {
         type: "object",
@@ -66,12 +66,12 @@ export function createTaskTools(options: {
       },
     },
     {
-      name: "task.update",
+      name: "task_update",
       description: "Update status or details for an existing StoryForge task.",
       parameters: {
         type: "object",
         properties: {
-          taskId: { type: "string", description: "Task id returned by task.create or task.list." },
+          taskId: { type: "string", description: "Task id returned by task_create or task_list." },
           title: { type: "string" },
           description: { type: "string" },
           activeForm: { type: "string" },
@@ -91,7 +91,7 @@ export function createTaskTools(options: {
       },
     },
     {
-      name: "task.list",
+      name: "task_list",
       description: "Return the current StoryForge task list.",
       parameters: {
         type: "object",
@@ -108,9 +108,9 @@ function readCreateInput(input: Record<string, unknown>): {
   activeForm?: string;
 } {
   return {
-    title: readRequiredString(input.title, "task.create", "title"),
-    ...readOptionalStringField(input.description, "task.create", "description"),
-    ...readOptionalStringField(input.activeForm, "task.create", "activeForm"),
+    title: readRequiredString(input.title, "task_create", "title"),
+    ...readOptionalStringField(input.description, "task_create", "description"),
+    ...readOptionalStringField(input.activeForm, "task_create", "activeForm"),
   };
 }
 
@@ -123,24 +123,24 @@ function readUpdateInput(input: Record<string, unknown>): {
   blockedReason?: string;
 } {
   const status = readOptionalStatus(input.status);
-  const blockedReason = readOptionalString(input.blockedReason, "task.update", "blockedReason");
+  const blockedReason = readOptionalString(input.blockedReason, "task_update", "blockedReason");
   if (status === "blocked" && !blockedReason) {
-    throw new Error("task.update requires blockedReason when status is blocked");
+    throw new Error("task_update requires blockedReason when status is blocked");
   }
   return {
     taskId: readTaskId(input.taskId),
-    ...readOptionalStringField(input.title, "task.update", "title"),
-    ...readOptionalStringField(input.description, "task.update", "description"),
-    ...readOptionalStringField(input.activeForm, "task.update", "activeForm"),
+    ...readOptionalStringField(input.title, "task_update", "title"),
+    ...readOptionalStringField(input.description, "task_update", "description"),
+    ...readOptionalStringField(input.activeForm, "task_update", "activeForm"),
     ...(status ? { status } : {}),
     ...(blockedReason ? { blockedReason } : {}),
   };
 }
 
 function readTaskId(value: unknown): TaskId {
-  const taskId = readRequiredString(value, "task.update", "taskId");
+  const taskId = readRequiredString(value, "task_update", "taskId");
   if (!/^sf_task_[a-z0-9]+$/.test(taskId)) {
-    throw new Error("task.update requires a valid taskId");
+    throw new Error("task_update requires a valid taskId");
   }
   return taskId as TaskId;
 }
@@ -152,7 +152,7 @@ function readOptionalStatus(value: unknown): TaskStatus | undefined {
   if (value === "pending" || value === "in_progress" || value === "completed" || value === "blocked") {
     return value;
   }
-  throw new Error("task.update status must be pending, in_progress, completed, or blocked");
+  throw new Error("task_update status must be pending, in_progress, completed, or blocked");
 }
 
 function readOptionalStringField(

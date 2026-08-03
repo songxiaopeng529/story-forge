@@ -64,6 +64,49 @@ describe("ModelRequestDrawer", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify(message, null, 2)));
   });
+
+  it("lists model-callable tools and shows the selected tool schema", () => {
+    render(
+      <ModelRequestDrawer
+        onClose={() => undefined}
+        requests={[createRequest({
+          tools: [{
+            name: "mcp__docs__search",
+            description: "Search docs through MCP",
+            parameters: {
+              type: "object",
+              properties: { query: { type: "string" } },
+            },
+          }],
+        })]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /mcp__docs__search/ }));
+
+    expect(screen.getByTestId("model-message-raw-json")).toHaveTextContent(
+      '"name": "mcp__docs__search"',
+    );
+    expect(screen.getByTestId("model-message-raw-json")).toHaveTextContent('"query"');
+  });
+
+  it("shows the date-level runtime environment captured for the request", () => {
+    render(
+      <ModelRequestDrawer
+        onClose={() => undefined}
+        requests={[createRequest({
+          environment: {
+            currentDate: "2026-08-03",
+            timezone: "Asia/Shanghai",
+          },
+        })]}
+      />,
+    );
+
+    expect(screen.getByTestId("runtime-environment")).toHaveTextContent("2026-08-03");
+    expect(screen.getByTestId("runtime-environment")).toHaveTextContent("Asia/Shanghai");
+    expect(screen.getByTestId("model-message-raw-json")).toHaveTextContent('"environment"');
+  });
 });
 
 function createRequest(

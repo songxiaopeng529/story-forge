@@ -1,9 +1,13 @@
-import type { InspectableModelMessage, ModelRequestEvent } from "@story-forge/shared";
-import { ChevronLeft, ChevronRight, Copy, Layers, X } from "lucide-react";
+import type {
+  InspectableModelMessage,
+  InspectableModelTool,
+  ModelRequestEvent,
+} from "@story-forge/shared";
+import { ChevronLeft, ChevronRight, Clock, Copy, Layers, Wrench, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
-type Selection = "overview" | number;
+type Selection = "overview" | `message:${number}` | `tool:${number}`;
 type DetailMode = "content" | "raw";
 
 export function ModelRequestDrawer(props: {
@@ -21,14 +25,27 @@ export function ModelRequestDrawer(props: {
   }, [props.requests.length]);
 
   const selected = props.requests[requestIndex];
-  const selectedMessage = selected && selection !== "overview"
-    ? selected.messages[selection]
+  const selectedMessageIndex = selection.startsWith("message:")
+    ? Number(selection.slice("message:".length))
     : undefined;
-  const viewLabel = selection === "overview" ? "request" : `request.messages[${selection}]`;
+  const selectedToolIndex = selection.startsWith("tool:")
+    ? Number(selection.slice("tool:".length))
+    : undefined;
+  const selectedMessage = selectedMessageIndex === undefined
+    ? undefined
+    : selected?.messages[selectedMessageIndex];
+  const selectedTool = selectedToolIndex === undefined
+    ? undefined
+    : selected?.tools[selectedToolIndex];
+  const viewLabel = selection === "overview"
+    ? "request"
+    : selectedMessageIndex === undefined
+      ? `request.tools[${selectedToolIndex}]`
+      : `request.messages[${selectedMessageIndex}]`;
   const rawJson = selected
     ? selection === "overview"
       ? rawPayloadJson(selected)
-      : JSON.stringify(selectedMessage, null, 2)
+      : JSON.stringify(selectedMessage ?? selectedTool, null, 2)
     : "";
   const contentPreview = selectedMessage
     ? previewContent(modelMessageContentPreview(selectedMessage))
@@ -44,7 +61,7 @@ export function ModelRequestDrawer(props: {
 
   function select(nextSelection: Selection): void {
     setSelection(nextSelection);
-    setDetailMode(nextSelection === "overview" ? "raw" : "content");
+    setDetailMode(nextSelection.startsWith("message:") ? "content" : "raw");
   }
 
   return (
@@ -52,7 +69,7 @@ export function ModelRequestDrawer(props: {
       <header className="relative flex-none border-b border-forge-line px-6 py-[18px]">
         <div className="pr-32">
           <div className="text-base font-semibold text-forge-ink">Inspector</div>
-          <div className="text-[11px] text-forge-muted">Raw request payload sent to the model</div>
+          <div className="text-[11px] text-forge-muted">Normalized context sent to the model</div>
         </div>
         <div className="absolute right-5 top-[22px] flex items-center gap-2">
           <button
@@ -116,6 +133,23 @@ export function ModelRequestDrawer(props: {
             <SummaryCell label="Model" value={selected.model} />
           </div>
 
+          {selected.environment ? (
+            <div
+              className="flex flex-none items-center gap-3 border-y border-forge-line px-1 py-2.5"
+              data-testid="runtime-environment"
+            >
+              <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-forge-ink/[0.06] text-forge-ink">
+                <Clock size={14} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-semibold text-forge-ink">Runtime environment</div>
+                <div className="truncate text-[10px] text-forge-muted">
+                  {selected.environment.currentDate} / {selected.environment.timezone}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid min-h-0 flex-1 grid-cols-[188px_1fr] overflow-hidden rounded-[10px] border border-forge-line">
             <div className="min-h-0 overflow-y-auto border-r border-forge-line p-3">
               <div className="mb-3 flex items-baseline justify-between">
@@ -149,7 +183,8 @@ export function ModelRequestDrawer(props: {
                 <div className="h-px bg-forge-divider" />
                 {selected.messages.map((message, index) => {
                   const summary = summarizeMessage(message);
-                  const active = selection === index;
+                  const messageSelection = `message:${index}` as const;
+                  const active = selection === messageSelection;
                   return (
                     <button
                       className={`w-full rounded-lg border px-2.5 py-2 text-left ${
@@ -158,7 +193,7 @@ export function ModelRequestDrawer(props: {
                           : "border-forge-line bg-white hover:bg-forge-canvas"
                       }`}
                       key={`${message.role}-${index}`}
-                      onClick={() => select(index)}
+                      onClick={() => select(messageSelection)}
                       type="button"
                     >
                       <div className="flex items-center justify-between">
@@ -169,6 +204,42 @@ export function ModelRequestDrawer(props: {
                         {summary.title}
                       </div>
                       <div className="truncate text-[9px] text-forge-muted">{summary.detail}</div>
+                    </button>
+                  );
+                })}
+                <div className="flex items-baseline justify-between pt-2">
+                  <span className="text-xs font-semibold text-forge-ink">tools[]</span>
+                  <span className="text-[10px] text-forge-muted">
+                    {selected.tools.length} items
+                  </span>
+                </div>
+                {selected.tools.map((tool, index) => {
+                  const toolSelection = `tool:${index}` as const;
+                  const active = selection === toolSelection;
+                  return (
+                    <button
+                      className={`w-full rounded-lg border px-2.5 py-2 text-left ${
+                        active
+                          ? "border-[1.2px] border-forge-ink bg-forge-canvas"
+                          : "border-forge-line bg-white hover:bg-forge-canvas"
+                      }`}
+                      key={`${tool.name}-${index}`}
+                      onClick={() => select(toolSelection)}
+                      type="button"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-[rgba(52,199,89,0.08)] text-forge-success-line">
+                          <Wrench size={13} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[11px] font-medium text-forge-ink">
+                            {tool.name}
+                          </span>
+                          <span className="block truncate text-[9px] text-forge-muted">
+                            {summarizeTool(tool)}
+                          </span>
+                        </span>
+                      </div>
                     </button>
                   );
                 })}
@@ -231,8 +302,8 @@ export function ModelRequestDrawer(props: {
 
           <div className="flex-none rounded-[10px] border border-forge-line bg-forge-canvas px-3.5 py-2.5">
             <p className="text-[10px] leading-[15px] text-forge-muted">
-              Display rule: show the exact outbound payload first. Parsed summaries can help
-              navigation, but must never replace the raw JSON.
+              System instructions, conversation messages, and model-callable tool schemas are
+              normalized across providers for inspection.
             </p>
           </div>
         </div>
@@ -275,6 +346,9 @@ function summarizeMessage(message: InspectableModelMessage): { title: string; de
     return { title: "Runtime instructions", detail: firstLine(message.content) };
   }
   if (message.role === "user") {
+    if (contentToPreviewText(message.content).includes("<environment_context>")) {
+      return { title: "Runtime environment", detail: "Current date and timezone" };
+    }
     return { title: "User request", detail: firstLine(contentToPreviewText(message.content)) };
   }
   if (message.role === "tool") {
@@ -287,6 +361,10 @@ function summarizeMessage(message: InspectableModelMessage): { title: string; de
     };
   }
   return { title: "Assistant message", detail: firstLine(message.content) };
+}
+
+function summarizeTool(tool: InspectableModelTool): string {
+  return firstLine(tool.description) || "Model-callable tool";
 }
 
 function modelMessageContentPreview(message: InspectableModelMessage): string {
@@ -379,6 +457,7 @@ function rawPayloadJson(request: ModelRequestEvent): string {
   return JSON.stringify(
     {
       model: request.model,
+      ...(request.environment ? { environment: request.environment } : {}),
       messages: request.messages,
       tools: request.tools,
     },

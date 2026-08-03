@@ -20,11 +20,13 @@ export type WebToolsOptions = {
     serpApiKey?: string | undefined;
   };
   fetch?: FetchLike | undefined;
+  now?: (() => Date) | undefined;
 };
 
 export type WebSearchOutput = {
   query: string;
   coverage: WebSearchCoverage;
+  retrievedAt: string;
   results: WebSearchResult[];
   warnings: string[];
   providerDiagnostics: WebProviderDiagnostic[];
@@ -51,6 +53,7 @@ export type WebProviderDiagnostic = {
 
 export type WebFetchOutput = {
   url: string;
+  retrievedAt: string;
   content: string;
   format: "markdown" | "text";
   truncated: boolean;
@@ -94,8 +97,8 @@ export function createWebTools(options: WebToolsOptions): ToolDefinition[] {
 
 function createWebSearchTool(options: WebToolsOptions): ToolDefinition {
   return {
-    name: "web.search",
-    description: "Search the live web for current or external information.",
+    name: "web_search",
+    description: "Search the live web for current or external information. For latest requests, use a recency range and compare source publication dates.",
     parameters: {
       type: "object",
       properties: {
@@ -139,7 +142,7 @@ function createWebSearchTool(options: WebToolsOptions): ToolDefinition {
 
 function createWebFetchTool(options: WebToolsOptions): ToolDefinition {
   return {
-    name: "web.fetch",
+    name: "web_fetch",
     description: "Extract readable content from a public URL.",
     parameters: {
       type: "object",
@@ -164,7 +167,7 @@ function createWebFetchTool(options: WebToolsOptions): ToolDefinition {
       assertPublicWebUrl(input.url);
       const apiKey = options.credentials.tavilyApiKey;
       if (!apiKey) {
-        throw new Error("Tavily API key is not configured. Set Tavily_API_KEY before using web.fetch.");
+        throw new Error("Tavily API key is not configured. Set Tavily_API_KEY before using web_fetch.");
       }
       const output = await extractTavily({
         apiKey,
@@ -175,6 +178,7 @@ function createWebFetchTool(options: WebToolsOptions): ToolDefinition {
       });
       return {
         url: output.url,
+        retrievedAt: (options.now ?? (() => new Date()))().toISOString(),
         content: output.content,
         format: output.format,
         truncated: output.truncated,
@@ -215,7 +219,7 @@ async function runWebSearch(
       }),
     });
   } else {
-    warnings.push("Tavily API key is not configured. Set Tavily_API_KEY before using web.search.");
+    warnings.push("Tavily API key is not configured. Set Tavily_API_KEY before using web_search.");
   }
 
   if (options.coverage === "wide") {
@@ -235,7 +239,7 @@ async function runWebSearch(
   }
 
   if (tasks.length === 0) {
-    throw new Error("No web search provider API keys are configured. Set Tavily_API_KEY or SerpApi_API_KEY before using web.search.");
+    throw new Error("No web search provider API keys are configured. Set Tavily_API_KEY or SerpApi_API_KEY before using web_search.");
   }
 
   const settled = await Promise.allSettled(tasks.map((task) => task.run()));
@@ -268,6 +272,7 @@ async function runWebSearch(
   return {
     query: input.query,
     coverage: options.coverage,
+    retrievedAt: (options.now ?? (() => new Date()))().toISOString(),
     results: mergeSearchResults(providerOutputs, warnings)
       .slice(0, clampInteger(input.maxResults, DEFAULT_MAX_RESULTS, 1, MAX_RESULTS)),
     warnings,
@@ -340,22 +345,22 @@ function bestRank(result: WebSearchResult): number {
 }
 
 function readSearchInput(input: Record<string, unknown>): WebSearchInput {
-  const query = readRequiredString(input.query, "web.search", "query");
+  const query = readRequiredString(input.query, "web_search", "query");
   return {
     query,
-    ...(input.maxResults !== undefined ? { maxResults: readOptionalInteger(input.maxResults, "web.search", "maxResults") } : {}),
-    ...(input.topic !== undefined ? { topic: readEnum(input.topic, "web.search", "topic", ["general", "news", "finance"]) } : {}),
-    ...(input.timeRange !== undefined ? { timeRange: readEnum(input.timeRange, "web.search", "timeRange", ["day", "week", "month", "year"]) } : {}),
-    ...(input.includeDomains !== undefined ? { includeDomains: readStringArray(input.includeDomains, "web.search", "includeDomains") } : {}),
-    ...(input.excludeDomains !== undefined ? { excludeDomains: readStringArray(input.excludeDomains, "web.search", "excludeDomains") } : {}),
+    ...(input.maxResults !== undefined ? { maxResults: readOptionalInteger(input.maxResults, "web_search", "maxResults") } : {}),
+    ...(input.topic !== undefined ? { topic: readEnum(input.topic, "web_search", "topic", ["general", "news", "finance"]) } : {}),
+    ...(input.timeRange !== undefined ? { timeRange: readEnum(input.timeRange, "web_search", "timeRange", ["day", "week", "month", "year"]) } : {}),
+    ...(input.includeDomains !== undefined ? { includeDomains: readStringArray(input.includeDomains, "web_search", "includeDomains") } : {}),
+    ...(input.excludeDomains !== undefined ? { excludeDomains: readStringArray(input.excludeDomains, "web_search", "excludeDomains") } : {}),
   };
 }
 
 function readFetchInput(input: Record<string, unknown>): WebFetchInput {
   return {
-    url: readRequiredString(input.url, "web.fetch", "url"),
-    ...(input.query !== undefined ? { query: readRequiredString(input.query, "web.fetch", "query") } : {}),
-    ...(input.maxChars !== undefined ? { maxChars: readOptionalInteger(input.maxChars, "web.fetch", "maxChars") } : {}),
+    url: readRequiredString(input.url, "web_fetch", "url"),
+    ...(input.query !== undefined ? { query: readRequiredString(input.query, "web_fetch", "query") } : {}),
+    ...(input.maxChars !== undefined ? { maxChars: readOptionalInteger(input.maxChars, "web_fetch", "maxChars") } : {}),
   };
 }
 

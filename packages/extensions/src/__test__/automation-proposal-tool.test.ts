@@ -97,7 +97,7 @@ describe("createAutomationProposalTool", () => {
       prompt: "Check status.",
     })).resolves.toEqual({
       ok: false,
-      error: "automation.proposeCreate requires a non-empty string name",
+      error: "automation_propose_create requires a non-empty string name",
     });
   });
 });

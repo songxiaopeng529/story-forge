@@ -11,6 +11,7 @@ import {
   type AgentStopReason,
   type CommandExecutionMode,
   type ImageAttachmentView,
+  type RuntimeEnvironmentView,
   type SessionId,
   type TaskId,
   type TurnId,
@@ -21,19 +22,29 @@ import {
   classifyCommand,
   checkWorkspaceToolCall,
   createAutomationProposalTool,
+  createCurrentTimeTool,
   createTaskTools,
   createWebTools,
+  NodeMcpToolSession,
   parseShellCommandForPolicy,
+  resolveSystemTimezone,
+  type RuntimeClock,
+  type RuntimeTimezoneResolver,
   type AutomationProposalDraft,
   type ToolDefinition as StoryForgeToolDefinition,
   validateSchedule,
 } from "@story-forge/extensions";
-import { createStoryForgeAgentSession } from "./create-storyforge-session";
 import {
+  createStoryForgeAgentSession,
+  createStoryForgeSystemPrompt,
+} from "./create-storyforge-session";
+import {
+  errorMessageFromPiMessages,
   normalizeModelRequestPayload,
   stopReasonFromPiMessages,
   toPiImageContent,
 } from "./event-mapper";
+import { createRuntimeEnvironmentExtension } from "./runtime-environment";
 import type { PiModelService } from "./pi-model-service";
 import type { PiSessionAdapter } from "./pi-session-adapter";
 import {
@@ -41,22 +52,27 @@ import {
   type SessionRepository,
   type SessionStatus,
 } from "./session-repository";
-import type { StoryForgeWorkspaceStore } from "./host";
+import type {
+  StoryForgeMcpSource,
+  StoryForgeSkillSource,
+  StoryForgeWorkspaceStore,
+} from "./host";
 
-export type SkillInvocationResolver = {
-  list?(): Promise<unknown[]>;
-};
+export type SkillInvocationResolver = StoryForgeSkillSource;
 
 export type StoryForgeAgentHarnessOptions = {
   sessionRepository: SessionRepository;
   workspaceRepository: StoryForgeWorkspaceStore;
   piModels: PiModelService;
   piSessions: PiSessionAdapter;
-  skillResolver?: SkillInvocationResolver;
+  skillResolver?: StoryForgeSkillSource;
+  mcpServerSource?: StoryForgeMcpSource;
   getDeveloperMode?: () => Promise<boolean>;
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   getWebAccessEnabled?: () => Promise<boolean>;
   getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
+  now?: RuntimeClock;
+  getTimezone?: RuntimeTimezoneResolver;
   emit: (event: AgentEvent) => void;
 };
 
@@ -68,6 +84,7 @@ type ActiveTurn = {
   unsubscribe?: () => void;
   terminalEmitted: boolean;
   stopReason: AgentStopReason;
+  errorMessage: string | undefined;
   steps: number;
 };
 
@@ -84,25 +101,34 @@ export class StoryForgeAgentHarness {
   private readonly workspaceRepository: StoryForgeWorkspaceStore;
   private readonly piModels: PiModelService;
   private readonly piSessions: PiSessionAdapter;
+  private readonly skillResolver: StoryForgeSkillSource | undefined;
+  private readonly mcpServerSource: StoryForgeMcpSource | undefined;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly getWebAccessEnabled: () => Promise<boolean>;
   private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
+  private readonly now: RuntimeClock;
+  private readonly getTimezone: RuntimeTimezoneResolver;
   private readonly emitEvent: (event: AgentEvent) => void;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
   private readonly pendingPermissions = new Map<string, (approved: boolean) => void>();
   private readonly reservedSessions = new Set<SessionId>();
   private readonly turnPromises = new Map<TurnId, Promise<void>>();
+  private readonly piSessionCleanups = new WeakMap<AgentSession, () => void>();
 
   constructor(options: StoryForgeAgentHarnessOptions) {
     this.sessionRepository = options.sessionRepository;
     this.workspaceRepository = options.workspaceRepository;
     this.piModels = options.piModels;
     this.piSessions = options.piSessions;
+    this.skillResolver = options.skillResolver;
+    this.mcpServerSource = options.mcpServerSource;
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
+    this.now = options.now ?? (() => new Date());
+    this.getTimezone = options.getTimezone ?? resolveSystemTimezone;
     this.emitEvent = options.emit;
   }
 
@@ -138,6 +164,7 @@ export class StoryForgeAgentHarness {
         controller: new AbortController(),
         terminalEmitted: false,
         stopReason: "completed",
+        errorMessage: undefined,
         steps: 0,
       };
       this.activeTurns.set(turnId, active);
@@ -149,7 +176,7 @@ export class StoryForgeAgentHarness {
         imageAttachments,
       }).finally(() => {
         active.unsubscribe?.();
-        active.piSession?.dispose();
+        this.disposePiSession(active.piSession);
         this.activeTurns.delete(turnId);
         this.reservedSessions.delete(input.sessionId);
         const cleanup = setTimeout(() => {
@@ -217,7 +244,7 @@ export class StoryForgeAgentHarness {
         trigger: "manual",
       });
     } finally {
-      piSession?.dispose();
+      this.disposePiSession(piSession);
       this.reservedSessions.delete(sessionId);
     }
   }
@@ -285,7 +312,7 @@ export class StoryForgeAgentHarness {
       } finally {
         active.controller.signal.removeEventListener("abort", onAbort);
       }
-      this.emitTerminalIfNeeded(active, turnId, "runtime.completed");
+      this.emitTerminalForStopReason(active, turnId);
       await this.sessionRepository.markStatus(active.sessionId, {
         status: statusForStopReason(active.stopReason),
         stopReason: active.stopReason,
@@ -319,35 +346,72 @@ export class StoryForgeAgentHarness {
     const settingsManager = this.piModels.createSettingsManager(workspace.path);
     const modelRuntime = await this.piModels.getModelRuntime();
     const model = await this.piModels.resolveModel(session.providerId, session.model);
-    return createStoryForgeAgentSession({
-      cwd: workspace.path,
-      agentDir: this.piModels.getAgentDir(),
-      modelRuntime,
-      ...(model ? { model } : {}),
-      settingsManager,
-      sessionManager: await this.piSessions.openSessionManager(session),
-      mode: input.mode,
-      extensionFactories: [
-        this.createStoryForgeExtension({
-          session,
-          turnId: input.turnId,
-          workspacePath: workspace.path,
-          mode: input.mode,
-          settings: input.settings,
-          signal: input.signal,
-        }),
-      ],
-      appendSystemPrompt: [storyForgeHarnessPrompt(input.mode)],
-      onExtensionError: (error) => {
-        this.emitEvent({
-          type: "runtime.error",
-          sessionId: session.id,
-          turnId: input.turnId,
-          message: error.error,
-          stopReason: "unrecoverable-error",
-        });
-      },
+    const [additionalSkillPaths, mcpServers] = await Promise.all([
+      this.skillResolver?.listEnabledSkillPaths() ?? Promise.resolve([]),
+      this.mcpServerSource?.listEnabledMcpServers() ?? Promise.resolve([]),
+    ]);
+    const mcpToolSession = new NodeMcpToolSession();
+    const mcpRuntime = await mcpToolSession.loadTools(mcpServers);
+    for (const diagnostic of mcpRuntime.diagnostics) {
+      console.warn(`MCP server ${diagnostic.serverName}: ${diagnostic.error}`);
+    }
+    const extensionTools = [
+      ...this.createStoryForgeTools({
+        session,
+        turnId: input.turnId,
+        workspacePath: workspace.path,
+        mode: input.mode,
+        settings: input.settings,
+      }),
+      ...mcpRuntime.tools.map(toPiToolDefinition),
+    ];
+    const runtimeEnvironment = createRuntimeEnvironmentExtension({
+      now: this.now,
+      getTimezone: this.getTimezone,
     });
+
+    try {
+      const piSession = await createStoryForgeAgentSession({
+        cwd: workspace.path,
+        agentDir: this.piModels.getAgentDir(),
+        modelRuntime,
+        ...(model ? { model } : {}),
+        settingsManager,
+        sessionManager: await this.piSessions.openSessionManager(session),
+        mode: input.mode,
+        additionalSkillPaths,
+        extensionToolNames: extensionTools.map((tool) => tool.name),
+        extensionFactories: [
+          runtimeEnvironment.extension,
+          this.createStoryForgeExtension({
+            session,
+            turnId: input.turnId,
+            workspacePath: workspace.path,
+            mode: input.mode,
+            settings: input.settings,
+            signal: input.signal,
+          }, extensionTools, runtimeEnvironment.getLatest),
+        ],
+        systemPrompt: createStoryForgeSystemPrompt({
+          mode: input.mode,
+          extensionTools,
+        }),
+        onExtensionError: (error) => {
+          this.emitEvent({
+            type: "runtime.error",
+            sessionId: session.id,
+            turnId: input.turnId,
+            message: error.error,
+            stopReason: "unrecoverable-error",
+          });
+        },
+      });
+      this.piSessionCleanups.set(piSession, () => mcpToolSession.close());
+      return piSession;
+    } catch (error) {
+      mcpToolSession.close();
+      throw error;
+    }
   }
 
   private createStoryForgeExtension(input: {
@@ -357,7 +421,7 @@ export class StoryForgeAgentHarness {
     mode: TurnMode;
     settings: TurnSettings;
     signal: AbortSignal;
-  }): InlineExtension {
+  }, tools: PiToolDefinition[], getRuntimeEnvironment: () => RuntimeEnvironmentView | undefined): InlineExtension {
     return {
       name: "storyforge-harness",
       hidden: true,
@@ -379,6 +443,7 @@ export class StoryForgeAgentHarness {
           if (!input.settings.developerMode) {
             return undefined;
           }
+          const environment = getRuntimeEnvironment();
           this.emitEvent({
             type: "model.request",
             sessionId: input.session.id,
@@ -386,11 +451,12 @@ export class StoryForgeAgentHarness {
             requestId: createModelRequestId(),
             providerId: input.session.providerId,
             model: input.session.model,
+            ...(environment ? { environment } : {}),
             ...normalizeModelRequestPayload(event.payload),
           });
           return undefined;
         });
-        for (const tool of this.createStoryForgeTools(input)) {
+        for (const tool of tools) {
           pi.registerTool(tool);
         }
       },
@@ -404,6 +470,12 @@ export class StoryForgeAgentHarness {
     mode: TurnMode;
     settings: TurnSettings;
   }): PiToolDefinition[] {
+    const environmentTools = [
+      createCurrentTimeTool({
+        now: this.now,
+        getTimezone: this.getTimezone,
+      }),
+    ];
     const taskTools = createTaskTools({
       turnId: input.turnId,
       store: {
@@ -449,6 +521,7 @@ export class StoryForgeAgentHarness {
         tavilyApiKey: readEnvSecret("Tavily_API_KEY", "TAVILY_API_KEY"),
         serpApiKey: readEnvSecret("SerpApi_API_KEY", "SERPAPI_API_KEY"),
       },
+      now: this.now,
     });
     const automationTools = input.mode === "plan"
       ? []
@@ -479,7 +552,8 @@ export class StoryForgeAgentHarness {
             },
           }),
         ];
-    return [...taskTools, ...webTools, ...automationTools].map(toPiToolDefinition);
+    return [...environmentTools, ...taskTools, ...webTools, ...automationTools]
+      .map(toPiToolDefinition);
   }
 
   private async guardBashToolCall(
@@ -666,6 +740,7 @@ export class StoryForgeAgentHarness {
     }
     if (event.type === "agent_end") {
       active.stopReason = stopReasonFromPiMessages(event.messages, active.controller.signal.aborted);
+      active.errorMessage = errorMessageFromPiMessages(event.messages);
       return;
     }
     if (event.type === "compaction_end") {
@@ -680,8 +755,21 @@ export class StoryForgeAgentHarness {
       return;
     }
     if (event.type === "agent_settled") {
-      this.emitTerminalIfNeeded(active, turnId, "runtime.completed");
+      this.emitTerminalForStopReason(active, turnId);
     }
+  }
+
+  private emitTerminalForStopReason(active: ActiveTurn, turnId: TurnId): void {
+    if (active.stopReason === "unrecoverable-error") {
+      this.emitTerminalIfNeeded(
+        active,
+        turnId,
+        "runtime.error",
+        active.errorMessage ?? "PI model request failed",
+      );
+      return;
+    }
+    this.emitTerminalIfNeeded(active, turnId, "runtime.completed");
   }
 
   private emitTerminalIfNeeded(
@@ -734,6 +822,18 @@ export class StoryForgeAgentHarness {
       webSearchCoverage,
     };
   }
+
+  private disposePiSession(session: AgentSession | undefined): void {
+    if (!session) {
+      return;
+    }
+    try {
+      session.dispose();
+    } finally {
+      this.piSessionCleanups.get(session)?.();
+      this.piSessionCleanups.delete(session);
+    }
+  }
 }
 
 function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
@@ -741,6 +841,7 @@ function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
     name: tool.name,
     label: tool.name,
     description: tool.description,
+    promptSnippet: tool.description,
     parameters: tool.parameters as never,
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
@@ -754,17 +855,6 @@ function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
       };
     },
   });
-}
-
-function storyForgeHarnessPrompt(mode: TurnMode): string {
-  return [
-    "You are running inside StoryForge, a PI Coding Agent harness.",
-    "Use PI's built-in coding tools for files and commands.",
-    "Respect StoryForge permission prompts and workspace boundaries.",
-    mode === "plan"
-      ? "This turn is in plan mode: inspect and reason, but avoid modifying files or running mutation commands."
-      : "Update the StoryForge task tools when tracking implementation progress.",
-  ].join("\n");
 }
 
 function statusForStopReason(stopReason: AgentStopReason): SessionStatus {

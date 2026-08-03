@@ -13,6 +13,7 @@ import type {
 } from "./session-repository";
 import type { StoryForgeWorkspaceStore } from "./host";
 import type { PiModelService } from "./pi-model-service";
+import { resolveStoryForgePaths } from "./storyforge-home";
 
 type PiTextContent = { type: "text"; text: string };
 type PiImageContent = { type: "image"; data: string; mimeType: string };
@@ -122,9 +123,7 @@ export class PiSessionAdapter implements SessionPiAdapter {
     if (!session.piSessionFile) {
       return [];
     }
-    const workspace = await this.workspaces.get(session.workspaceId);
     const manager = this.openManager({
-      workspacePath: workspace.path,
       workspaceId: session.workspaceId,
       piSessionFile: session.piSessionFile,
     });
@@ -169,11 +168,14 @@ export class PiSessionAdapter implements SessionPiAdapter {
   }
 
   sessionDirFor(workspaceId: string): string {
-    return join(this.rootDir, "pi-sessions", sanitizePathPart(workspaceId));
+    return join(
+      resolveStoryForgePaths({ homeDir: this.rootDir }).sessionTranscriptsDir,
+      sanitizePathPart(workspaceId),
+    );
   }
 
   private openManager(input: {
-    workspacePath: string;
+    workspacePath?: string;
     workspaceId: string;
     piSessionFile: string;
   }): SessionManager {
@@ -274,13 +276,15 @@ function toStoryForgeMessage(message: PiMessage, index: number): PersistedMessag
       .filter((block): block is PiThinkingContent => block.type === "thinking")
       .map((block) => block.thinking)
       .join("\n");
+    const content = textFromBlocks(message.content);
+    const isError = message.stopReason === "error";
     return {
       id: `pi_assistant_${index}_${message.timestamp}`,
       role: "assistant",
-      content: textFromBlocks(message.content),
+      content: content || (isError ? message.errorMessage ?? "PI Agent request failed." : ""),
       ...(reasoningContent ? { reasoningContent } : {}),
       ...(toolCalls.length ? { toolCalls } : {}),
-      ...(message.stopReason === "error" ? { error: true } : {}),
+      ...(isError ? { error: true } : {}),
       createdAt,
     };
   }

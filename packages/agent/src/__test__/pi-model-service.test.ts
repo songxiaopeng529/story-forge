@@ -45,12 +45,12 @@ describe("PiModelService", () => {
       });
       await expect(service.revealSecret("volcano")).resolves.toBe("ark-secret");
       const auth = JSON.parse(
-        await readFile(join(rootDir, "pi-agent", "auth.json"), "utf8"),
+        await readFile(join(rootDir, "agent", "auth.json"), "utf8"),
       ) as Record<string, { type?: string; key?: string }>;
       expect(auth.volcano).toEqual({ type: "api_key", key: "ark-secret" });
       const overrides = JSON.parse(
         await readFile(
-          join(rootDir, "pi-agent", "storyforge-provider-overrides.json"),
+          join(rootDir, "agent", "storyforge-provider-overrides.json"),
           "utf8",
         ),
       ) as { providers?: Record<string, { model?: string }> };
@@ -87,7 +87,7 @@ describe("PiModelService", () => {
 
       const overrides = JSON.parse(
         await readFile(
-          join(rootDir, "pi-agent", "storyforge-provider-overrides.json"),
+          join(rootDir, "agent", "storyforge-provider-overrides.json"),
           "utf8",
         ),
       ) as { providers?: Record<string, { baseUrl?: string; model?: string }> };

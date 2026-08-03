@@ -7,6 +7,7 @@ import {
   Settings,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import appIcon from "../assets/icon.png";
 
 export type Page = "agent" | "models" | "automations" | "extensions" | "settings";
 
@@ -18,9 +19,12 @@ export function PrimaryNavigation(props: {
 }) {
   return (
     <aside className="flex flex-col items-center gap-3 bg-forge-nav py-4 text-white">
-      <div className="flex h-11 w-11 items-center justify-center rounded-[10px] bg-white text-[13px] font-semibold text-forge-ink">
-        SF
-      </div>
+      <img
+        alt="StoryForge"
+        className="h-11 w-11 rounded-[10px] object-cover"
+        draggable={false}
+        src={appIcon}
+      />
       <div className="h-px w-7 bg-white/10" />
       <nav className="flex flex-col items-center gap-2">
         <NavButton

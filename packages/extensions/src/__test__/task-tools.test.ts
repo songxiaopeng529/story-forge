@@ -13,7 +13,7 @@ describe("createTaskTools", () => {
     const store = createMemoryTaskStore();
     const registry = Object.fromEntries(createTaskTools({ store }).map((tool) => [tool.name, tool]));
 
-    const output = await registry["task.create"]?.execute({
+    const output = await registry["task_create"]?.execute({
       title: " Inspect runtime ",
       description: " Read files ",
       activeForm: " Inspecting ",
@@ -39,16 +39,16 @@ describe("createTaskTools", () => {
   it("updates a task and enforces a reason for blocked tasks", async () => {
     const store = createMemoryTaskStore();
     const registry = Object.fromEntries(createTaskTools({ store }).map((tool) => [tool.name, tool]));
-    await registry["task.create"]?.execute({ title: "Inspect runtime" }, {});
+    await registry["task_create"]?.execute({ title: "Inspect runtime" }, {});
 
     await expect(
-      registry["task.update"]?.execute({
+      registry["task_update"]?.execute({
         taskId: "sf_task_1",
         status: "blocked",
       }, {}),
-    ).rejects.toThrow("task.update requires blockedReason when status is blocked");
+    ).rejects.toThrow("task_update requires blockedReason when status is blocked");
 
-    const output = await registry["task.update"]?.execute({
+    const output = await registry["task_update"]?.execute({
       taskId: "sf_task_1",
       status: "blocked",
       blockedReason: "Need approval",
@@ -74,13 +74,13 @@ describe("createTaskTools", () => {
     const registry = Object.fromEntries(
       createTaskTools({ store, turnId: "sf_turn_task" }).map((tool) => [tool.name, tool]),
     );
-    await registry["task.create"]?.execute({ title: "First" }, {});
-    await registry["task.update"]?.execute({
+    await registry["task_create"]?.execute({ title: "First" }, {});
+    await registry["task_update"]?.execute({
       taskId: "sf_task_1",
       status: "in_progress",
     }, {});
 
-    const output = await registry["task.list"]?.execute({}, {});
+    const output = await registry["task_list"]?.execute({}, {});
 
     expect(output).toMatchObject({
       tasks: [
@@ -99,10 +99,10 @@ describe("createTaskTools", () => {
     const store = createMemoryTaskStore();
     const registry = Object.fromEntries(createTaskTools({ store }).map((tool) => [tool.name, tool]));
 
-    await expect(registry["task.create"]?.execute({ title: " " }, {}))
-      .rejects.toThrow("task.create requires a non-empty string title");
-    await expect(registry["task.update"]?.execute({ taskId: "sf_task_1", status: "started" }, {}))
-      .rejects.toThrow("task.update status must be pending, in_progress, completed, or blocked");
+    await expect(registry["task_create"]?.execute({ title: " " }, {}))
+      .rejects.toThrow("task_create requires a non-empty string title");
+    await expect(registry["task_update"]?.execute({ taskId: "sf_task_1", status: "started" }, {}))
+      .rejects.toThrow("task_update status must be pending, in_progress, completed, or blocked");
   });
 });
 

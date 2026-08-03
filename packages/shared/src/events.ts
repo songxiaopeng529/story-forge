@@ -112,6 +112,11 @@ export type InspectableModelTool = {
   parameters: unknown;
 };
 
+export type RuntimeEnvironmentView = {
+  currentDate: string;
+  timezone: string;
+};
+
 export type ModelRequestEvent = {
   type: "model.request";
   sessionId: SessionId;
@@ -121,6 +126,7 @@ export type ModelRequestEvent = {
   model: string;
   messages: InspectableModelMessage[];
   tools: InspectableModelTool[];
+  environment?: RuntimeEnvironmentView;
 };
 
 export type ContextUsageSource = "provider" | "estimate";
