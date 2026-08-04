@@ -10,8 +10,10 @@ import { join } from "node:path";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import {
   AgentCoordinator,
+  migrateLegacyStoryForgeHome,
   PiModelService,
   PiSessionAdapter,
+  resolveStoryForgePaths,
   SessionRepository,
 } from "@story-forge/agent";
 import { AppSettingsStore } from "./app-settings-store";
@@ -53,7 +55,14 @@ function createWindow(): BrowserWindow {
 
 async function initializeApplication(): Promise<void> {
   await loadStoryForgeDotEnv(app.getAppPath());
-  const rootDir = app.getPath("userData");
+  const legacyRootDir = app.getPath("userData");
+  const paths = resolveStoryForgePaths();
+  const migration = await migrateLegacyStoryForgeHome({ legacyRootDir, paths });
+  if (migration.status === "migrated") {
+    console.info(`Migrated ${migration.copiedFiles} StoryForge data files to ${paths.rootDir}`);
+  }
+  process.env.PI_CODING_AGENT_DIR = paths.agentDir;
+  const rootDir = paths.rootDir;
   const settingsStore = new AppSettingsStore({ rootDir });
   const piModels = new PiModelService({ rootDir });
   const workspaceRepository = new WorkspaceRepository({ rootDir });
@@ -83,6 +92,7 @@ async function initializeApplication(): Promise<void> {
     piModels,
     piSessions,
     skillResolver: skillService,
+    mcpServerSource: mcpConfigService,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
     getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,

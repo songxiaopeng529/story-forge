@@ -3,8 +3,10 @@ export * from "./event-mapper";
 export * from "./host";
 export * from "./pi-model-service";
 export * from "./pi-session-adapter";
+export * from "./runtime-environment";
 export * from "./session-repository";
 export * from "./storyforge-agent-harness";
+export * from "./storyforge-home";
 export {
   StoryForgeAgentHarness as AgentCoordinator,
 } from "./storyforge-agent-harness";

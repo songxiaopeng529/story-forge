@@ -2,8 +2,13 @@ import {
   NodeMcpConnectionTester,
   parseMcpConfig,
   type McpConnectionTester,
+  type ParsedMcpServer,
 } from "@story-forge/extensions";
-import type { McpConfigView, McpServerView, McpToolView } from "@story-forge/shared";
+import type {
+  McpConfigView,
+  McpServerView,
+  McpToolView,
+} from "@story-forge/shared";
 import { join } from "node:path";
 import { z } from "zod";
 import { readJson, writeJsonAtomic } from "./atomic-json";
@@ -47,6 +52,11 @@ export class McpConfigService {
       rawJson: defaultRawJson,
       servers: [],
     });
+  }
+
+  async listEnabledMcpServers(): Promise<ParsedMcpServer[]> {
+    const config = parseMcpConfig((await this.get()).rawJson);
+    return config.parsedServers.filter((server) => server.enabled);
   }
 
   async saveRawJson(rawJson: string): Promise<McpConfigView> {

@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { ProviderId, ProviderView } from "@story-forge/shared";
 import { writeJsonAtomic } from "./atomic-json";
+import { resolveStoryForgePaths } from "./storyforge-home";
 import type { CreateStoryForgeAgentSessionInput } from "./create-storyforge-session";
 
 export type LegacyCredentialCrypto = {
@@ -70,7 +71,7 @@ export class PiModelService {
 
   constructor(options: { rootDir: string }) {
     this.rootDir = options.rootDir;
-    this.agentDir = join(options.rootDir, "pi-agent");
+    this.agentDir = resolveStoryForgePaths({ homeDir: options.rootDir }).agentDir;
     this.settingsManager = SettingsManager.create(options.rootDir, this.agentDir);
   }
 

@@ -22,6 +22,6 @@ describe("web-url-policy", () => {
     "http://169.254.169.254/latest/meta-data",
     "not a url",
   ])("blocks unsafe URL %s", (url) => {
-    expect(() => assertPublicWebUrl(url)).toThrow(/web.fetch blocked URL|web.fetch requires/);
+    expect(() => assertPublicWebUrl(url)).toThrow(/web_fetch blocked URL|web_fetch requires/);
   });
 });

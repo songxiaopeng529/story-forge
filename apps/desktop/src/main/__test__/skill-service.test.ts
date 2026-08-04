@@ -34,6 +34,9 @@ Review the current code carefully.
       enabled: true,
     });
     await expect(service.list()).resolves.toHaveLength(1);
+    await expect(service.listEnabledSkillPaths()).resolves.toEqual([
+      join(rootDir, "skills", "code-review", "SKILL.md"),
+    ]);
     await expect(readFile(join(rootDir, "skills", "skills.json"), "utf8")).resolves.toContain(
       "code-review",
     );
@@ -62,6 +65,7 @@ Run the deployment checklist.
     const installed = await service.importZip(archivePath);
     expect(await service.resolveInvocation("/deploy")).toMatchObject({ id: installed.id });
     await service.setEnabled(installed.id, false);
+    await expect(service.listEnabledSkillPaths()).resolves.toEqual([]);
     await expect(service.resolveInvocation("/deploy")).resolves.toMatchObject({
       id: installed.id,
       enabled: false,

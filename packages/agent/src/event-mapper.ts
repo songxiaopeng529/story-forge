@@ -38,16 +38,33 @@ export function stopReasonFromPiMessages(
   return "completed";
 }
 
+export function errorMessageFromPiMessages(messages: unknown[]): string | undefined {
+  const lastAssistant = [...messages].reverse().find((message) => {
+    const record = toRecord(message);
+    return record.role === "assistant" && record.stopReason === "error";
+  });
+  const errorMessage = toRecord(lastAssistant).errorMessage;
+  return typeof errorMessage === "string" && errorMessage.trim()
+    ? errorMessage.trim()
+    : undefined;
+}
+
 export function normalizeModelRequestPayload(
   payload: unknown,
 ): Pick<Extract<AgentEvent, { type: "model.request" }>, "messages" | "tools"> {
   const record = toRecord(payload);
-  const messages = Array.isArray(record.messages)
+  const providerMessages = Array.isArray(record.messages)
     ? record.messages.map(normalizeModelMessage).filter(isInspectableModelMessage)
     : [];
-  const tools = Array.isArray(record.tools)
-    ? record.tools.map(normalizeModelTool).filter(isInspectableModelTool)
-    : [];
+  const systemContent = normalizeProviderSystemContent(
+    record.system ?? record.systemInstruction,
+  );
+  const messages = systemContent && !providerMessages.some((message) => message.role === "system")
+    ? [{ role: "system" as const, content: systemContent }, ...providerMessages]
+    : providerMessages;
+  const tools = flattenProviderTools(record.tools)
+    .map(normalizeModelTool)
+    .filter(isInspectableModelTool);
   return { messages, tools };
 }
 
@@ -79,15 +96,39 @@ function normalizeModelMessage(message: unknown): InspectableModelMessage | unde
 
 function normalizeModelTool(tool: unknown): InspectableModelTool | undefined {
   const record = toRecord(tool);
-  const name = typeof record.name === "string" ? record.name : undefined;
+  const definition = isRecord(record.function) ? record.function : record;
+  const name = typeof definition.name === "string" ? definition.name : undefined;
   if (!name) {
     return undefined;
   }
   return {
     name,
-    description: typeof record.description === "string" ? record.description : "",
-    parameters: record.parameters,
+    description: typeof definition.description === "string" ? definition.description : "",
+    parameters: definition.parameters
+      ?? definition.input_schema
+      ?? definition.inputSchema
+      ?? definition.parametersJsonSchema,
   };
+}
+
+function flattenProviderTools(value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((tool) => {
+    const record = toRecord(tool);
+    return Array.isArray(record.functionDeclarations) ? record.functionDeclarations : [tool];
+  });
+}
+
+function normalizeProviderSystemContent(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (isRecord(value) && "parts" in value) {
+    return stringifyContent(value.parts);
+  }
+  return stringifyContent(value);
 }
 
 function isInspectableModelMessage(
@@ -122,4 +163,8 @@ function toRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

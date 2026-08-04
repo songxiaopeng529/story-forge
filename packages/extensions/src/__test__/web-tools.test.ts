@@ -3,7 +3,7 @@ import type { ToolDefinition } from "../tool-definition";
 import { createWebTools } from "../web/web-tools";
 
 describe("createWebTools", () => {
-  it("exposes web.search and web.fetch schemas", () => {
+  it("exposes provider-safe web_search and web_fetch schemas", () => {
     const tools = createWebTools({
       enabled: true,
       coverage: "focused",
@@ -11,7 +11,7 @@ describe("createWebTools", () => {
       fetch: vi.fn(),
     });
 
-    expect(toSchemas(tools).map((schema) => schema.name)).toEqual(["web.search", "web.fetch"]);
+    expect(toSchemas(tools).map((schema) => schema.name)).toEqual(["web_search", "web_fetch"]);
   });
 
   it("runs focused search with Tavily only", async () => {
@@ -27,14 +27,16 @@ describe("createWebTools", () => {
       coverage: "focused",
       credentials: { tavilyApiKey: "tvly" },
       fetch,
+      now: () => new Date("2026-08-03T06:07:08.000Z"),
     });
 
-    const result = await executeTool(tools, "web.search", { query: "agent" });
+    const result = await executeTool(tools, "web_search", { query: "agent" });
 
     expect(result.ok).toBe(true);
     expect(result.ok && result.output).toMatchObject({
       query: "agent",
       coverage: "focused",
+      retrievedAt: "2026-08-03T06:07:08.000Z",
       results: [expect.objectContaining({ providers: ["tavily"] })],
       warnings: [],
     });
@@ -70,7 +72,7 @@ describe("createWebTools", () => {
       fetch,
     });
 
-    const result = await executeTool(tools, "web.search", { query: "agent" });
+    const result = await executeTool(tools, "web_search", { query: "agent" });
 
     expect(result.ok).toBe(true);
     expect(result.ok && result.output).toMatchObject({
@@ -82,7 +84,7 @@ describe("createWebTools", () => {
     });
   });
 
-  it("uses Tavily extract for web.fetch and blocks unsafe URLs", async () => {
+  it("uses Tavily extract for web_fetch and blocks unsafe URLs", async () => {
     const fetch = vi.fn(async () =>
       new Response(JSON.stringify({
         results: [{ url: "https://example.com", raw_content: "hello" }],
@@ -94,12 +96,16 @@ describe("createWebTools", () => {
       coverage: "focused",
       credentials: { tavilyApiKey: "tvly" },
       fetch,
+      now: () => new Date("2026-08-03T06:07:08.000Z"),
     });
 
-    await expect(executeTool(tools, "web.fetch", { url: "http://localhost:3000" }))
+    await expect(executeTool(tools, "web_fetch", { url: "http://localhost:3000" }))
       .resolves.toMatchObject({ ok: false });
-    await expect(executeTool(tools, "web.fetch", { url: "https://example.com" }))
-      .resolves.toMatchObject({ ok: true });
+    await expect(executeTool(tools, "web_fetch", { url: "https://example.com" }))
+      .resolves.toMatchObject({
+        ok: true,
+        output: { retrievedAt: "2026-08-03T06:07:08.000Z" },
+      });
   });
 });
 

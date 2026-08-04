@@ -69,7 +69,11 @@ export function buildTimeline(input: {
   automationProposals?: AutomationProposalTimelineState[];
 }): TimelineItem[] {
   const items = buildPersistedItems(input.session?.messages ?? []);
-  if (input.session?.stopReason && input.session.status !== "completed") {
+  if (
+    input.session?.stopReason
+    && input.session.status !== "completed"
+    && !(input.session.status === "error" && items.some((item) => item.type === "error"))
+  ) {
     items.push({
       type: input.session.status === "error" ? "error" : "notice",
       id: `session-${input.session.id}-${input.session.status}`,
@@ -233,7 +237,13 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
       });
     }
 
-    if (message.content.trim()) {
+    if (message.error && message.content.trim()) {
+      items.push({
+        type: "error",
+        id: message.id,
+        message: message.content,
+      });
+    } else if (message.content.trim()) {
       items.push({
         type: "assistant-message",
         id: message.id,

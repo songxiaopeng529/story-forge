@@ -62,9 +62,57 @@ describe("SessionRepository", () => {
     });
   });
 
+  it("recovers running metadata without materializing PI messages", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_removed",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    await repository.markStatus(session.id, {
+      status: "running",
+      turnId: "sf_turn_active",
+    });
+    const failingRepository = new SessionRepository({
+      rootDir,
+      piAdapter: createFailingLoadAdapter(),
+    });
+
+    await expect(failingRepository.recoverInterruptedSessions()).resolves.toBeUndefined();
+    await expect(repository.get(session.id)).resolves.toMatchObject({
+      status: "interrupted",
+      stopReason: "application-restarted",
+    });
+  });
+
+  it("isolates message materialization failures while listing sessions", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_removed",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    const failingRepository = new SessionRepository({
+      rootDir,
+      piAdapter: createFailingLoadAdapter(),
+    });
+
+    await expect(failingRepository.list()).resolves.toEqual([
+      expect.objectContaining({
+        id: session.id,
+        status: "error",
+        stopReason: "session-materialization-failed",
+        migrationError: "Transcript unavailable",
+        messages: [],
+      }),
+    ]);
+  });
+
   it("preserves a corrupt session file for recovery", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
-    const sessionsDir = join(rootDir, "sessions");
+    const sessionsDir = join(rootDir, "sessions", "metadata");
     const repository = new SessionRepository({ rootDir });
     const session = await repository.create({
       workspaceId: "sf_workspace_project",
@@ -88,14 +136,15 @@ describe("SessionRepository", () => {
       providerId: "deepseek",
       model: "deepseek-v4-pro",
     });
-    const corruptPath = join(rootDir, "sessions", "sf_session_corrupt.json");
+    const sessionsDir = join(rootDir, "sessions", "metadata");
+    const corruptPath = join(sessionsDir, "sf_session_corrupt.json");
     await writeFile(corruptPath, "{broken", "utf8");
 
     await expect(repository.list()).resolves.toEqual([
       expect.objectContaining({ id: healthy.id }),
     ]);
     expect(
-      (await readdir(join(rootDir, "sessions"))).some((name) =>
+      (await readdir(sessionsDir)).some((name) =>
         name.startsWith("sf_session_corrupt.json.corrupt-")
       ),
     ).toBe(true);
@@ -239,6 +288,24 @@ function createFakePiAdapter(
     },
     async loadMessages(session) {
       return messages.get(session.id) ?? [];
+    },
+    async deletePiSession() {},
+  };
+}
+
+function createFailingLoadAdapter(): SessionPiAdapter {
+  return {
+    async createPiSession(input) {
+      return {
+        piSessionId: `pi_${input.sessionId}`,
+        piSessionFile: `/tmp/${input.sessionId}.jsonl`,
+      };
+    },
+    async migrateLegacySession() {
+      throw new Error("unused");
+    },
+    async loadMessages() {
+      throw new Error("Transcript unavailable");
     },
     async deletePiSession() {},
   };

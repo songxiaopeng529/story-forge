@@ -27,6 +27,35 @@ const baseSession: SessionView = {
 };
 
 describe("buildTimeline", () => {
+  it("renders a persisted provider failure as an error with its original message", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        status: "error",
+        stopReason: "unrecoverable-error",
+        messages: [
+          userMessage,
+          {
+            id: "message-error",
+            role: "assistant",
+            content: "400 invalid tool name",
+            error: true,
+            createdAt: "2026-08-03T00:00:00.000Z",
+          },
+        ],
+      },
+      activities: [],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toContainEqual({
+      type: "error",
+      id: "message-error",
+      message: "400 invalid tool name",
+    });
+    expect(items.filter((item) => item.type === "error")).toHaveLength(1);
+  });
+
   it("keeps active tool steps before later assistant deltas", () => {
     const activities: AgentEvent[] = [
       {
