@@ -34,6 +34,7 @@ export type TimelineItem =
     }
   | { type: "reasoning"; id: string; content: string }
   | { type: "summary"; id: string; content: string }
+  | { type: "plan"; id: string; content: string }
   | {
       type: "tool-step";
       id: string;
@@ -194,6 +195,14 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
     }
 
     if (message.role === "tool") {
+      if (message.name === "plan_mode_complete") {
+        items.push({
+          type: "plan",
+          id: message.id,
+          content: normalizePersistedPlan(message.content),
+        });
+        continue;
+      }
       items.push({
         type: "tool-step",
         id: message.id,
@@ -297,6 +306,9 @@ function appendActiveTurnItems(
     streamIndex = undefined;
 
     if (event.type === "tool.call") {
+      if (event.name === "plan_mode_complete") {
+        continue;
+      }
       const index = items.length;
       items.push({
         type: "tool-step",
@@ -311,6 +323,9 @@ function appendActiveTurnItems(
     }
 
     if (event.type === "tool.result") {
+      if (event.name === "plan_mode_complete") {
+        continue;
+      }
       const index = toolIndexes.get(event.callId);
       if (index !== undefined && items[index]?.type === "tool-step") {
         const existing = items[index];
@@ -330,6 +345,15 @@ function appendActiveTurnItems(
           output: event.output,
         });
       }
+      continue;
+    }
+
+    if (event.type === "plan.ready") {
+      items.push({
+        type: "plan",
+        id: `plan-${activeTurnId}`,
+        content: event.plan,
+      });
       continue;
     }
 
@@ -359,6 +383,10 @@ function appendActiveTurnItems(
       });
     }
   }
+}
+
+function normalizePersistedPlan(content: string): string {
+  return content.replace(/^\*\*Proposed Plan\*\*\s*/u, "").trim() || content;
 }
 
 function isActiveTurnItem(item: TimelineItem, activeTurnId: TurnId): boolean {

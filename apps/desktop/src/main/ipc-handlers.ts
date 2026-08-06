@@ -43,7 +43,6 @@ export type IpcHandlerOptions = {
   selectSkillArchive: () => Promise<string | undefined>;
 };
 
-const turnModeSchema = z.enum(["normal", "plan"]);
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const providerIdSchema = z.string().min(1);
@@ -239,7 +238,6 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     z.object({
       sessionId: sessionIdSchema,
       prompt: z.string(),
-      mode: turnModeSchema.optional(),
       imageAttachments: z.array(imageAttachmentSchema).optional(),
     }).refine((input) => input.prompt.trim() || input.imageAttachments?.length, {
       message: "Prompt or image attachment is required",
@@ -247,7 +245,6 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     (input) => options.coordinator.start({
       sessionId: input.sessionId,
       prompt: input.prompt,
-      ...(input.mode ? { mode: input.mode } : {}),
       ...(input.imageAttachments ? { imageAttachments: input.imageAttachments } : {}),
     }),
   );
@@ -262,6 +259,22 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     IPC_CHANNELS.permissionRespond,
     permissionResponseSchema,
     (input) => options.coordinator.respondToPermission(input),
+  );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.extensionUiRespond,
+    z.object({
+      requestId: z.string().min(1),
+      cancelled: z.boolean().optional(),
+      value: z.string().optional(),
+      confirmed: z.boolean().optional(),
+    }),
+    (input) => options.coordinator.respondToExtensionUi({
+      requestId: input.requestId,
+      ...(input.cancelled !== undefined ? { cancelled: input.cancelled } : {}),
+      ...(input.value !== undefined ? { value: input.value } : {}),
+      ...(input.confirmed !== undefined ? { confirmed: input.confirmed } : {}),
+    }),
   );
   handle(options.ipc, IPC_CHANNELS.automationsList, z.undefined(), () =>
     options.automations.list()

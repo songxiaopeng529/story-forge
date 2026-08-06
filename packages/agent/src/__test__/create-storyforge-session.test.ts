@@ -12,6 +12,7 @@ import {
   createStoryForgeAgentSession,
   createStoryForgeSystemPrompt,
 } from "../create-storyforge-session";
+import { PiExtensionUiBridge } from "../pi-extension-ui";
 
 describe("createStoryForgeAgentSession", () => {
   it("loads StoryForge skills and exposes PI, StoryForge, and MCP tools", async () => {
@@ -49,8 +50,9 @@ Run the StoryForge review checklist.
       model: model!,
       settingsManager,
       sessionManager: SessionManager.inMemory(rootDir),
-      mode: "normal",
       additionalSkillPaths: [join(skillDir, "SKILL.md")],
+      additionalExtensionPaths: [],
+      extensionUiContext: createExtensionUiContext(),
       extensionToolNames: customTools.map((tool) => tool.name),
       extensionFactories: [{
         name: "storyforge-test-tools",
@@ -62,7 +64,6 @@ Run the StoryForge review checklist.
         },
       }],
       systemPrompt: createStoryForgeSystemPrompt({
-        mode: "normal",
         extensionTools: customTools,
       }),
     });
@@ -93,17 +94,16 @@ Run the StoryForge review checklist.
     session.dispose();
   });
 
-  it("uses StoryForge as the runtime identity and limits plan mode tools", () => {
+  it("uses StoryForge as the runtime identity and leaves tool policy to PI extensions", () => {
     const prompt = createStoryForgeSystemPrompt({
-      mode: "plan",
       extensionTools: [{ name: "task_list", description: "List tasks" }],
     });
 
     expect(prompt).toMatch(/^You are StoryForge/);
     expect(prompt).toContain("- read: Read file contents");
     expect(prompt).toContain("- task_list: List tasks");
-    expect(prompt).not.toContain("- write:");
-    expect(prompt).not.toContain("- bash:");
+    expect(prompt).toContain("- write:");
+    expect(prompt).toContain("- bash:");
     expect(prompt).not.toContain("Pi documentation");
     expect(prompt).toContain("transient environment context");
     expect(prompt).not.toContain("<current_date>");
@@ -116,13 +116,22 @@ Run the StoryForge review checklist.
       modelRuntime: {} as never,
       settingsManager: {} as never,
       sessionManager: {} as never,
-      mode: "normal",
+      additionalExtensionPaths: [],
+      extensionUiContext: createExtensionUiContext(),
       extensionToolNames: ["task.list"],
       extensionFactories: [],
       systemPrompt: "You are StoryForge.",
     })).rejects.toThrow('Invalid tool name "task.list"');
   });
 });
+
+function createExtensionUiContext() {
+  return new PiExtensionUiBridge(() => undefined).createContext({
+    sessionId: "sf_session_test",
+    turnId: "sf_turn_test",
+    signal: new AbortController().signal,
+  });
+}
 
 function createTestTool(name: string, description: string) {
   return defineTool({

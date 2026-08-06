@@ -117,6 +117,9 @@ importers:
 
   packages/extensions:
     dependencies:
+      '@narumitw/pi-plan-mode':
+        specifier: 0.48.0
+        version: 0.48.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)
       '@story-forge/shared':
         specifier: workspace:*
         version: link:../shared
@@ -868,6 +871,18 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
+
+  '@narumitw/pi-plan-mode@0.48.0':
+    resolution: {integrity: sha512-CanQ9h8Q+tvcOlZuRZWbMEJIamy7fGCjLMVaqaKia/H4X2cuTZhUfMtdxxsaaNGuKGnJX1Lp7fnikdKndz3Zow==}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '*'
+      '@earendil-works/pi-tui': '*'
+
+  '@narumitw/pi-tui-kit@0.41.0':
+    resolution: {integrity: sha512-JgbIsQMhabONyPnxSpnEwcg7rW8ddlwJl7vmNK5khEVEXczynz00kmsd5dNfV8fkb1LIsQbAI8PC715CS/GUHQ==}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '*'
+      '@earendil-works/pi-tui': '*'
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -4116,6 +4131,17 @@ snapshots:
       '@emnapi/runtime': 1.10.0
       '@tybys/wasm-util': 0.10.2
     optional: true
+
+  '@narumitw/pi-plan-mode@0.48.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)':
+    dependencies:
+      '@earendil-works/pi-coding-agent': 0.82.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-tui': 0.82.1
+      '@narumitw/pi-tui-kit': 0.41.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)
+
+  '@narumitw/pi-tui-kit@0.41.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)':
+    dependencies:
+      '@earendil-works/pi-coding-agent': 0.82.1(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-tui': 0.82.1
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:

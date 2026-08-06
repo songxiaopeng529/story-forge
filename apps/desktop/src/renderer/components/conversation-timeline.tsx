@@ -75,6 +75,9 @@ function TimelineItemView(props: {
   if (item.type === "summary") {
     return <SummaryBlock content={item.content} />;
   }
+  if (item.type === "plan") {
+    return <PlanBlock content={item.content} />;
+  }
   if (item.type === "tool-step") {
     return <ToolStep item={item} />;
   }
@@ -253,6 +256,22 @@ function SummaryBlock(props: { content: string }) {
         {props.content}
       </div>
     </details>
+  );
+}
+
+function PlanBlock(props: { content: string }) {
+  return (
+    <article className="rounded-[10px] border border-forge-info bg-white px-4 py-3 text-sm">
+      <div className="flex items-center gap-2 text-sm font-semibold text-forge-ink">
+        <ListChecks className="text-forge-info" size={17} />
+        Proposed plan
+      </div>
+      <div className="mt-3 text-[13px] leading-5 text-forge-ink">
+        <Streamdown mode="static" plugins={{ code }}>
+          {props.content}
+        </Streamdown>
+      </div>
+    </article>
   );
 }
 

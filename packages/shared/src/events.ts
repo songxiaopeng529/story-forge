@@ -80,6 +80,77 @@ export type PermissionRequestEvent = {
   risk: "unknown" | "high" | "destructive" | "elevated";
 };
 
+type ExtensionUiEventBase = {
+  sessionId: SessionId;
+  turnId: TurnId;
+  requestId: string;
+};
+
+export type ExtensionUiRequestEvent = ExtensionUiEventBase & (
+  | {
+      type: "extension.ui.request";
+      method: "select";
+      title: string;
+      options: string[];
+    }
+  | {
+      type: "extension.ui.request";
+      method: "confirm";
+      title: string;
+      message: string;
+    }
+  | {
+      type: "extension.ui.request";
+      method: "input";
+      title: string;
+      placeholder?: string;
+    }
+  | {
+      type: "extension.ui.request";
+      method: "editor";
+      title: string;
+      prefill?: string;
+    }
+);
+
+export type ExtensionUiResponse = {
+  requestId: string;
+  cancelled?: boolean;
+  value?: string;
+  confirmed?: boolean;
+};
+
+export type ExtensionNotificationEvent = {
+  type: "extension.notification";
+  sessionId: SessionId;
+  turnId: TurnId;
+  message: string;
+  level: "info" | "warning" | "error";
+};
+
+export type ExtensionStatusEvent = {
+  type: "extension.status";
+  sessionId: SessionId;
+  turnId: TurnId;
+  key: string;
+  text?: string;
+};
+
+export type ExtensionWidgetEvent = {
+  type: "extension.widget";
+  sessionId: SessionId;
+  turnId: TurnId;
+  key: string;
+  lines?: string[];
+};
+
+export type PlanReadyEvent = {
+  type: "plan.ready";
+  sessionId: SessionId;
+  turnId: TurnId;
+  plan: string;
+};
+
 export type ResponseFallbackEvent = {
   type: "response.fallback";
   sessionId: SessionId;
@@ -177,6 +248,11 @@ export type AgentEvent =
   | ToolCallEvent
   | ToolResultEvent
   | PermissionRequestEvent
+  | ExtensionUiRequestEvent
+  | ExtensionNotificationEvent
+  | ExtensionStatusEvent
+  | ExtensionWidgetEvent
+  | PlanReadyEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
   | ContextUsageEvent

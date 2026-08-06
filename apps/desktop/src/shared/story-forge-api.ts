@@ -6,6 +6,7 @@ import type {
   AutomationView,
   CommandExecutionMode,
   CreateAutomationInput,
+  ExtensionUiResponse,
   McpConfigView,
   McpServerView,
   ProviderId,
@@ -17,7 +18,6 @@ import type {
   SkillView,
   ToolCall,
   TurnId,
-  TurnMode,
   UpdateAutomationInput,
   WebSearchCoverage,
 } from "@story-forge/shared";
@@ -47,6 +47,7 @@ export const IPC_CHANNELS = {
   turnsCompact: "story-forge:turns:compact",
   turnEvent: "story-forge:turns:event",
   permissionRespond: "story-forge:permissions:respond",
+  extensionUiRespond: "story-forge:extension-ui:respond",
   automationsList: "story-forge:automations:list",
   automationsGetRuns: "story-forge:automations:get-runs",
   automationsValidateSchedule: "story-forge:automations:validate-schedule",
@@ -161,7 +162,6 @@ export type StoryForgeApi = {
     start(input: {
       sessionId: SessionId;
       prompt: string;
-      mode?: TurnMode;
       imageAttachments?: ImageAttachmentView[];
     }): Promise<{ turnId: TurnId }>;
     stop(turnId: TurnId): Promise<void>;
@@ -170,6 +170,9 @@ export type StoryForgeApi = {
   };
   permissions: {
     respond(input: { requestId: string; approved: boolean }): Promise<void>;
+  };
+  extensionUi: {
+    respond(input: ExtensionUiResponse): Promise<void>;
   };
   automations: {
     list(): Promise<AutomationView[]>;

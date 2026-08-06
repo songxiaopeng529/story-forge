@@ -36,21 +36,12 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.turnsStart, {
         sessionId: "sf_session_valid",
         prompt: "plan this",
-        mode: "plan",
       }),
     ).resolves.toBeUndefined();
     expect(fixture.start).toHaveBeenCalledWith({
       sessionId: "sf_session_valid",
       prompt: "plan this",
-      mode: "plan",
     });
-    await expect(
-      fixture.invoke(IPC_CHANNELS.turnsStart, {
-        sessionId: "sf_session_valid",
-        prompt: "bad mode",
-        mode: "chaos",
-      }),
-    ).rejects.toThrow("Invalid IPC payload");
     await expect(
       fixture.invoke(IPC_CHANNELS.providersRevealSecret, ""),
     ).rejects.toThrow("Invalid IPC payload");
@@ -210,6 +201,24 @@ describe("registerIpcHandlers", () => {
         approved: true,
       }),
     ).rejects.toThrow("Invalid IPC payload");
+  });
+
+  it("registers PI extension UI response IPC", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.extensionUiRespond, {
+      requestId: "extension_request_1",
+      value: "Start implementing",
+    })).resolves.toBeUndefined();
+    expect(fixture.respondToExtensionUi).toHaveBeenCalledWith({
+      requestId: "extension_request_1",
+      value: "Start implementing",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.extensionUiRespond, {
+      requestId: "",
+      value: "invalid",
+    })).rejects.toThrow("Invalid IPC payload");
   });
 
   it("registers Automations APIs with payload validation", async () => {
@@ -442,6 +451,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     start,
     stop: vi.fn(),
     respondToPermission: vi.fn(),
+    respondToExtensionUi: vi.fn(),
   } as unknown as AgentCoordinator;
 
   return {
@@ -449,6 +459,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     start,
     createSession,
     respondToPermission: coordinator.respondToPermission,
+    respondToExtensionUi: coordinator.respondToExtensionUi,
     options: {
       ipc,
       providers,

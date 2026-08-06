@@ -2,7 +2,6 @@ import type { TurnId } from "./events";
 
 export type TaskId = `sf_task_${string}`;
 export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked";
-export type TurnMode = "normal" | "plan";
 
 export type SessionTask = {
   id: TaskId;

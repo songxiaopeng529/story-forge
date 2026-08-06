@@ -2,10 +2,10 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type AgentSession,
+  type ExtensionUIContext,
   type InlineExtension,
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import type { TurnMode } from "@story-forge/shared";
 
 type CreateAgentSessionOptions = NonNullable<Parameters<typeof createAgentSession>[0]>;
 
@@ -16,38 +16,30 @@ export type CreateStoryForgeAgentSessionInput = {
   model?: CreateAgentSessionOptions["model"];
   settingsManager: NonNullable<CreateAgentSessionOptions["settingsManager"]>;
   sessionManager: NonNullable<CreateAgentSessionOptions["sessionManager"]>;
-  mode: TurnMode;
   extensionFactories: InlineExtension[];
   extensionToolNames?: string[];
   additionalSkillPaths?: string[];
+  additionalExtensionPaths: string[];
+  extensionUiContext: ExtensionUIContext;
   systemPrompt: string;
   onExtensionError?: (error: { error: string }) => void;
 };
 
 const PI_BUILTIN_TOOLS = ["read", "write", "edit", "bash", "grep", "find", "ls"];
-const PI_PLAN_TOOLS = ["read", "grep", "find", "ls"];
 const PROVIDER_SAFE_TOOL_NAME = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export function createStoryForgeSystemPrompt(input: {
-  mode: TurnMode;
   extensionTools: ReadonlyArray<Pick<PiToolDefinition, "name" | "description">>;
 }): string {
-  const builtInTools = input.mode === "plan"
-    ? [
-        ["read", "Read file contents"],
-        ["grep", "Search file contents for patterns"],
-        ["find", "Find files by glob pattern"],
-        ["ls", "List directory contents"],
-      ]
-    : [
-        ["read", "Read file contents"],
-        ["write", "Create or completely rewrite files"],
-        ["edit", "Make precise file edits using exact text replacement"],
-        ["bash", "Execute shell commands in the current workspace"],
-        ["grep", "Search file contents for patterns"],
-        ["find", "Find files by glob pattern"],
-        ["ls", "List directory contents"],
-      ];
+  const builtInTools = [
+    ["read", "Read file contents"],
+    ["write", "Create or completely rewrite files"],
+    ["edit", "Make precise file edits using exact text replacement"],
+    ["bash", "Execute shell commands in the current workspace"],
+    ["grep", "Search file contents for patterns"],
+    ["find", "Find files by glob pattern"],
+    ["ls", "List directory contents"],
+  ];
   const availableTools = [
     ...builtInTools.map(([name, description]) => `- ${name}: ${description}`),
     ...input.extensionTools.map((tool) => `- ${tool.name}: ${tool.description}`),
@@ -69,9 +61,7 @@ export function createStoryForgeSystemPrompt(input: {
     "- Be concise and show file paths clearly when working with files.",
     "- Interpret relative dates such as today and tomorrow using the transient environment context supplied with each model request.",
     "- For latest or time-sensitive facts, use web_search and compare source publication dates instead of relying on memory.",
-    input.mode === "plan"
-      ? "- This turn is in plan mode: inspect and reason, but do not modify files or run mutation commands."
-      : "- Use the StoryForge task tools when tracking meaningful multi-step implementation work.",
+    "- Use the StoryForge task tools when tracking meaningful multi-step implementation work.",
   ].join("\n");
 }
 
@@ -89,6 +79,7 @@ export async function createStoryForgeAgentSession(
     cwd: input.cwd,
     agentDir: input.agentDir,
     settingsManager: input.settingsManager,
+    additionalExtensionPaths: input.additionalExtensionPaths,
     extensionFactories: input.extensionFactories,
     additionalSkillPaths: input.additionalSkillPaths ?? [],
     systemPromptOverride: () => input.systemPrompt,
@@ -104,12 +95,13 @@ export async function createStoryForgeAgentSession(
     resourceLoader,
     sessionManager: input.sessionManager,
     tools: Array.from(new Set([
-      ...(input.mode === "plan" ? PI_PLAN_TOOLS : PI_BUILTIN_TOOLS),
+      ...PI_BUILTIN_TOOLS,
       ...(input.extensionToolNames ?? []),
     ])),
   });
   await session.bindExtensions({
-    mode: "print",
+    mode: "rpc",
+    uiContext: input.extensionUiContext,
     ...(input.onExtensionError ? { onError: input.onExtensionError } : {}),
   });
   return session;

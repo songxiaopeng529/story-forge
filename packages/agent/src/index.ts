@@ -2,6 +2,7 @@ export * from "./create-storyforge-session";
 export * from "./event-mapper";
 export * from "./host";
 export * from "./pi-model-service";
+export * from "./pi-extension-ui";
 export * from "./pi-session-adapter";
 export * from "./runtime-environment";
 export * from "./session-repository";

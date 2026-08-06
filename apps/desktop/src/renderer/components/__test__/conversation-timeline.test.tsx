@@ -70,4 +70,18 @@ describe("ConversationTimeline assistant markdown", () => {
     expect(screen.getByText("Show me **not bold** please")).toBeInTheDocument();
     expect(container.querySelector("strong")).not.toBeInTheDocument();
   });
+
+  it("renders completed PI plans as formatted plan cards", () => {
+    const items: TimelineItem[] = [{
+      type: "plan",
+      id: "plan-1",
+      content: "## Runtime migration\n\n1. Remove fake mode\n2. Load the PI extension",
+    }];
+
+    const { container } = render(<ConversationTimeline items={items} />);
+
+    expect(screen.getByText("Proposed plan")).toBeInTheDocument();
+    expect(container.querySelector("h2")).toHaveTextContent("Runtime migration");
+    expect(container.querySelectorAll("li")).toHaveLength(2);
+  });
 });
