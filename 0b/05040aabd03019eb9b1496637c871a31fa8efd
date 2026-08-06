@@ -1,0 +1,228 @@
+packages/agent/src/storyforge-agent-harness.ts
+  s_bb1c17b1877707::t_d62e541945b45f 531-552,554-557,773,877 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a747a2a3fc14036ff0d6e05","tool_type":"agent","tool_id":"exec_command","line_ranges":[{"Range":[531,552]},{"Range":[554,557]},{"Single":773},{"Single":877}]}]}
+  s_bb1c17b1877707::t_f117fae494bf2e 771-772
+  s_bb1c17b1877707::t_25a6ff66dea27d 874-876
+  s_bb1c17b1877707::t_1d3c4a718cfabe 878-879
+  s_8151528cdd6ca2::t_454292da4abf9e 13,30,61,101,116,137,181,223,277-280,385-390,733-743
+packages/agent/src/create-storyforge-session.ts
+  s_bb1c17b1877707::t_d62e541945b45f 34-42,64,82,98,103-104 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a747a2a3fc14036ff0d6e05","tool_type":"agent","tool_id":"exec_command","line_ranges":[{"Range":[34,42]},{"Single":64},{"Single":82},{"Single":98},{"Range":[103,104]}]}]}
+  s_8151528cdd6ca2::t_85e66e52b05951 5,22-23
+apps/desktop/src/main/__test__/ipc-handlers.test.ts
+  s_1b430091314d20::t_42d6404cd092a3 206-223,454,462
+apps/desktop/src/main/ipc-handlers.ts
+  s_1b430091314d20::t_2cc4c91dbc426c 263-278
+apps/desktop/src/preload/index.ts
+  s_1b430091314d20::t_52e5797bbbf8f5 63-65
+apps/desktop/src/renderer/App.tsx
+  s_1b430091314d20::t_f518730d9fd990 5-6,25,56-58,92,160-186,208-210,567-599,799-801,857-863
+apps/desktop/src/renderer/__test__/App.test.tsx
+  s_1b430091314d20::t_ff43ce80d6c9e2 269,288,292,311-336,1271,1433-1435,1467
+apps/desktop/src/renderer/__test__/timeline.test.ts
+  s_1b430091314d20::t_65b5bb6058c7fa 325-385
+apps/desktop/src/renderer/components/__test__/conversation-timeline.test.tsx
+  s_1b430091314d20::t_e402e41ba193d4 73-86
+apps/desktop/src/renderer/components/agent-layout.tsx
+  s_1b430091314d20::t_ca4030be5d95a8 54,115,174
+apps/desktop/src/renderer/components/agent-workspace.tsx
+  s_1b430091314d20::t_c00a2e30c12ecd 67,389,414,767,843,846-861
+apps/desktop/src/renderer/components/conversation-timeline.tsx
+  s_1b430091314d20::t_d6765634764a27 78-80,262-277
+apps/desktop/src/renderer/components/extension-ui-prompt.tsx
+  s_8151528cdd6ca2::t_6166c5e1938ec3 1-101
+apps/desktop/src/renderer/timeline.ts
+  s_1b430091314d20::t_a29419c9ede497 37,198-205,309-311,326-328,351-359,388-391
+apps/desktop/src/shared/story-forge-api.ts
+  s_1b430091314d20::t_a300d23f12d358 9,50,174-176
+packages/agent/src/__test__/create-storyforge-session.test.ts
+  s_8151528cdd6ca2::t_663f5027c001b6 15,54-55,97,105-106,119-120,128-135
+packages/agent/src/__test__/pi-extension-ui.test.ts
+  s_8151528cdd6ca2::t_7f0947ca600a00 1-77
+packages/agent/src/__test__/pi-plan-mode-integration.test.ts
+  s_8151528cdd6ca2::t_09e1a17a2c009f 1-36
+packages/agent/src/index.ts
+  s_1b430091314d20::t_86d8aaab4928af 5
+packages/agent/src/pi-extension-ui.ts
+  s_8151528cdd6ca2::t_a985a5e8daa978 1-213
+packages/agent/src/pi-model-service.ts
+  s_8151528cdd6ca2::t_5c0f2d653c2376 75
+packages/extensions/package.json
+  s_1b430091314d20::t_e30983e8f5b956 21
+packages/extensions/src/__test__/pi-plan-mode.test.ts
+  s_8151528cdd6ca2::t_e0761497349b90 1-12
+packages/extensions/src/index.ts
+  s_1b430091314d20::t_d655ecf05769d6 9
+packages/extensions/src/plan/pi-plan-mode.ts
+  s_8151528cdd6ca2::t_e9a39aede2c3e7 1-9
+packages/shared/src/events.ts
+  s_1b430091314d20::t_b83122de3219cb 83-153,251-255
+pnpm-lock.yaml
+  s_1b430091314d20::t_f376e13a665759 120-122,875-886,4135-4145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "0b05040aabd03019eb9b1496637c871a31fa8efd",
+  "prompts": {},
+  "humans": {
+    "h_8e36b56ff035e9": {
+      "author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "sessions": {
+    "s_1b430091314d20": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd6ff-d728-7a92-a32e-27d2d7186d7a",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_bb1c17b1877707": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a747a023fc14036ff0d6de3",
+        "model": "gpt-5.5__max",
+        "display_model_name": "GPT-5.5"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {
+    "packages/agent/src/create-storyforge-session.ts": [
+      {
+        "hash": "s_bb1c17b1877707::t_d62e541945b45f",
+        "line_ranges": [
+          {
+            "Range": [
+              34,
+              42
+            ]
+          },
+          {
+            "Single": 64
+          },
+          {
+            "Single": 82
+          },
+          {
+            "Single": 98
+          },
+          {
+            "Range": [
+              103,
+              104
+            ]
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a747a2a3fc14036ff0d6e05",
+            "tool_type": "agent",
+            "tool_id": "exec_command",
+            "line_ranges": [
+              {
+                "Range": [
+                  34,
+                  42
+                ]
+              },
+              {
+                "Single": 64
+              },
+              {
+                "Single": 82
+              },
+              {
+                "Single": 98
+              },
+              {
+                "Range": [
+                  103,
+                  104
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "packages/agent/src/storyforge-agent-harness.ts": [
+      {
+        "hash": "s_bb1c17b1877707::t_d62e541945b45f",
+        "line_ranges": [
+          {
+            "Range": [
+              531,
+              552
+            ]
+          },
+          {
+            "Range": [
+              554,
+              557
+            ]
+          },
+          {
+            "Single": 773
+          },
+          {
+            "Single": 877
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a747a2a3fc14036ff0d6e05",
+            "tool_type": "agent",
+            "tool_id": "exec_command",
+            "line_ranges": [
+              {
+                "Range": [
+                  531,
+                  552
+                ]
+              },
+              {
+                "Range": [
+                  554,
+                  557
+                ]
+              },
+              {
+                "Single": 773
+              },
+              {
+                "Single": 877
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_bb1c17b1877707": {
+      "tool": "trae",
+      "conversation_id": "6a747a023fc14036ff0d6de3",
+      "session_id": "6a747a023fc14036ff0d6de3",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_bb1c17b1877707::t_d62e541945b45f": {
+      "tool": "trae",
+      "conversation_id": "6a747a023fc14036ff0d6de3",
+      "session_id": "6a747a023fc14036ff0d6de3",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
