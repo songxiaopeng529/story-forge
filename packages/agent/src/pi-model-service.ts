@@ -72,6 +72,7 @@ export class PiModelService {
   constructor(options: { rootDir: string }) {
     this.rootDir = options.rootDir;
     this.agentDir = resolveStoryForgePaths({ homeDir: options.rootDir }).agentDir;
+    process.env.PI_CODING_AGENT_DIR = this.agentDir;
     this.settingsManager = SettingsManager.create(options.rootDir, this.agentDir);
   }
 

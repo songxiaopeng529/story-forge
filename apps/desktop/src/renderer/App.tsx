@@ -2,11 +2,12 @@ import type {
   AgentEvent,
   AutomationView,
   CommandExecutionMode,
+  ExtensionUiRequestEvent,
+  ExtensionUiResponse,
   ModelRequestEvent,
   PermissionRequestEvent,
   SessionId,
   TurnId,
-  TurnMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -21,6 +22,7 @@ import type {
 import type { TurnRuntimeState } from "./components/agent-layout";
 import { PageRouter } from "./components/page-router";
 import { PermissionRequestPrompt } from "./components/permission-request-prompt";
+import { ExtensionUiPrompt } from "./components/extension-ui-prompt";
 import { PrimaryNavigation, type Page } from "./components/primary-navigation";
 import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
 import type { AutomationProposalTimelineState } from "./timeline";
@@ -42,7 +44,6 @@ export function App() {
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
   const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
-  const [composerMode, setComposerMode] = useState<TurnMode>("normal");
   const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
   const [developerMode, setDeveloperMode] = useState(false);
   const [commandExecutionMode, setCommandExecutionMode] =
@@ -52,6 +53,9 @@ export function App() {
     useState<WebSearchCoverage>("focused");
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
   const [permissionResponding, setPermissionResponding] = useState(false);
+  const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequestEvent[]>([]);
+  const [extensionUiResponding, setExtensionUiResponding] = useState(false);
+  const [extensionStatuses, setExtensionStatuses] = useState<Record<string, Record<string, string>>>({});
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [compactingSessionId, setCompactingSessionId] = useState<SessionId>();
   const [error, setError] = useState<string>();
@@ -85,6 +89,7 @@ export function App() {
     ).length
     : 0;
   const currentPermissionRequest = permissionRequests[0];
+  const currentExtensionUiRequest = extensionUiRequests[0];
   // The agent header (which hosts the expand buttons) only renders on the agent
   // page once a workspace is open, so panels may only collapse while it is visible.
   const agentHeaderVisible = page === "agent" && !loading && Boolean(selectedWorkspace);
@@ -152,6 +157,33 @@ export function App() {
           };
         });
       }
+      if (event.type === "extension.ui.request") {
+        setExtensionUiRequests((current) => [...current, event]);
+        setTurnRuntimes((current) => {
+          const existing = current[event.sessionId];
+          if (!existing || existing.turnId !== event.turnId) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: { ...existing, status: "waiting-approval" },
+          };
+        });
+      }
+      if (event.type === "extension.status") {
+        setExtensionStatuses((current) => {
+          const sessionStatuses = { ...(current[event.sessionId] ?? {}) };
+          if (event.text) {
+            sessionStatuses[event.key] = event.text;
+          } else {
+            delete sessionStatuses[event.key];
+          }
+          return { ...current, [event.sessionId]: sessionStatuses };
+        });
+      }
+      if (event.type === "extension.notification" && event.level === "error") {
+        setError(event.message);
+      }
       if (event.type === "runtime.started") {
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
         setTurnRuntimes((current) => ({
@@ -171,6 +203,9 @@ export function App() {
           return next;
         });
         setPermissionRequests((current) =>
+          current.filter((request) => request.sessionId !== event.sessionId)
+        );
+        setExtensionUiRequests((current) =>
           current.filter((request) => request.sessionId !== event.sessionId)
         );
         setTurnRuntimes((current) => {
@@ -312,7 +347,6 @@ export function App() {
     }
 
     setPrompt("");
-    setComposerMode("normal");
     setImageAttachments([]);
     setError(undefined);
     setActivities((current) => ({ ...current, [session.id]: [] }));
@@ -333,7 +367,6 @@ export function App() {
       const { turnId } = await window.storyForge.turns.start({
         sessionId: session.id,
         prompt: content,
-        ...(composerMode === "plan" ? { mode: composerMode } : {}),
         ...(attachments.length ? { imageAttachments: attachments } : {}),
       });
       setActiveTurns((current) => ({ ...current, [session.id]: turnId }));
@@ -528,6 +561,39 @@ export function App() {
       setError(formatError(permissionError));
     } finally {
       setPermissionResponding(false);
+    }
+  }
+
+  async function respondToExtensionUi(
+    response: Omit<ExtensionUiResponse, "requestId">,
+  ): Promise<void> {
+    if (!currentExtensionUiRequest || extensionUiResponding) {
+      return;
+    }
+    setExtensionUiResponding(true);
+    setError(undefined);
+    try {
+      await window.storyForge.extensionUi.respond({
+        requestId: currentExtensionUiRequest.requestId,
+        ...response,
+      });
+      setExtensionUiRequests((current) =>
+        current.filter((request) => request.requestId !== currentExtensionUiRequest.requestId)
+      );
+      setTurnRuntimes((current) => {
+        const existing = current[currentExtensionUiRequest.sessionId];
+        if (!existing || existing.status !== "waiting-approval") {
+          return current;
+        }
+        return {
+          ...current,
+          [currentExtensionUiRequest.sessionId]: { ...existing, status: "running" },
+        };
+      });
+    } catch (extensionError) {
+      setError(formatError(extensionError));
+    } finally {
+      setExtensionUiResponding(false);
     }
   }
 
@@ -730,7 +796,9 @@ export function App() {
           sidebarCollapsed: effectiveSidebarCollapsed,
           contextCollapsed: effectiveContextCollapsed,
           prompt,
-          composerMode,
+          planStatus: selectedSessionId
+            ? extensionStatuses[selectedSessionId]?.["plan-mode"]
+            : undefined,
           imageAttachments,
           error,
           onExpandNav: () => setNavCollapsed(false),
@@ -753,7 +821,6 @@ export function App() {
             setSelectedSessionId(sessionId);
           },
           onPromptChange: setPrompt,
-          onComposerModeChange: setComposerMode,
           onImageAttachmentsChange: setImageAttachments,
           onPromptKeyDown: handlePromptKeyDown,
           onCompositionStart: () => {
@@ -785,6 +852,13 @@ export function App() {
           responding={permissionResponding}
           onApprove={() => void respondToPermission(true)}
           onDeny={() => void respondToPermission(false)}
+        />
+      ) : null}
+      {currentExtensionUiRequest ? (
+        <ExtensionUiPrompt
+          request={currentExtensionUiRequest}
+          responding={extensionUiResponding}
+          onRespond={(response) => void respondToExtensionUi(response)}
         />
       ) : null}
     </main>

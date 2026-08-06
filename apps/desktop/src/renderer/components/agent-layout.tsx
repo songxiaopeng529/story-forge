@@ -5,7 +5,6 @@ import type {
   ModelRequestEvent,
   SessionId,
   TurnId,
-  TurnMode,
 } from "@story-forge/shared";
 import type { KeyboardEvent } from "react";
 import type {
@@ -52,7 +51,7 @@ export type AgentLayoutProps = {
   sidebarCollapsed: boolean;
   contextCollapsed: boolean;
   prompt: string;
-  composerMode: TurnMode;
+  planStatus: string | undefined;
   imageAttachments: ImageAttachmentView[];
   error: string | undefined;
   onExpandNav: () => void;
@@ -67,7 +66,6 @@ export type AgentLayoutProps = {
   onSelectWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: SessionId, workspaceId: string) => void;
   onPromptChange: (prompt: string) => void;
-  onComposerModeChange: (mode: TurnMode) => void;
   onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
@@ -114,7 +112,7 @@ export function AgentLayout(props: AgentLayoutProps) {
     sidebarCollapsed,
     contextCollapsed,
     prompt,
-    composerMode,
+    planStatus,
     imageAttachments,
     error,
   } = props;
@@ -173,12 +171,11 @@ export function AgentLayout(props: AgentLayoutProps) {
         onExpandSidebar={props.onExpandSidebar}
         onExpandContext={props.onExpandContext}
         prompt={prompt}
-        composerMode={composerMode}
+        planStatus={planStatus}
         imageAttachments={imageAttachments}
         imageInputEnabled={imageInputEnabled}
         error={error}
         onPromptChange={props.onPromptChange}
-        onComposerModeChange={props.onComposerModeChange}
         onImageAttachmentsChange={props.onImageAttachmentsChange}
         onPromptKeyDown={props.onPromptKeyDown}
         onCompositionStart={props.onCompositionStart}

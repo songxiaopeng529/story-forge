@@ -60,6 +60,9 @@ const api = {
   permissions: {
     respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.permissionRespond, input),
   },
+  extensionUi: {
+    respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.extensionUiRespond, input),
+  },
   automations: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.automationsList),
     getRuns: (automationId) =>

@@ -266,7 +266,7 @@ describe("App", () => {
     expect(input).toHaveValue("");
   });
 
-  it("starts a plan mode turn from the slash command", async () => {
+  it("starts the PI plan mode extension from the slash command", async () => {
     const fixture = installApi();
     render(<App />);
     const input = await screen.findByPlaceholderText(
@@ -277,7 +277,6 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
 
     expect(input).toHaveValue("");
-    expect(screen.getByText("Plan")).toBeInTheDocument();
     const pill = await screen.findByTestId("active-slash-command");
     expect(pill).toHaveTextContent("/plan");
 
@@ -286,12 +285,11 @@ describe("App", () => {
 
     await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
       sessionId: "sf_session_existing",
-      prompt: "Investigate the runtime",
-      mode: "plan",
+      prompt: "/plan Investigate the runtime",
     }));
   });
 
-  it("clears the plan command pill and resets the mode when removed", async () => {
+  it("clears the PI plan command pill when removed", async () => {
     installApi();
     render(<App />);
     const input = await screen.findByPlaceholderText(
@@ -301,7 +299,6 @@ describe("App", () => {
     changePrompt(input, "/plan");
     fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
     await screen.findByTestId("active-slash-command");
-    expect(screen.getByText("Plan")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove /plan command" }));
 
@@ -309,6 +306,32 @@ describe("App", () => {
       expect(screen.queryByTestId("active-slash-command")).not.toBeInTheDocument()
     );
     expect(screen.getByText("Agent")).toBeInTheDocument();
+  });
+
+  it("bridges PI plan mode prompts through the extension UI", async () => {
+    const fixture = installApi();
+    render(<App />);
+
+    await screen.findByText("Previous answer");
+    await act(async () => {
+      fixture.emit({
+        type: "extension.ui.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "plan_ready_action",
+        method: "select",
+        title: "Plan ready",
+        options: ["Start implementing", "Continue planning"],
+      });
+    });
+
+    expect(screen.getByRole("dialog", { name: "Plan ready" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Start implementing" }));
+
+    await waitFor(() => expect(fixture.respondExtensionUi).toHaveBeenCalledWith({
+      requestId: "plan_ready_action",
+      value: "Start implementing",
+    }));
   });
 
   it("shows a progress indicator while the /compact command runs", async () => {
@@ -1245,6 +1268,7 @@ function installApi(options: {
     ? vi.mocked(options.compact)
     : vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
+  const respondExtensionUi = vi.fn(async () => undefined);
   const getSession = vi.fn(async () => session);
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
@@ -1406,6 +1430,9 @@ function installApi(options: {
     permissions: {
       respond: respondPermission,
     },
+    extensionUi: {
+      respond: respondExtensionUi,
+    },
     skills: {
       list: vi.fn(async () => currentSkills),
       importZip: importSkill,
@@ -1437,6 +1464,7 @@ function installApi(options: {
     stop,
     compact,
     respondPermission,
+    respondExtensionUi,
     getSession,
     saveSettings,
     saveProvider,

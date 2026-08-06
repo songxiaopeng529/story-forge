@@ -6,6 +6,7 @@ export * from "./mcp/config";
 export * from "./mcp/disabled-client";
 export * from "./permissions/command-policy";
 export * from "./permissions/shell-command";
+export * from "./plan/pi-plan-mode";
 export * from "./skills/skill-manifest";
 export * from "./subagents";
 export * from "./tasks/task-tools";

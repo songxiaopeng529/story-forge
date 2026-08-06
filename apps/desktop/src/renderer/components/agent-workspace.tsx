@@ -5,7 +5,6 @@ import type {
   ModelRequestEvent,
   SkillView,
   TurnId,
-  TurnMode,
 } from "@story-forge/shared";
 import {
   Braces,
@@ -65,12 +64,11 @@ export function AgentWorkspace(props: {
   onExpandSidebar: () => void;
   onExpandContext: () => void;
   prompt: string;
-  composerMode: TurnMode;
+  planStatus: string | undefined;
   imageAttachments: ImageAttachmentView[];
   imageInputEnabled: boolean;
   error: string | undefined;
   onPromptChange: (prompt: string) => void;
-  onComposerModeChange: (mode: TurnMode) => void;
   onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
@@ -173,7 +171,6 @@ export function AgentWorkspace(props: {
         pill: true,
         action: () => {
           props.onPromptChange("");
-          props.onComposerModeChange("plan");
         },
       },
       {
@@ -263,7 +260,6 @@ export function AgentWorkspace(props: {
     props.onOpenModels,
     props.onOpenSettings,
     props.onCompact,
-    props.onComposerModeChange,
     props.onPromptChange,
     slashRange?.query,
     slashSkills,
@@ -390,7 +386,7 @@ export function AgentWorkspace(props: {
           invocation: command.invocation,
           title: command.title,
           icon: command.icon,
-          kind: "mode",
+          kind: "extension",
         });
         command.action?.();
         requestAnimationFrame(() => promptInputRef.current?.focus());
@@ -410,15 +406,12 @@ export function AgentWorkspace(props: {
   }
 
   function clearActiveSlashCommand(): void {
-    if (activeSlashCommand?.kind === "mode") {
-      props.onComposerModeChange("normal");
-    }
     setActiveSlashCommand(undefined);
     requestAnimationFrame(() => promptInputRef.current?.focus());
   }
 
   function handleSend(): void {
-    if (activeSlashCommand?.kind === "skill") {
+    if (activeSlashCommand) {
       const merged = `${activeSlashCommand.invocation} ${props.prompt}`.trimEnd();
       pendingSendRef.current = true;
       props.onPromptChange(merged);
@@ -771,7 +764,7 @@ export function AgentWorkspace(props: {
                       <ImagePlus size={16} />
                     </button>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-ink">
-                      {props.composerMode === "plan" ? "Plan" : "Agent"}
+                      {planStatusLabel(props.planStatus)}
                     </span>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-danger">
                       {commandModeMeta[props.commandExecutionMode].chip}
@@ -847,8 +840,24 @@ type ActiveSlashCommand = {
   invocation: `/${string}`;
   title: string;
   icon: ReactNode;
-  kind: "mode" | "skill";
+  kind: "extension" | "skill";
 };
+
+function planStatusLabel(status: string | undefined): string {
+  if (status === "plan active") {
+    return "Planning";
+  }
+  if (status === "plan ready") {
+    return "Plan ready";
+  }
+  if (status === "plan implementing") {
+    return "Implementing plan";
+  }
+  if (status === "plan saved") {
+    return "Plan saved";
+  }
+  return "Agent";
+}
 
 function findSlashRange(value: string, cursor: number): SlashRange | undefined {
   const beforeCursor = value.slice(0, cursor);

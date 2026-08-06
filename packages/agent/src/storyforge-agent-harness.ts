@@ -10,12 +10,12 @@ import {
   type AgentEvent,
   type AgentStopReason,
   type CommandExecutionMode,
+  type ExtensionUiResponse,
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
   type SessionId,
   type TaskId,
   type TurnId,
-  type TurnMode,
   type WebSearchCoverage,
 } from "@story-forge/shared";
 import {
@@ -27,6 +27,7 @@ import {
   createWebTools,
   NodeMcpToolSession,
   parseShellCommandForPolicy,
+  resolvePiPlanModeExtensionPath,
   resolveSystemTimezone,
   type RuntimeClock,
   type RuntimeTimezoneResolver,
@@ -57,6 +58,7 @@ import type {
   StoryForgeSkillSource,
   StoryForgeWorkspaceStore,
 } from "./host";
+import { PiExtensionUiBridge } from "./pi-extension-ui";
 
 export type SkillInvocationResolver = StoryForgeSkillSource;
 
@@ -96,6 +98,7 @@ type TurnSettings = {
 };
 
 const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+const PI_PLAN_MODE_EXTENSION_PATH = resolvePiPlanModeExtensionPath();
 export class StoryForgeAgentHarness {
   private readonly sessionRepository: SessionRepository;
   private readonly workspaceRepository: StoryForgeWorkspaceStore;
@@ -110,6 +113,7 @@ export class StoryForgeAgentHarness {
   private readonly now: RuntimeClock;
   private readonly getTimezone: RuntimeTimezoneResolver;
   private readonly emitEvent: (event: AgentEvent) => void;
+  private readonly extensionUi: PiExtensionUiBridge;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
   private readonly pendingPermissions = new Map<string, (approved: boolean) => void>();
   private readonly reservedSessions = new Set<SessionId>();
@@ -130,12 +134,12 @@ export class StoryForgeAgentHarness {
     this.now = options.now ?? (() => new Date());
     this.getTimezone = options.getTimezone ?? resolveSystemTimezone;
     this.emitEvent = options.emit;
+    this.extensionUi = new PiExtensionUiBridge(this.emitEvent);
   }
 
   async start(input: {
     sessionId: SessionId;
     prompt: string;
-    mode?: TurnMode;
     imageAttachments?: ImageAttachmentView[];
   }): Promise<{ turnId: TurnId }> {
     const imageAttachments = input.imageAttachments ?? [];
@@ -172,9 +176,9 @@ export class StoryForgeAgentHarness {
         active,
         turnId,
         prompt: input.prompt,
-        mode: input.mode ?? "normal",
         imageAttachments,
       }).finally(() => {
+        this.extensionUi.cancelTurn(turnId);
         active.unsubscribe?.();
         this.disposePiSession(active.piSession);
         this.activeTurns.delete(turnId);
@@ -216,6 +220,7 @@ export class StoryForgeAgentHarness {
   async stop(turnId: TurnId): Promise<void> {
     const active = this.activeTurns.get(turnId);
     active?.controller.abort();
+    this.extensionUi.cancelTurn(turnId);
     await active?.piSession?.abort();
   }
 
@@ -232,7 +237,6 @@ export class StoryForgeAgentHarness {
       piSession = await this.createPiSessionForTurn({
         session,
         turnId,
-        mode: "normal",
         settings: await this.readTurnSettings(),
         signal: controller.signal,
       });
@@ -270,11 +274,14 @@ export class StoryForgeAgentHarness {
     resolve(input.approved);
   }
 
+  respondToExtensionUi(input: ExtensionUiResponse): void {
+    this.extensionUi.respond(input);
+  }
+
   private async executeTurn(input: {
     active: ActiveTurn;
     turnId: TurnId;
     prompt: string;
-    mode: TurnMode;
     imageAttachments: ImageAttachmentView[];
   }): Promise<void> {
     const { active, turnId } = input;
@@ -283,7 +290,6 @@ export class StoryForgeAgentHarness {
       const piSession = await this.createPiSessionForTurn({
         session: active.storyForgeSession,
         turnId,
-        mode: input.mode,
         settings,
         signal: active.controller.signal,
       });
@@ -333,7 +339,6 @@ export class StoryForgeAgentHarness {
   private async createPiSessionForTurn(input: {
     session: SessionMetadataRecord;
     turnId: TurnId;
-    mode: TurnMode;
     settings: TurnSettings;
     signal: AbortSignal;
   }): Promise<AgentSession> {
@@ -360,7 +365,6 @@ export class StoryForgeAgentHarness {
         session,
         turnId: input.turnId,
         workspacePath: workspace.path,
-        mode: input.mode,
         settings: input.settings,
       }),
       ...mcpRuntime.tools.map(toPiToolDefinition),
@@ -378,7 +382,12 @@ export class StoryForgeAgentHarness {
         ...(model ? { model } : {}),
         settingsManager,
         sessionManager: await this.piSessions.openSessionManager(session),
-        mode: input.mode,
+        additionalExtensionPaths: [PI_PLAN_MODE_EXTENSION_PATH],
+        extensionUiContext: this.extensionUi.createContext({
+          sessionId: session.id,
+          turnId: input.turnId,
+          signal: input.signal,
+        }),
         additionalSkillPaths,
         extensionToolNames: extensionTools.map((tool) => tool.name),
         extensionFactories: [
@@ -387,13 +396,11 @@ export class StoryForgeAgentHarness {
             session,
             turnId: input.turnId,
             workspacePath: workspace.path,
-            mode: input.mode,
             settings: input.settings,
             signal: input.signal,
           }, extensionTools, runtimeEnvironment.getLatest),
         ],
         systemPrompt: createStoryForgeSystemPrompt({
-          mode: input.mode,
           extensionTools,
         }),
         onExtensionError: (error) => {
@@ -418,7 +425,6 @@ export class StoryForgeAgentHarness {
     session: SessionMetadataRecord;
     turnId: TurnId;
     workspacePath: string;
-    mode: TurnMode;
     settings: TurnSettings;
     signal: AbortSignal;
   }, tools: PiToolDefinition[], getRuntimeEnvironment: () => RuntimeEnvironmentView | undefined): InlineExtension {
@@ -467,7 +473,6 @@ export class StoryForgeAgentHarness {
     session: SessionMetadataRecord;
     turnId: TurnId;
     workspacePath: string;
-    mode: TurnMode;
     settings: TurnSettings;
   }): PiToolDefinition[] {
     const environmentTools = [
@@ -523,35 +528,33 @@ export class StoryForgeAgentHarness {
       },
       now: this.now,
     });
-    const automationTools = input.mode === "plan"
-      ? []
-      : [
-          createAutomationProposalTool({
-            validate: (draft) => validateAutomationProposal(draft),
-            emit: (proposal) => {
-              this.emitEvent({
-                type: "automation.proposal",
-                sessionId: input.session.id,
-                turnId: input.turnId,
-                proposalId: createAutomationProposalId(),
-                proposal: {
-                  kind: proposal.kind,
-                  name: proposal.name,
-                  scheduleText: proposal.scheduleText,
-                  cron: proposal.cron,
-                  timezone: proposal.timezone,
-                  summary: proposal.summary,
-                  nextRuns: proposal.nextRuns,
-                  prompt: proposal.prompt,
-                  workspaceId: input.session.workspaceId,
-                  providerId: input.session.providerId,
-                  model: input.session.model,
-                  ...(proposal.kind === "thread_chat" ? { sessionId: input.session.id } : {}),
-                },
-              });
+    const automationTools = [
+      createAutomationProposalTool({
+        validate: (draft) => validateAutomationProposal(draft),
+        emit: (proposal) => {
+          this.emitEvent({
+            type: "automation.proposal",
+            sessionId: input.session.id,
+            turnId: input.turnId,
+            proposalId: createAutomationProposalId(),
+            proposal: {
+              kind: proposal.kind,
+              name: proposal.name,
+              scheduleText: proposal.scheduleText,
+              cron: proposal.cron,
+              timezone: proposal.timezone,
+              summary: proposal.summary,
+              nextRuns: proposal.nextRuns,
+              prompt: proposal.prompt,
+              workspaceId: input.session.workspaceId,
+              providerId: input.session.providerId,
+              model: input.session.model,
+              ...(proposal.kind === "thread_chat" ? { sessionId: input.session.id } : {}),
             },
-          }),
-        ];
+          });
+        },
+      }),
+    ];
     return [...environmentTools, ...taskTools, ...webTools, ...automationTools]
       .map(toPiToolDefinition);
   }
@@ -727,6 +730,17 @@ export class StoryForgeAgentHarness {
       return;
     }
     if (event.type === "tool_execution_end") {
+      const completedPlan = event.toolName === "plan_mode_complete"
+        ? readCompletedPlan(event.result)
+        : undefined;
+      if (completedPlan && !event.isError) {
+        this.emitEvent({
+          type: "plan.ready",
+          sessionId: active.sessionId,
+          turnId,
+          plan: completedPlan,
+        });
+      }
       this.emitEvent({
         type: "tool.result",
         sessionId: active.sessionId,
@@ -754,9 +768,9 @@ export class StoryForgeAgentHarness {
       }
       return;
     }
-    if (event.type === "agent_settled") {
-      this.emitTerminalForStopReason(active, turnId);
-    }
+    // PI extensions may continue the workflow after the model settles, for
+    // example by asking whether a completed plan should be implemented. The
+    // enclosing prompt/waitForIdle lifecycle owns the terminal event.
   }
 
   private emitTerminalForStopReason(active: ActiveTurn, turnId: TurnId): void {
@@ -855,6 +869,12 @@ function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
       };
     },
   });
+}
+
+function readCompletedPlan(result: unknown): string | undefined {
+  const details = toRecord(result).details;
+  const plan = toRecord(details).plan;
+  return typeof plan === "string" && plan.trim() ? plan.trim() : undefined;
 }
 
 function statusForStopReason(stopReason: AgentStopReason): SessionStatus {

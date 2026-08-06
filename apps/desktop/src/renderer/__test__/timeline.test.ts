@@ -322,6 +322,67 @@ describe("buildTimeline", () => {
     }));
   });
 
+  it("renders a completed PI plan as a plan instead of a tool step", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        status: "completed",
+        messages: [{
+          id: "plan-result",
+          role: "tool",
+          content: "**Proposed Plan**\n\n1. Inspect the runtime\n2. Implement the bridge",
+          name: "plan_mode_complete",
+          toolCallId: "call-plan",
+          ok: true,
+          createdAt: "2026-06-19T00:00:01.000Z",
+        }],
+      },
+      activities: [],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toEqual([{
+      type: "plan",
+      id: "plan-result",
+      content: "1. Inspect the runtime\n2. Implement the bridge",
+    }]);
+  });
+
+  it("renders the live PI plan event without exposing its completion tool", () => {
+    const items = buildTimeline({
+      session: baseSession,
+      activeTurnId: "sf_turn_active",
+      activities: [
+        {
+          type: "tool.call",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call-plan",
+          name: "plan_mode_complete",
+          input: { plan: "1. Inspect\n2. Implement" },
+        },
+        {
+          type: "plan.ready",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          plan: "1. Inspect\n2. Implement",
+        },
+        {
+          type: "tool.result",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call-plan",
+          name: "plan_mode_complete",
+          ok: true,
+          output: { details: { plan: "1. Inspect\n2. Implement" } },
+        },
+      ],
+    });
+
+    expect(items.filter((item) => item.type === "plan")).toHaveLength(1);
+    expect(items.filter((item) => item.type === "tool-step")).toHaveLength(0);
+  });
+
   it("renders a manual context.compacted event as a notice", () => {
     const items = buildTimeline({
       session: { ...baseSession, status: "completed" },
