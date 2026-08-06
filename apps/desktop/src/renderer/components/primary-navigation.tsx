@@ -1,9 +1,9 @@
 import {
-  Bot,
+  Blocks,
+  BrainCircuit,
   CalendarClock,
-  KeyRound,
+  MessagesSquare,
   PanelLeftClose,
-  Puzzle,
   Settings,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -29,13 +29,13 @@ export function PrimaryNavigation(props: {
       <nav className="flex flex-col items-center gap-2">
         <NavButton
           active={props.page === "agent"}
-          icon={<Bot size={20} />}
+          icon={<MessagesSquare size={20} />}
           label="Coding Agent"
           onClick={() => props.onChange("agent")}
         />
         <NavButton
           active={props.page === "models"}
-          icon={<KeyRound size={20} />}
+          icon={<BrainCircuit size={20} />}
           label="Models"
           onClick={() => props.onChange("models")}
         />
@@ -47,7 +47,7 @@ export function PrimaryNavigation(props: {
         />
         <NavButton
           active={props.page === "extensions"}
-          icon={<Puzzle size={20} />}
+          icon={<Blocks size={20} />}
           label="MCP & Skills"
           onClick={() => props.onChange("extensions")}
         />
