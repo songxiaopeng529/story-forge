@@ -1,0 +1,73 @@
+apps/desktop/src/main/__test__/ipc-handlers.test.ts
+  s_8151528cdd6ca2::t_85147f619faf52 51-61,318,335,473
+apps/desktop/src/main/ipc-handlers.ts
+  s_8151528cdd6ca2::t_71a8d7d4afe3be 177-181
+apps/desktop/src/main/provider-service.ts
+  s_8151528cdd6ca2::t_2c4e191f4bf25f 31-32
+apps/desktop/src/preload/index.ts
+  s_8151528cdd6ca2::t_91a688a6c0bff5 22-23
+apps/desktop/src/renderer/__test__/App.test.tsx
+  s_8151528cdd6ca2::t_0cc35e4dae5981 269,279,281-282,286-287,290-291,677-739,1245,1250,1306-1337,1447,1452,1519
+apps/desktop/src/renderer/components/models-page.tsx
+  s_8151528cdd6ca2::t_d57cc703b15c14 1,50-52,120-136,198-206,219-223,277-278,281-286,380-381,384,402,406,411,414-415,418-423
+apps/desktop/src/shared/story-forge-api.ts
+  s_8151528cdd6ca2::t_7110f11e898051 142
+packages/agent/src/__test__/create-storyforge-session.test.ts
+  s_8151528cdd6ca2::t_f3ebcc66d09345 11,54,56,86,99,104
+packages/agent/src/__test__/pi-extension-ui.test.ts
+  s_8151528cdd6ca2::t_d7c7fbe0482782 15,21-22,28-29,42,57-58,63-64,68
+packages/agent/src/__test__/pi-model-service.test.ts
+  s_8151528cdd6ca2::t_f9e13c2ece956d 112-158
+packages/agent/src/__test__/pi-todo-adapter.test.ts
+  s_8151528cdd6ca2::t_f7c0e2303e8b6b 1-86
+packages/agent/src/__test__/pi-todo-integration.test.ts
+  s_8151528cdd6ca2::t_7a38c355a3dcd8 6,8-10,19,24-25,29-31
+packages/agent/src/create-storyforge-session.ts
+  s_8151528cdd6ca2::t_cd988c443ab3ea 42,65
+packages/agent/src/pi-extension-ui.ts
+  s_8151528cdd6ca2::t_7bd35c48fbceb5 47
+packages/agent/src/pi-model-service.ts
+  s_8151528cdd6ca2::t_04eab5389ae086 33-39,135-137,170,172-180,182,184,514-515
+packages/agent/src/pi-todo-adapter.ts
+  s_8151528cdd6ca2::t_671a7a0d0666d2 1-117
+packages/agent/src/session-repository.ts
+  s_8151528cdd6ca2::t_c8dee969f29f14 75,262-265
+packages/agent/src/storyforge-agent-harness.ts
+  s_8151528cdd6ca2::t_d31c2617d96658 28-29,61,91,102,174,323,388,395-398,526,701-706,740-764
+packages/extensions/package.json
+  s_8151528cdd6ca2::t_f51197628303f0 21
+packages/extensions/src/__test__/pi9-todo.test.ts
+  s_8151528cdd6ca2::t_cd99ca73da4a7f 2,4-7
+packages/extensions/src/__test__/task-tools.test.ts
+  s_8151528cdd6ca2::t_05bb43721ff4a9 105
+packages/extensions/src/index.ts
+  s_8151528cdd6ca2::t_76f68200b101ec 9
+packages/extensions/src/tasks/task-tools.ts
+  s_8151528cdd6ca2::t_721ecbbb3f8ea8 4,80,152-158,161
+packages/extensions/src/todo/pi9-todo.ts
+  s_8151528cdd6ca2::t_6b0120f912b5f3 6-9
+packages/shared/src/models.ts
+  s_8151528cdd6ca2::t_2a924ea5eb9b06 11
+packages/shared/src/tasks.ts
+  s_8151528cdd6ca2::t_cc4917d675fbb5 4
+pnpm-lock.yaml
+  s_8151528cdd6ca2::t_422ed50447c871 120-122,898-903,4147-4150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "27ec195497a598d553934dd1e9c882f33a09eb7a",
+  "prompts": {},
+  "sessions": {
+    "s_8151528cdd6ca2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2728-88ea-70c2-80f0-c970a547e54b",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
