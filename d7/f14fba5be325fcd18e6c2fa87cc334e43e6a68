@@ -1,0 +1,23 @@
+apps/desktop/src/renderer/App.tsx
+  s_a6bc74ce0f99bd::t_9b999e6e28747e 4-5,8,13,16,18-21,25,27-36,39-44,46,48-52,55-111,113-114,117,119-122,125,127-129
+apps/desktop/src/renderer/use-app-controller.ts
+  s_a6bc74ce0f99bd::t_ad30b573085ab5 1-1016
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d7f14fba5be325fcd18e6c2fa87cc334e43e6a68",
+  "prompts": {},
+  "sessions": {
+    "s_a6bc74ce0f99bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb1-d701-73a2-9a27-ed5a377f7756",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
