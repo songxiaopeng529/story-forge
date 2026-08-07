@@ -1,0 +1,50 @@
+apps/desktop/src/renderer/use-app-controller.ts
+  s_a6bc74ce0f99bd::t_ad30b573085ab5 1-923
+apps/desktop/src/renderer/App.tsx
+  s_1b430091314d20::t_f518730d9fd990 122,124-126
+  s_992d1605953729::t_a5a279d0f82890 13,16,18-21
+  s_7e08a49dbfabaa::t_b08b01804c6d27 25,27-36,39-44,46,48-52,55-108,110-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "881512876d3553b9f68a656ed3f1ae53a8d5d47c",
+  "prompts": {},
+  "sessions": {
+    "s_1b430091314d20": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd6ff-d728-7a92-a32e-27d2d7186d7a",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_7e08a49dbfabaa": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a4524693703f92e14ef5f30",
+        "model": "openrouter-2o__max"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_992d1605953729": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a363174e53f5fd54d56af76",
+        "model": "openrouter-3o__max",
+        "display_model_name": "openrouter-3o"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_a6bc74ce0f99bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb1-d701-73a2-9a27-ed5a377f7756",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
