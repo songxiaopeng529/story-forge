@@ -18,7 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@narumitw/pi-plan-mode": "0.48.0",
+    "@pi9/todo": "0.3.7",
     "@story-forge/shared": "workspace:*",
     "cron-parser": "^5.5.0"
   }

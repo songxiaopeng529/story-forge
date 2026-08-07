@@ -44,7 +44,7 @@ export class PiExtensionUiBridge {
         {
           method: "select",
           title,
-          options: options.filter((option) => !option.startsWith("Start fresh and implement")),
+          options,
         },
         dialogOptions,
         undefined,

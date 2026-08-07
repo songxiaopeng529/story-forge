@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "../tool-definition";
 
 export type TaskId = `sf_task_${string}`;
-export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked";
+export type TaskStatus = "pending" | "in_progress" | "completed" | "blocked" | "cancelled";
 export type TurnId = `sf_turn_${string}`;
 
 export type SessionTask = {
@@ -77,7 +77,7 @@ export function createTaskTools(options: {
           activeForm: { type: "string" },
           status: {
             type: "string",
-            enum: ["pending", "in_progress", "completed", "blocked"],
+            enum: ["pending", "in_progress", "completed", "blocked", "cancelled"],
           },
           blockedReason: { type: "string" },
         },
@@ -149,10 +149,16 @@ function readOptionalStatus(value: unknown): TaskStatus | undefined {
   if (value === undefined) {
     return undefined;
   }
-  if (value === "pending" || value === "in_progress" || value === "completed" || value === "blocked") {
+  if (
+    value === "pending"
+    || value === "in_progress"
+    || value === "completed"
+    || value === "blocked"
+    || value === "cancelled"
+  ) {
     return value;
   }
-  throw new Error("task_update status must be pending, in_progress, completed, or blocked");
+  throw new Error("task_update status must be pending, in_progress, completed, blocked, or cancelled");
 }
 
 function readOptionalStringField(

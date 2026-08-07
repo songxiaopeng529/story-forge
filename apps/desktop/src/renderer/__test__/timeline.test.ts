@@ -348,41 +348,6 @@ describe("buildTimeline", () => {
     }]);
   });
 
-  it("renders the live PI plan event without exposing its completion tool", () => {
-    const items = buildTimeline({
-      session: baseSession,
-      activeTurnId: "sf_turn_active",
-      activities: [
-        {
-          type: "tool.call",
-          sessionId: "sf_session_test",
-          turnId: "sf_turn_active",
-          callId: "call-plan",
-          name: "plan_mode_complete",
-          input: { plan: "1. Inspect\n2. Implement" },
-        },
-        {
-          type: "plan.ready",
-          sessionId: "sf_session_test",
-          turnId: "sf_turn_active",
-          plan: "1. Inspect\n2. Implement",
-        },
-        {
-          type: "tool.result",
-          sessionId: "sf_session_test",
-          turnId: "sf_turn_active",
-          callId: "call-plan",
-          name: "plan_mode_complete",
-          ok: true,
-          output: { details: { plan: "1. Inspect\n2. Implement" } },
-        },
-      ],
-    });
-
-    expect(items.filter((item) => item.type === "plan")).toHaveLength(1);
-    expect(items.filter((item) => item.type === "tool-step")).toHaveLength(0);
-  });
-
   it("renders a manual context.compacted event as a notice", () => {
     const items = buildTimeline({
       session: { ...baseSession, status: "completed" },

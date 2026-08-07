@@ -48,6 +48,17 @@ describe("registerIpcHandlers", () => {
     await expect(
       fixture.invoke(IPC_CHANNELS.providersRevealSecret, "deepseek"),
     ).resolves.toBe("saved-local-secret");
+    await expect(fixture.invoke(IPC_CHANNELS.providersSetDefault, {
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    })).resolves.toBeUndefined();
+    expect(fixture.setDefaultProvider).toHaveBeenCalledWith({
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    await expect(
+      fixture.invoke(IPC_CHANNELS.providersSetDefault, "deepseek"),
+    ).rejects.toThrow("Invalid IPC payload");
   });
 
   it("registers Skills and MCP APIs with payload validation", async () => {
@@ -304,6 +315,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     messages: [],
     ...input,
   }));
+  const setDefaultProvider = vi.fn();
   const providers = {
     list: vi.fn(async () => options.providers ?? [{
       providerId: "deepseek",
@@ -320,7 +332,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     test: vi.fn(),
     clearSecret: vi.fn(),
     revealSecret: vi.fn(async () => "saved-local-secret"),
-    setDefault: vi.fn(),
+    setDefault: setDefaultProvider,
     discoverModels: vi.fn(),
   } as unknown as ProviderService;
   const workspaces = {
@@ -458,6 +470,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     handlers,
     start,
     createSession,
+    setDefaultProvider,
     respondToPermission: coordinator.respondToPermission,
     respondToExtensionUi: coordinator.respondToExtensionUi,
     options: {

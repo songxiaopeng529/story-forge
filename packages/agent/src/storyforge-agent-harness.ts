@@ -14,7 +14,6 @@ import {
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
   type SessionId,
-  type TaskId,
   type TurnId,
   type WebSearchCoverage,
 } from "@story-forge/shared";
@@ -23,11 +22,11 @@ import {
   checkWorkspaceToolCall,
   createAutomationProposalTool,
   createCurrentTimeTool,
-  createTaskTools,
   createWebTools,
   NodeMcpToolSession,
   parseShellCommandForPolicy,
-  resolvePiPlanModeExtensionPath,
+  PI_TODO_TOOL_NAME,
+  resolvePiTodoExtensionPath,
   resolveSystemTimezone,
   type RuntimeClock,
   type RuntimeTimezoneResolver,
@@ -59,6 +58,7 @@ import type {
   StoryForgeWorkspaceStore,
 } from "./host";
 import { PiExtensionUiBridge } from "./pi-extension-ui";
+import { toSessionTasksFromPiTodoResult } from "./pi-todo-adapter";
 
 export type SkillInvocationResolver = StoryForgeSkillSource;
 
@@ -88,6 +88,7 @@ type ActiveTurn = {
   stopReason: AgentStopReason;
   errorMessage: string | undefined;
   steps: number;
+  metadataSync: Promise<void>;
 };
 
 type TurnSettings = {
@@ -98,7 +99,7 @@ type TurnSettings = {
 };
 
 const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
-const PI_PLAN_MODE_EXTENSION_PATH = resolvePiPlanModeExtensionPath();
+const PI_TODO_EXTENSION_PATH = resolvePiTodoExtensionPath();
 export class StoryForgeAgentHarness {
   private readonly sessionRepository: SessionRepository;
   private readonly workspaceRepository: StoryForgeWorkspaceStore;
@@ -170,6 +171,7 @@ export class StoryForgeAgentHarness {
         stopReason: "completed",
         errorMessage: undefined,
         steps: 0,
+        metadataSync: Promise.resolve(),
       };
       this.activeTurns.set(turnId, active);
       const promise = this.executeTurn({
@@ -318,6 +320,7 @@ export class StoryForgeAgentHarness {
       } finally {
         active.controller.signal.removeEventListener("abort", onAbort);
       }
+      await active.metadataSync;
       this.emitTerminalForStopReason(active, turnId);
       await this.sessionRepository.markStatus(active.sessionId, {
         status: statusForStopReason(active.stopReason),
@@ -382,14 +385,17 @@ export class StoryForgeAgentHarness {
         ...(model ? { model } : {}),
         settingsManager,
         sessionManager: await this.piSessions.openSessionManager(session),
-        additionalExtensionPaths: [PI_PLAN_MODE_EXTENSION_PATH],
+        additionalExtensionPaths: [PI_TODO_EXTENSION_PATH],
         extensionUiContext: this.extensionUi.createContext({
           sessionId: session.id,
           turnId: input.turnId,
           signal: input.signal,
         }),
         additionalSkillPaths,
-        extensionToolNames: extensionTools.map((tool) => tool.name),
+        extensionToolNames: [
+          ...extensionTools.map((tool) => tool.name),
+          PI_TODO_TOOL_NAME,
+        ],
         extensionFactories: [
           runtimeEnvironment.extension,
           this.createStoryForgeExtension({
@@ -481,44 +487,6 @@ export class StoryForgeAgentHarness {
         getTimezone: this.getTimezone,
       }),
     ];
-    const taskTools = createTaskTools({
-      turnId: input.turnId,
-      store: {
-        listTasks: () => this.sessionRepository.listTasks(input.session.id),
-        createTask: async (taskInput) => {
-          const session = await this.sessionRepository.createTask(input.session.id, taskInput);
-          const task = session.tasks.at(-1);
-          if (!task) {
-            throw new Error("Task was not created");
-          }
-          this.emitEvent({
-            type: "task.list.updated",
-            sessionId: input.session.id,
-            turnId: input.turnId,
-            tasks: session.tasks,
-            changedTaskId: task.id,
-            reason: "created",
-          });
-          return { task, tasks: session.tasks };
-        },
-        updateTask: async (taskInput) => {
-          const session = await this.sessionRepository.updateTask(input.session.id, taskInput);
-          const task = session.tasks.find((candidate) => candidate.id === taskInput.taskId);
-          if (!task) {
-            throw new Error(`Task not found: ${taskInput.taskId}`);
-          }
-          this.emitEvent({
-            type: "task.list.updated",
-            sessionId: input.session.id,
-            turnId: input.turnId,
-            tasks: session.tasks,
-            changedTaskId: task.id as TaskId,
-            reason: "updated",
-          });
-          return { task, tasks: session.tasks };
-        },
-      },
-    });
     const webTools = createWebTools({
       enabled: input.settings.webAccessEnabled,
       coverage: input.settings.webSearchCoverage,
@@ -555,7 +523,7 @@ export class StoryForgeAgentHarness {
         },
       }),
     ];
-    return [...environmentTools, ...taskTools, ...webTools, ...automationTools]
+    return [...environmentTools, ...webTools, ...automationTools]
       .map(toPiToolDefinition);
   }
 
@@ -730,16 +698,12 @@ export class StoryForgeAgentHarness {
       return;
     }
     if (event.type === "tool_execution_end") {
-      const completedPlan = event.toolName === "plan_mode_complete"
-        ? readCompletedPlan(event.result)
-        : undefined;
-      if (completedPlan && !event.isError) {
-        this.emitEvent({
-          type: "plan.ready",
-          sessionId: active.sessionId,
-          turnId,
-          plan: completedPlan,
-        });
+      if (event.toolName === PI_TODO_TOOL_NAME && !event.isError) {
+        active.metadataSync = active.metadataSync
+          .then(() => this.syncTodoTasks(active.sessionId, turnId, event.result))
+          .catch((error: unknown) => {
+            console.warn(`Unable to synchronize PI todo state: ${formatError(error)}`);
+          });
       }
       this.emitEvent({
         type: "tool.result",
@@ -771,6 +735,31 @@ export class StoryForgeAgentHarness {
     // PI extensions may continue the workflow after the model settles, for
     // example by asking whether a completed plan should be implemented. The
     // enclosing prompt/waitForIdle lifecycle owns the terminal event.
+  }
+
+  private async syncTodoTasks(
+    sessionId: SessionId,
+    turnId: TurnId,
+    result: unknown,
+  ): Promise<void> {
+    const previousTasks = await this.sessionRepository.listTasks(sessionId);
+    const tasks = toSessionTasksFromPiTodoResult({
+      result,
+      previousTasks,
+      turnId,
+      now: this.now(),
+    });
+    if (!tasks) {
+      return;
+    }
+    await this.sessionRepository.replaceTasks(sessionId, tasks);
+    this.emitEvent({
+      type: "task.list.updated",
+      sessionId,
+      turnId,
+      tasks,
+      reason: "updated",
+    });
   }
 
   private emitTerminalForStopReason(active: ActiveTurn, turnId: TurnId): void {
@@ -869,12 +858,6 @@ function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
       };
     },
   });
-}
-
-function readCompletedPlan(result: unknown): string | undefined {
-  const details = toRecord(result).details;
-  const plan = toRecord(details).plan;
-  return typeof plan === "string" && plan.trim() ? plan.trim() : undefined;
 }
 
 function statusForStopReason(stopReason: AgentStopReason): SessionStatus {

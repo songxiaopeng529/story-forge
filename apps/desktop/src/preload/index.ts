@@ -19,8 +19,8 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.providersClearSecret, providerId),
     revealSecret: (providerId) =>
       ipcRenderer.invoke(IPC_CHANNELS.providersRevealSecret, providerId),
-    setDefault: (providerId) =>
-      ipcRenderer.invoke(IPC_CHANNELS.providersSetDefault, providerId),
+    setDefault: (input) =>
+      ipcRenderer.invoke(IPC_CHANNELS.providersSetDefault, input),
     discoverModels: (providerId) =>
       ipcRenderer.invoke(IPC_CHANNELS.providersDiscoverModels, providerId),
   },

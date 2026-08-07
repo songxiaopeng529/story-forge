@@ -30,6 +30,13 @@ const VOLCANO_RECOMMENDED_MODELS = [
   "doubao-seed-1-6-250615",
   "ep-your-endpoint-id",
 ];
+const PROVIDER_LIST_ORDER: ProviderId[] = [
+  "deepseek",
+  VOLCANO_PROVIDER_ID,
+  "kimi-coding",
+  "minimax",
+  "minimax-cn",
+];
 
 const legacyProviderRecordSchema = z.object({
   providerId: z.string().min(1),
@@ -125,17 +132,14 @@ export class PiModelService {
           recommendedModels: models.map((model) => model.id),
           supportsImageInput: Boolean(selectedModelRecord?.input.includes("image")),
           isDefault: provider.id === defaultProvider,
+          ...(provider.id === defaultProvider && defaultModel
+            ? { defaultModel }
+            : {}),
           hasSecret: credentialProviders.has(provider.id) || authStatus.configured,
           lastTestStatus: this.lastTestStatus.get(provider.id) ?? "untested",
         } satisfies ProviderView;
       })
       .sort((left, right) => {
-        if (left.isDefault !== right.isDefault) {
-          return left.isDefault ? -1 : 1;
-        }
-        if (left.hasSecret !== right.hasSecret) {
-          return left.hasSecret ? -1 : 1;
-        }
         const rankDelta = providerListRank(left.providerId) - providerListRank(right.providerId);
         if (rankDelta !== 0) {
           return rankDelta;
@@ -156,10 +160,6 @@ export class PiModelService {
     if (apiKey) {
       await this.persistApiKey(input.providerId, apiKey);
     }
-    if (input.model.trim()) {
-      this.settingsManager.setDefaultModelAndProvider(input.providerId, input.model.trim());
-      await this.settingsManager.flush();
-    }
     const provider = (await this.list()).find((candidate) => candidate.providerId === input.providerId);
     if (!provider) {
       throw new Error(`Provider not found: ${input.providerId}`);
@@ -167,13 +167,21 @@ export class PiModelService {
     return provider;
   }
 
-  async setDefault(providerId: ProviderId): Promise<void> {
+  async setDefault(input: { providerId: ProviderId; model: string }): Promise<void> {
     const runtime = await this.getModelRuntime();
-    const model = runtime.getModels(providerId)[0];
+    const modelId = input.model.trim();
+    let model = runtime.getModel(input.providerId, modelId);
     if (!model) {
-      throw new Error(`No models found for provider: ${providerId}`);
+      await this.updateManagedProvider(runtime, {
+        providerId: input.providerId,
+        model: modelId,
+      });
+      model = runtime.getModel(input.providerId, modelId);
     }
-    this.settingsManager.setDefaultModelAndProvider(providerId, model.id);
+    if (!model) {
+      throw new Error(`Model not found: ${input.providerId}/${modelId}`);
+    }
+    this.settingsManager.setDefaultModelAndProvider(input.providerId, model.id);
     await this.settingsManager.flush();
   }
 
@@ -503,7 +511,8 @@ function unique(values: string[]): string[] {
 }
 
 function providerListRank(providerId: ProviderId): number {
-  return providerId === VOLCANO_PROVIDER_ID ? 0 : 1;
+  const rank = PROVIDER_LIST_ORDER.indexOf(providerId);
+  return rank === -1 ? PROVIDER_LIST_ORDER.length : rank;
 }
 
 async function readOptionalJson<Schema extends z.ZodType>(

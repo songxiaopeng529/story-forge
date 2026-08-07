@@ -102,7 +102,7 @@ describe("createTaskTools", () => {
     await expect(registry["task_create"]?.execute({ title: " " }, {}))
       .rejects.toThrow("task_create requires a non-empty string title");
     await expect(registry["task_update"]?.execute({ taskId: "sf_task_1", status: "started" }, {}))
-      .rejects.toThrow("task_update status must be pending, in_progress, completed, or blocked");
+      .rejects.toThrow("task_update status must be pending, in_progress, completed, blocked, or cancelled");
   });
 });
 

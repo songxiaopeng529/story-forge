@@ -144,13 +144,6 @@ export type ExtensionWidgetEvent = {
   lines?: string[];
 };
 
-export type PlanReadyEvent = {
-  type: "plan.ready";
-  sessionId: SessionId;
-  turnId: TurnId;
-  plan: string;
-};
-
 export type ResponseFallbackEvent = {
   type: "response.fallback";
   sessionId: SessionId;
@@ -252,7 +245,6 @@ export type AgentEvent =
   | ExtensionNotificationEvent
   | ExtensionStatusEvent
   | ExtensionWidgetEvent
-  | PlanReadyEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
   | ContextUsageEvent

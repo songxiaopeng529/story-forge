@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Save } from "lucide-react";
+import { Check, Eye, EyeOff, Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
 import { getProviderIconUrl } from "../provider-icons";
@@ -33,12 +33,6 @@ export function ModelsPage(props: {
     setNotice(undefined);
   }, [props.selectedProvider?.providerId, props.selectedProvider?.hasSecret]);
 
-  const updateProvider = (provider: ProviderView) => {
-    props.onProvidersChange(props.providers.map((candidate) =>
-      candidate.providerId === provider.providerId ? provider : candidate
-    ));
-  };
-
   async function save(): Promise<void> {
     if (!props.selectedProvider) {
       return;
@@ -53,7 +47,9 @@ export function ModelsPage(props: {
         model,
         ...(nextApiKey ? { apiKey: nextApiKey } : {}),
       });
-      updateProvider(saved);
+      props.onProvidersChange(await window.storyForge.providers.list());
+      setBaseUrl(saved.baseUrl);
+      setModels(saved.recommendedModels);
       setApiKey(saved.hasSecret ? SAVED_API_KEY_MASK : "");
       setApiKeyDirty(false);
       setApiKeyVisible(false);
@@ -121,12 +117,24 @@ export function ModelsPage(props: {
     }
   }
 
-  async function setDefault(): Promise<void> {
-    if (!props.selectedProvider) {
-      return;
+  async function setDefaultModel(providerId: ProviderId, modelId: string): Promise<void> {
+    setBusy("default");
+    props.onError(undefined);
+    try {
+      await window.storyForge.providers.setDefault({
+        providerId,
+        model: modelId,
+      });
+      props.onProvidersChange(await window.storyForge.providers.list());
+      if (props.selectedProvider?.providerId === providerId) {
+        setModel(modelId);
+      }
+      setNotice(`Default model set to ${modelId}`);
+    } catch (defaultError) {
+      props.onError(formatError(defaultError));
+    } finally {
+      setBusy(undefined);
     }
-    await window.storyForge.providers.setDefault(props.selectedProvider.providerId);
-    props.onProvidersChange(await window.storyForge.providers.list());
   }
 
   async function toggleApiKeyVisibility(): Promise<void> {
@@ -187,6 +195,15 @@ export function ModelsPage(props: {
               }`}
               key={provider.providerId}
               onClick={() => props.onSelect(provider.providerId)}
+              onDoubleClick={() => {
+                props.onSelect(provider.providerId);
+                if (provider.hasSecret && provider.model) {
+                  void setDefaultModel(provider.providerId, provider.model);
+                }
+              }}
+              title={provider.hasSecret && provider.model
+                ? `${provider.displayName} · Double-click to use ${provider.model}`
+                : provider.displayName}
               type="button"
             >
               <span className="flex min-w-0 items-center gap-2.5">
@@ -199,9 +216,11 @@ export function ModelsPage(props: {
                 </span>
               </span>
               {provider.isDefault ? (
-                <span className="ml-2 flex-none rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-white">
-                  Default
-                </span>
+                <Check
+                  aria-label="Default provider"
+                  className="ml-2 flex-none text-emerald-600"
+                  size={16}
+                />
               ) : null}
             </button>
           ))}
@@ -255,8 +274,16 @@ export function ModelsPage(props: {
                 </datalist>
               </Field>
               <ModelOptions
+                defaultModel={props.selectedProvider.defaultModel}
+                disabled={Boolean(busy)}
                 models={models}
                 selectedModel={model}
+                onMakeDefault={(modelId) => {
+                  const providerId = props.selectedProvider?.providerId;
+                  if (providerId) {
+                    void setDefaultModel(providerId, modelId);
+                  }
+                }}
                 onSelect={setModel}
               />
               <Field label="API key">
@@ -330,15 +357,6 @@ export function ModelsPage(props: {
                 >
                   Discover models
                 </button>
-                {!props.selectedProvider.isDefault ? (
-                  <button
-                    className="secondary-button"
-                    onClick={() => void setDefault()}
-                    type="button"
-                  >
-                    Set default
-                  </button>
-                ) : null}
                 {props.selectedProvider.hasSecret ? (
                   <button
                     className="rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50"
@@ -359,8 +377,11 @@ export function ModelsPage(props: {
 }
 
 function ModelOptions(props: {
+  defaultModel: string | undefined;
+  disabled: boolean;
   models: string[];
   selectedModel: string;
+  onMakeDefault: (modelId: string) => void;
   onSelect: (modelId: string) => void;
 }) {
   if (props.models.length === 0) {
@@ -378,20 +399,28 @@ function ModelOptions(props: {
       <div className="max-h-44 overflow-y-auto rounded-md border border-slate-200 bg-slate-50 p-1">
         {props.models.map((modelId) => {
           const selected = modelId === props.selectedModel;
+          const isDefault = modelId === props.defaultModel;
           return (
             <button
               aria-pressed={selected}
-              className={`block w-full rounded px-2.5 py-1.5 text-left text-xs font-medium ${
+              className={`flex w-full items-center justify-between gap-3 rounded px-2.5 py-1.5 text-left text-xs font-medium ${
                 selected
                   ? "bg-white text-forge-ember shadow-sm"
                   : "text-slate-600 hover:bg-white"
               }`}
+              disabled={props.disabled}
               key={modelId}
               onClick={() => props.onSelect(modelId)}
-              title={modelId}
+              onDoubleClick={() => props.onMakeDefault(modelId)}
+              title={`${modelId} · Double-click to make default`}
               type="button"
             >
-              <span className="block truncate">{modelId}</span>
+              <span className="min-w-0 truncate">{modelId}</span>
+              {isDefault ? (
+                <span className="flex-none rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-white">
+                  Default
+                </span>
+              ) : null}
             </button>
           );
         })}

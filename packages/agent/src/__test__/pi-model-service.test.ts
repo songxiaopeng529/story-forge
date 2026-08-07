@@ -109,4 +109,51 @@ describe("PiModelService", () => {
       await rm(rootDir, { recursive: true, force: true });
     }
   });
+
+  it("keeps provider saving separate from selecting an exact default model", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-pi-models-"));
+    try {
+      const service = new PiModelService({ rootDir });
+      await service.save({
+        providerId: "deepseek",
+        baseUrl: "https://api.deepseek.com",
+        model: "deepseek-custom-default",
+        apiKey: "deepseek-secret",
+      });
+      expect((await service.list()).filter((provider) => provider.isDefault)).toHaveLength(0);
+
+      await service.setDefault({
+        providerId: "deepseek",
+        model: "deepseek-custom-default",
+      });
+      await service.save({
+        providerId: "volcano",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        model: "ep-custom-endpoint",
+        apiKey: "ark-secret",
+      });
+
+      const afterSave = await service.list();
+      const providerOrder = afterSave.map((provider) => provider.providerId);
+      expect(afterSave.filter((provider) => provider.isDefault)).toHaveLength(1);
+      expect(afterSave.find((provider) => provider.isDefault)).toMatchObject({
+        providerId: "deepseek",
+        defaultModel: "deepseek-custom-default",
+      });
+
+      await service.setDefault({
+        providerId: "volcano",
+        model: "ep-custom-endpoint",
+      });
+      const afterSelection = await service.list();
+      expect(afterSelection.map((provider) => provider.providerId)).toEqual(providerOrder);
+      expect(afterSelection.filter((provider) => provider.isDefault)).toHaveLength(1);
+      expect(afterSelection.find((provider) => provider.isDefault)).toMatchObject({
+        providerId: "volcano",
+        defaultModel: "ep-custom-endpoint",
+      });
+    } finally {
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
 });

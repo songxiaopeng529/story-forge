@@ -72,7 +72,7 @@ const sessionTaskSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   activeForm: z.string().optional(),
-  status: z.enum(["pending", "in_progress", "completed", "blocked"]),
+  status: z.enum(["pending", "in_progress", "completed", "blocked", "cancelled"]),
   blockedReason: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -257,6 +257,10 @@ export class SessionRepository {
   async listTasks(sessionId: SessionId): Promise<SessionTask[]> {
     const session = await this.readMetadata(sessionId);
     return session.tasks;
+  }
+
+  async replaceTasks(sessionId: SessionId, tasks: SessionTask[]): Promise<SessionRecord> {
+    return this.update(sessionId, (session) => ({ ...session, tasks }));
   }
 
   async createTask(sessionId: SessionId, input: CreateTaskInput): Promise<SessionRecord> {
