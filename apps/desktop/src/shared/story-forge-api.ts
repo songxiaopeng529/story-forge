@@ -139,7 +139,7 @@ export type StoryForgeApi = {
     test(providerId: ProviderId): Promise<{ models: string[] }>;
     clearSecret(providerId: ProviderId): Promise<void>;
     revealSecret(providerId: ProviderId): Promise<string | undefined>;
-    setDefault(providerId: ProviderId): Promise<void>;
+    setDefault(input: { providerId: ProviderId; model: string }): Promise<void>;
     discoverModels(providerId: ProviderId): Promise<string[]>;
   };
   workspaces: {

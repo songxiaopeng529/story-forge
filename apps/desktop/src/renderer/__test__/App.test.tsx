@@ -266,49 +266,7 @@ describe("App", () => {
     expect(input).toHaveValue("");
   });
 
-  it("starts the PI plan mode extension from the slash command", async () => {
-    const fixture = installApi();
-    render(<App />);
-    const input = await screen.findByPlaceholderText(
-      "Ask StoryForge to inspect, explain, or change code...",
-    );
-
-    changePrompt(input, "/plan");
-    fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
-
-    expect(input).toHaveValue("");
-    const pill = await screen.findByTestId("active-slash-command");
-    expect(pill).toHaveTextContent("/plan");
-
-    fireEvent.change(input, { target: { value: "Investigate the runtime" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    await waitFor(() => expect(fixture.start).toHaveBeenCalledWith({
-      sessionId: "sf_session_existing",
-      prompt: "/plan Investigate the runtime",
-    }));
-  });
-
-  it("clears the PI plan command pill when removed", async () => {
-    installApi();
-    render(<App />);
-    const input = await screen.findByPlaceholderText(
-      "Ask StoryForge to inspect, explain, or change code...",
-    );
-
-    changePrompt(input, "/plan");
-    fireEvent.click(await screen.findByRole("option", { name: /\/plan/i }));
-    await screen.findByTestId("active-slash-command");
-
-    fireEvent.click(screen.getByRole("button", { name: "Remove /plan command" }));
-
-    await waitFor(() =>
-      expect(screen.queryByTestId("active-slash-command")).not.toBeInTheDocument()
-    );
-    expect(screen.getByText("Agent")).toBeInTheDocument();
-  });
-
-  it("bridges PI plan mode prompts through the extension UI", async () => {
+  it("bridges PI extension prompts through the extension UI", async () => {
     const fixture = installApi();
     render(<App />);
 
@@ -318,19 +276,19 @@ describe("App", () => {
         type: "extension.ui.request",
         sessionId: "sf_session_existing",
         turnId: "sf_turn_active",
-        requestId: "plan_ready_action",
+        requestId: "extension_action",
         method: "select",
-        title: "Plan ready",
-        options: ["Start implementing", "Continue planning"],
+        title: "Choose action",
+        options: ["Continue", "Cancel"],
       });
     });
 
-    expect(screen.getByRole("dialog", { name: "Plan ready" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("option", { name: "Start implementing" }));
+    expect(screen.getByRole("dialog", { name: "Choose action" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "Continue" }));
 
     await waitFor(() => expect(fixture.respondExtensionUi).toHaveBeenCalledWith({
-      requestId: "plan_ready_action",
-      value: "Start implementing",
+      requestId: "extension_action",
+      value: "Continue",
     }));
   });
 
@@ -714,6 +672,69 @@ describe("App", () => {
       baseUrl: "https://api.deepseek.com",
       model: "deepseek-v4-pro",
     });
+  });
+
+  it("keeps provider saving separate and selects an exact default model on double-click", async () => {
+    const fixture = installApi({
+      providers: [
+        {
+          providerId: "deepseek",
+          displayName: "DeepSeek",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-pro",
+          recommendedModels: ["deepseek-v4-pro"],
+          isDefault: true,
+          defaultModel: "deepseek-v4-pro",
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: false,
+        },
+        {
+          providerId: "volcano",
+          displayName: "Volcano Engine (火山引擎)",
+          baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+          model: "doubao-seed-2-0-lite-260215",
+          recommendedModels: [
+            "doubao-seed-2-0-lite-260215",
+            "ep-custom-endpoint",
+          ],
+          isDefault: false,
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: false,
+        },
+      ],
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Models" }));
+    const volcanoProvider = screen.getByRole("button", { name: /Volcano Engine/ });
+    fireEvent.doubleClick(volcanoProvider);
+    await waitFor(() => expect(fixture.setDefaultProvider).toHaveBeenCalledWith({
+      providerId: "volcano",
+      model: "doubao-seed-2-0-lite-260215",
+    }));
+    fixture.setDefaultProvider.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
+    await waitFor(() => expect(fixture.saveProvider).toHaveBeenCalled());
+    expect(fixture.setDefaultProvider).not.toHaveBeenCalled();
+    expect(screen.getAllByLabelText("Default provider")).toHaveLength(1);
+
+    const customModel = screen.getByRole("button", { name: "ep-custom-endpoint" });
+    fireEvent.click(customModel);
+    expect(screen.getByLabelText("Model ID")).toHaveValue("ep-custom-endpoint");
+    expect(fixture.setDefaultProvider).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(customModel);
+    await waitFor(() => expect(fixture.setDefaultProvider).toHaveBeenCalledWith({
+      providerId: "volcano",
+      model: "ep-custom-endpoint",
+    }));
+    expect(await screen.findByText("Default model set to ep-custom-endpoint"))
+      .toBeInTheDocument();
+    expect(screen.getAllByText("Default")).toHaveLength(1);
+    expect(screen.getAllByLabelText("Default provider")).toHaveLength(1);
   });
 
   it("manages installed skills from the MCP and Skills page", async () => {
@@ -1221,11 +1242,12 @@ function installApi(options: {
     model: "deepseek-v4-pro",
     recommendedModels: ["deepseek-v4-pro", "deepseek-v4-flash"],
     isDefault: true,
+    defaultModel: "deepseek-v4-pro",
     hasSecret: true,
     lastTestStatus: "success",
     supportsImageInput: false,
   };
-  const providers = options.providers ?? [provider];
+  let currentProviders = options.providers ?? [provider];
   const workspace: WorkspaceView = {
     id: "workspace-1",
     path: "/tmp/project",
@@ -1281,12 +1303,38 @@ function installApi(options: {
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
     : vi.fn(async (input) => ({ ...settings, ...input }));
-  const saveProvider = vi.fn(async (input) => ({
-    ...provider,
-    baseUrl: input.baseUrl,
-    model: input.model,
-    hasSecret: provider.hasSecret || Boolean(input.apiKey),
-  }));
+  const saveProvider = vi.fn(async (input) => {
+    const current = currentProviders.find((candidate) =>
+      candidate.providerId === input.providerId
+    ) ?? provider;
+    const saved: ProviderView = {
+      ...current,
+      baseUrl: input.baseUrl,
+      model: input.model,
+      recommendedModels: Array.from(new Set([
+        input.model,
+        ...current.recommendedModels,
+      ])),
+      hasSecret: current.hasSecret || Boolean(input.apiKey),
+    };
+    currentProviders = currentProviders.map((candidate) =>
+      candidate.providerId === saved.providerId ? saved : candidate
+    );
+    return saved;
+  });
+  const setDefaultProvider = vi.fn(async (input: { providerId: string; model: string }) => {
+    currentProviders = currentProviders.map((candidate) => {
+      if (candidate.providerId === input.providerId) {
+        return {
+          ...candidate,
+          isDefault: true,
+          defaultModel: input.model,
+        };
+      }
+      const { defaultModel: _defaultModel, ...rest } = candidate;
+      return { ...rest, isDefault: false };
+    });
+  });
   const revealSecret = vi.fn(async () => "saved-local-secret");
   let currentSkills = options.skills ?? [];
   let currentMcpConfig = options.mcpConfig ?? {
@@ -1396,12 +1444,12 @@ function installApi(options: {
       save: saveSettings,
     },
     providers: {
-      list: vi.fn(async () => providers),
+      list: vi.fn(async () => currentProviders),
       save: saveProvider,
       test: vi.fn(async () => ({ models: provider.recommendedModels })),
       clearSecret: vi.fn(async () => undefined),
       revealSecret,
-      setDefault: vi.fn(async () => undefined),
+      setDefault: setDefaultProvider,
       discoverModels: vi.fn(async () => provider.recommendedModels),
     },
     workspaces: {
@@ -1468,6 +1516,7 @@ function installApi(options: {
     getSession,
     saveSettings,
     saveProvider,
+    setDefaultProvider,
     revealSecret,
     importSkill,
     setSkillEnabled,

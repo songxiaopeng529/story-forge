@@ -51,7 +51,6 @@ export type AgentLayoutProps = {
   sidebarCollapsed: boolean;
   contextCollapsed: boolean;
   prompt: string;
-  planStatus: string | undefined;
   imageAttachments: ImageAttachmentView[];
   error: string | undefined;
   onExpandNav: () => void;
@@ -112,7 +111,6 @@ export function AgentLayout(props: AgentLayoutProps) {
     sidebarCollapsed,
     contextCollapsed,
     prompt,
-    planStatus,
     imageAttachments,
     error,
   } = props;
@@ -171,7 +169,6 @@ export function AgentLayout(props: AgentLayoutProps) {
         onExpandSidebar={props.onExpandSidebar}
         onExpandContext={props.onExpandContext}
         prompt={prompt}
-        planStatus={planStatus}
         imageAttachments={imageAttachments}
         imageInputEnabled={imageInputEnabled}
         error={error}

@@ -39,6 +39,7 @@ export function createStoryForgeSystemPrompt(input: {
     ["grep", "Search file contents for patterns"],
     ["find", "Find files by glob pattern"],
     ["ls", "List directory contents"],
+    ["todo", "Maintain a phased task plan while work is being executed"],
   ];
   const availableTools = [
     ...builtInTools.map(([name, description]) => `- ${name}: ${description}`),
@@ -61,7 +62,7 @@ export function createStoryForgeSystemPrompt(input: {
     "- Be concise and show file paths clearly when working with files.",
     "- Interpret relative dates such as today and tomorrow using the transient environment context supplied with each model request.",
     "- For latest or time-sensitive facts, use web_search and compare source publication dates instead of relying on memory.",
-    "- Use the StoryForge task tools when tracking meaningful multi-step implementation work.",
+    "- Use the todo tool to create and maintain a phased plan for meaningful multi-step work while continuing execution with the normal tools.",
   ].join("\n");
 }
 

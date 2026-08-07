@@ -28,8 +28,8 @@ export class ProviderService {
     });
   }
 
-  setDefault(providerId: ProviderId): Promise<void> {
-    return this.piModels.setDefault(providerId);
+  setDefault(input: { providerId: ProviderId; model: string }): Promise<void> {
+    return this.piModels.setDefault(input);
   }
 
   clearSecret(providerId: ProviderId): Promise<void> {

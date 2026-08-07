@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { PI_TODO_TOOL_NAME, resolvePiTodoExtensionPath } from "../../../extensions/src/todo/pi9-todo";
 import {
   createStoryForgeAgentSession,
   createStoryForgeSystemPrompt,
@@ -37,7 +38,6 @@ Run the StoryForge review checklist.
     const model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5");
     expect(model).toBeDefined();
     const customTools = [
-      createTestTool("task_list", "List StoryForge tasks"),
       createTestTool("web_search", "Search the web"),
       createTestTool("automation_propose_create", "Propose an automation"),
       createTestTool("mcp__docs__search", "Search docs through MCP"),
@@ -51,9 +51,9 @@ Run the StoryForge review checklist.
       settingsManager,
       sessionManager: SessionManager.inMemory(rootDir),
       additionalSkillPaths: [join(skillDir, "SKILL.md")],
-      additionalExtensionPaths: [],
+      additionalExtensionPaths: [resolvePiTodoExtensionPath()],
       extensionUiContext: createExtensionUiContext(),
-      extensionToolNames: customTools.map((tool) => tool.name),
+      extensionToolNames: [...customTools.map((tool) => tool.name), PI_TODO_TOOL_NAME],
       extensionFactories: [{
         name: "storyforge-test-tools",
         hidden: true,
@@ -83,7 +83,7 @@ Run the StoryForge review checklist.
       "grep",
       "find",
       "ls",
-      "task_list",
+      "todo",
       "web_search",
       "automation_propose_create",
       "mcp__docs__search",
@@ -96,12 +96,12 @@ Run the StoryForge review checklist.
 
   it("uses StoryForge as the runtime identity and leaves tool policy to PI extensions", () => {
     const prompt = createStoryForgeSystemPrompt({
-      extensionTools: [{ name: "task_list", description: "List tasks" }],
+      extensionTools: [],
     });
 
     expect(prompt).toMatch(/^You are StoryForge/);
     expect(prompt).toContain("- read: Read file contents");
-    expect(prompt).toContain("- task_list: List tasks");
+    expect(prompt).toContain("- todo: Maintain a phased task plan");
     expect(prompt).toContain("- write:");
     expect(prompt).toContain("- bash:");
     expect(prompt).not.toContain("Pi documentation");

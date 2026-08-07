@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export function resolvePiPlanModeExtensionPath(): string {
-  const packagePath = require.resolve("@narumitw/pi-plan-mode/package.json");
+export const PI_TODO_TOOL_NAME = "todo";
+
+export function resolvePiTodoExtensionPath(): string {
+  const packagePath = require.resolve("@pi9/todo/package.json");
   return join(dirname(packagePath), "src", "index.ts");
 }

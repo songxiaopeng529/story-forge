@@ -348,15 +348,6 @@ function appendActiveTurnItems(
       continue;
     }
 
-    if (event.type === "plan.ready") {
-      items.push({
-        type: "plan",
-        id: `plan-${activeTurnId}`,
-        content: event.plan,
-      });
-      continue;
-    }
-
     if (event.type === "response.fallback") {
       items.push({
         type: "notice",

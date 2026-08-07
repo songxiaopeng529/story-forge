@@ -12,25 +12,21 @@ describe("PiExtensionUiBridge", () => {
       signal: new AbortController().signal,
     });
 
-    const selection = context.select("Plan ready", [
-      "Start implementing",
-      "Start fresh and implement",
-      "Continue planning",
-    ]);
+    const selection = context.select("Choose action", ["Continue", "Start fresh"]);
     const request = events.at(-1);
 
     expect(request).toMatchObject({
       type: "extension.ui.request",
       method: "select",
-      title: "Plan ready",
-      options: ["Start implementing", "Continue planning"],
+      title: "Choose action",
+      options: ["Continue", "Start fresh"],
     });
     if (!request || request.type !== "extension.ui.request") {
       throw new Error("Expected extension UI request");
     }
 
-    bridge.respond({ requestId: request.requestId, value: "Start implementing" });
-    await expect(selection).resolves.toBe("Start implementing");
+    bridge.respond({ requestId: request.requestId, value: "Start fresh" });
+    await expect(selection).resolves.toBe("Start fresh");
   });
 
   it("cancels pending PI dialogs when a turn is aborted", async () => {
@@ -43,7 +39,7 @@ describe("PiExtensionUiBridge", () => {
       signal: controller.signal,
     });
 
-    const confirmation = context.confirm("Leave plan mode?", "Discard the plan?");
+    const confirmation = context.confirm("Continue?", "Proceed with this action?");
     controller.abort();
 
     await expect(confirmation).resolves.toBe(false);
@@ -58,18 +54,18 @@ describe("PiExtensionUiBridge", () => {
       signal: new AbortController().signal,
     });
 
-    context.setStatus("plan-mode", "Planning");
-    context.notify("Plan mode enabled", "info");
+    context.setStatus("todo", "2/4 completed");
+    context.notify("Todo updated", "info");
 
     expect(events).toEqual([
       expect.objectContaining({
         type: "extension.status",
-        key: "plan-mode",
-        text: "Planning",
+        key: "todo",
+        text: "2/4 completed",
       }),
       expect.objectContaining({
         type: "extension.notification",
-        message: "Plan mode enabled",
+        message: "Todo updated",
         level: "info",
       }),
     ]);

@@ -174,8 +174,11 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(
     options.ipc,
     IPC_CHANNELS.providersSetDefault,
-    providerIdSchema,
-    (providerId) => options.providers.setDefault(providerId),
+    z.object({
+      providerId: providerIdSchema,
+      model: z.string().trim().min(1),
+    }).strict(),
+    (input) => options.providers.setDefault(input),
   );
   handle(
     options.ipc,

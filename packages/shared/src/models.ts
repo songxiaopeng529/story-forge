@@ -8,6 +8,7 @@ export type ProviderView = {
   recommendedModels: string[];
   supportsImageInput: boolean;
   isDefault: boolean;
+  defaultModel?: string;
   hasSecret: boolean;
   lastTestStatus: "untested" | "success" | "failed";
   lastTestedAt?: string;

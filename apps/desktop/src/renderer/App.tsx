@@ -55,7 +55,6 @@ export function App() {
   const [permissionResponding, setPermissionResponding] = useState(false);
   const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequestEvent[]>([]);
   const [extensionUiResponding, setExtensionUiResponding] = useState(false);
-  const [extensionStatuses, setExtensionStatuses] = useState<Record<string, Record<string, string>>>({});
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [compactingSessionId, setCompactingSessionId] = useState<SessionId>();
   const [error, setError] = useState<string>();
@@ -168,17 +167,6 @@ export function App() {
             ...current,
             [event.sessionId]: { ...existing, status: "waiting-approval" },
           };
-        });
-      }
-      if (event.type === "extension.status") {
-        setExtensionStatuses((current) => {
-          const sessionStatuses = { ...(current[event.sessionId] ?? {}) };
-          if (event.text) {
-            sessionStatuses[event.key] = event.text;
-          } else {
-            delete sessionStatuses[event.key];
-          }
-          return { ...current, [event.sessionId]: sessionStatuses };
         });
       }
       if (event.type === "extension.notification" && event.level === "error") {
@@ -796,9 +784,6 @@ export function App() {
           sidebarCollapsed: effectiveSidebarCollapsed,
           contextCollapsed: effectiveContextCollapsed,
           prompt,
-          planStatus: selectedSessionId
-            ? extensionStatuses[selectedSessionId]?.["plan-mode"]
-            : undefined,
           imageAttachments,
           error,
           onExpandNav: () => setNavCollapsed(false),

@@ -14,7 +14,6 @@ import {
   FolderOpen,
   ImagePlus,
   KeyRound,
-  ListChecks,
   Loader2,
   PanelLeftOpen,
   PanelRightOpen,
@@ -64,7 +63,6 @@ export function AgentWorkspace(props: {
   onExpandSidebar: () => void;
   onExpandContext: () => void;
   prompt: string;
-  planStatus: string | undefined;
   imageAttachments: ImageAttachmentView[];
   imageInputEnabled: boolean;
   error: string | undefined;
@@ -161,18 +159,6 @@ export function AgentWorkspace(props: {
 
   const slashCommands = useMemo(() => {
     const builtInCommands: SlashCommandItem[] = [
-      {
-        id: "plan",
-        invocation: "/plan",
-        title: "Plan mode",
-        description: "Plan the work first without editing files.",
-        kind: "builtin",
-        icon: <ListChecks size={15} />,
-        pill: true,
-        action: () => {
-          props.onPromptChange("");
-        },
-      },
       {
         id: "timer",
         invocation: "/timer",
@@ -763,9 +749,6 @@ export function AgentWorkspace(props: {
                     >
                       <ImagePlus size={16} />
                     </button>
-                    <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-ink">
-                      {planStatusLabel(props.planStatus)}
-                    </span>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-danger">
                       {commandModeMeta[props.commandExecutionMode].chip}
                     </span>
@@ -842,22 +825,6 @@ type ActiveSlashCommand = {
   icon: ReactNode;
   kind: "extension" | "skill";
 };
-
-function planStatusLabel(status: string | undefined): string {
-  if (status === "plan active") {
-    return "Planning";
-  }
-  if (status === "plan ready") {
-    return "Plan ready";
-  }
-  if (status === "plan implementing") {
-    return "Implementing plan";
-  }
-  if (status === "plan saved") {
-    return "Plan saved";
-  }
-  return "Agent";
-}
 
 function findSlashRange(value: string, cursor: number): SlashRange | undefined {
   const beforeCursor = value.slice(0, cursor);

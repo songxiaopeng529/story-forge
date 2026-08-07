@@ -117,9 +117,9 @@ importers:
 
   packages/extensions:
     dependencies:
-      '@narumitw/pi-plan-mode':
-        specifier: 0.48.0
-        version: 0.48.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)
+      '@pi9/todo':
+        specifier: 0.3.7
+        version: 0.3.7(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))
       '@story-forge/shared':
         specifier: workspace:*
         version: link:../shared
@@ -872,18 +872,6 @@ packages:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
 
-  '@narumitw/pi-plan-mode@0.48.0':
-    resolution: {integrity: sha512-CanQ9h8Q+tvcOlZuRZWbMEJIamy7fGCjLMVaqaKia/H4X2cuTZhUfMtdxxsaaNGuKGnJX1Lp7fnikdKndz3Zow==}
-    peerDependencies:
-      '@earendil-works/pi-coding-agent': '*'
-      '@earendil-works/pi-tui': '*'
-
-  '@narumitw/pi-tui-kit@0.41.0':
-    resolution: {integrity: sha512-JgbIsQMhabONyPnxSpnEwcg7rW8ddlwJl7vmNK5khEVEXczynz00kmsd5dNfV8fkb1LIsQbAI8PC715CS/GUHQ==}
-    peerDependencies:
-      '@earendil-works/pi-coding-agent': '*'
-      '@earendil-works/pi-tui': '*'
-
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
     engines: {node: '>= 8'}
@@ -906,6 +894,12 @@ packages:
 
   '@oxc-project/types@0.133.0':
     resolution: {integrity: sha512-KzkdCd6Uxqnf6l3HOw1xfatAlUURA0g14cvBYFyJ5SaNOQbOUvBr9PKArcPcrNIeRsBdgcUzOGrhKveVpvOIGA==}
+
+  '@pi9/todo@0.3.7':
+    resolution: {integrity: sha512-9HqoNqVCsL1yccDZBNoBcYFSLqbtk+xow3XUfyjW1g/eGKdQdTU/cMhMx0aZg/XjRlGd4S3qClvGxIkNqESEWQ==}
+    engines: {node: '>=22.0.0'}
+    peerDependencies:
+      '@earendil-works/pi-coding-agent': '*'
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -4132,17 +4126,6 @@ snapshots:
       '@tybys/wasm-util': 0.10.2
     optional: true
 
-  '@narumitw/pi-plan-mode@0.48.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)':
-    dependencies:
-      '@earendil-works/pi-coding-agent': 0.82.1(ws@8.21.0)(zod@4.4.3)
-      '@earendil-works/pi-tui': 0.82.1
-      '@narumitw/pi-tui-kit': 0.41.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)
-
-  '@narumitw/pi-tui-kit@0.41.0(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))(@earendil-works/pi-tui@0.82.1)':
-    dependencies:
-      '@earendil-works/pi-coding-agent': 0.82.1(ws@8.21.0)(zod@4.4.3)
-      '@earendil-works/pi-tui': 0.82.1
-
   '@nodelib/fs.scandir@2.1.5':
     dependencies:
       '@nodelib/fs.stat': 2.0.5
@@ -4160,6 +4143,10 @@ snapshots:
   '@opentelemetry/semantic-conventions@1.41.1': {}
 
   '@oxc-project/types@0.133.0': {}
+
+  '@pi9/todo@0.3.7(@earendil-works/pi-coding-agent@0.82.1(ws@8.21.0))':
+    dependencies:
+      '@earendil-works/pi-coding-agent': 0.82.1(ws@8.21.0)(zod@4.4.3)
 
   '@protobufjs/aspromise@1.1.2': {}
 
