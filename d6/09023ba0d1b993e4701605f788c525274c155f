@@ -1,0 +1,21 @@
+AGENTS.md
+  s_a6bc74ce0f99bd::t_77dc38174cdf82 7-14,29-30,33,39-44,49-85,87-89,94,96-106,108,110-140,144-172,176-178,180-198,202-215,219-241,246-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d609023ba0d1b993e4701605f788c525274c155f",
+  "prompts": {},
+  "sessions": {
+    "s_a6bc74ce0f99bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb1-d701-73a2-9a27-ed5a377f7756",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
