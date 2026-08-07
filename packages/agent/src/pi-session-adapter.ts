@@ -4,6 +4,7 @@ import {
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderId, ToolCall } from "@story-forge/shared";
+import { toRecord } from "@story-forge/shared";
 import type {
   LegacySessionRecord,
   PersistedMessage,
@@ -340,12 +341,6 @@ function emptyUsage(): Extract<PiMessage, { role: "assistant" }>["usage"] {
       total: 0,
     },
   };
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function sanitizePathPart(value: string): string {

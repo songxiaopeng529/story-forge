@@ -6,7 +6,12 @@ import {
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
+  createId,
   createTurnId,
+  formatError,
+  readOptionalStringField,
+  readStringField,
+  toRecord,
   type AgentEvent,
   type AgentStopReason,
   type CommandExecutionMode,
@@ -460,7 +465,7 @@ export class StoryForgeAgentHarness {
             type: "model.request",
             sessionId: input.session.id,
             turnId: input.turnId,
-            requestId: createModelRequestId(),
+            requestId: createId("model_request"),
             providerId: input.session.providerId,
             model: input.session.model,
             ...(environment ? { environment } : {}),
@@ -504,7 +509,7 @@ export class StoryForgeAgentHarness {
             type: "automation.proposal",
             sessionId: input.session.id,
             turnId: input.turnId,
-            proposalId: createAutomationProposalId(),
+            proposalId: createId("automation_proposal"),
             proposal: {
               kind: proposal.kind,
               name: proposal.name,
@@ -621,7 +626,7 @@ export class StoryForgeAgentHarness {
     };
     signal: AbortSignal;
   }): Promise<boolean> {
-    const requestId = createPermissionRequestId();
+    const requestId = createId("permission");
 
     return new Promise((resolve) => {
       let settled = false;
@@ -887,25 +892,6 @@ function validateAutomationProposal(draft: AutomationProposalDraft) {
   };
 }
 
-function readStringField(input: unknown, field: string): string {
-  const value = toRecord(input)[field];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`Expected non-empty string field: ${field}`);
-  }
-  return value.trim();
-}
-
-function readOptionalStringField(input: unknown, field: string): string | undefined {
-  const value = toRecord(input)[field];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
 function formatToolOutput(output: unknown): string {
   return typeof output === "string" ? output : JSON.stringify(output, null, 2);
 }
@@ -913,22 +899,6 @@ function formatToolOutput(output: unknown): string {
 function deriveTitle(content: string): string {
   const firstLine = content.trim().split(/\r?\n/, 1)[0] ?? "";
   return firstLine.slice(0, 50) || "New session";
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function createPermissionRequestId(): string {
-  return `sf_permission_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
-
-function createAutomationProposalId(): string {
-  return `sf_automation_proposal_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
-
-function createModelRequestId(): string {
-  return `sf_model_request_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 }
 
 function readEnvSecret(primary: string, fallback: string): string | undefined {

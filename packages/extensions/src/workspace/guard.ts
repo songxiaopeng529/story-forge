@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readOptionalStringField, toRecord } from "@story-forge/shared";
 
 export type WorkspaceToolBlock = { block: true; reason: string };
 
@@ -27,15 +28,4 @@ export function checkWorkspaceToolCall(
 function isInsidePath(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
-function readOptionalStringField(input: unknown, field: string): string | undefined {
-  const value = toRecord(input)[field];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

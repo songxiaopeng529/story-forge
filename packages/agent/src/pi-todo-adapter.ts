@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SessionTask, TaskId, TurnId } from "@story-forge/shared";
+import { toRecord, type SessionTask, type TaskId, type TurnId } from "@story-forge/shared";
 
 type PiTodoSnapshot = {
   phases: Array<{
@@ -108,10 +108,4 @@ function isPiTodoStatus(
 
 function isDefined<T>(value: T | undefined): value is T {
   return value !== undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }

@@ -7,7 +7,7 @@ import type {
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { readJson, writeJsonAtomic } from "./atomic-json";
+import { readJson, writeJsonAtomic } from "@story-forge/agent";
 
 const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<`sf_session_${string}`>(

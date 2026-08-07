@@ -11,7 +11,7 @@ import type {
 } from "@story-forge/shared";
 import { join } from "node:path";
 import { z } from "zod";
-import { readJson, writeJsonAtomic } from "./atomic-json";
+import { readJson, writeJsonAtomic } from "@story-forge/agent";
 
 const mcpToolSchema: z.ZodType<McpToolView> = z.object({
   name: z.string(),

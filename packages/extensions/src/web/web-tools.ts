@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "../tool-definition";
+import { clampInteger, formatError } from "@story-forge/shared";
 import {
   extractTavily,
   type FetchLike,
@@ -398,20 +399,4 @@ function readEnum<T extends string>(
     return value as T;
   }
   throw new Error(`${toolName} requires valid ${fieldName}`);
-}
-
-function clampInteger(
-  value: number | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  if (!Number.isInteger(value)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Number(value)));
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

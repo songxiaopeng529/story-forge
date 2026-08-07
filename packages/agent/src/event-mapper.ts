@@ -1,9 +1,11 @@
-import type {
-  AgentEvent,
-  AgentStopReason,
-  ImageAttachmentView,
-  InspectableModelMessage,
-  InspectableModelTool,
+import {
+  isRecord,
+  toRecord,
+  type AgentEvent,
+  type AgentStopReason,
+  type ImageAttachmentView,
+  type InspectableModelMessage,
+  type InspectableModelTool,
 } from "@story-forge/shared";
 
 export function toPiImageContent(attachment: ImageAttachmentView) {
@@ -157,14 +159,4 @@ function stringifyContent(value: unknown): string {
       .join("\n");
   }
   return JSON.stringify(value ?? "");
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

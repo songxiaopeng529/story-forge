@@ -1,4 +1,5 @@
 import type { McpToolView } from "@story-forge/shared";
+import { isRecord } from "@story-forge/shared";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { ParsedMcpServer } from "./config";
 import type { ToolDefinition } from "../tool-definition";
@@ -394,8 +395,4 @@ function readMcpErrorMessage(content: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
