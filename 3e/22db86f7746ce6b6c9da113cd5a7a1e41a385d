@@ -1,0 +1,83 @@
+apps/desktop/src/main/app-settings-store.ts
+  s_5cb5733d5d8f60::t_5c01b0ef4bf922 8
+apps/desktop/src/main/automation-repository.ts
+  s_5cb5733d5d8f60::t_42402a7b9c49a4 10
+apps/desktop/src/main/mcp-config-service.ts
+  s_5cb5733d5d8f60::t_e239d546af4298 14
+apps/desktop/src/main/skill-service.ts
+  s_5cb5733d5d8f60::t_0078352eb9b17a 8
+apps/desktop/src/main/workspace-repository.ts
+  s_5cb5733d5d8f60::t_031f90f8d01683 4
+packages/agent/src/event-mapper.ts
+  s_5cb5733d5d8f60::t_7de0f086b9b58b 1-8
+packages/agent/src/index.ts
+  s_bafce6a927367c::t_71e858da0eef0b 1
+packages/agent/src/pi-session-adapter.ts
+  s_a6bc74ce0f99bd::t_97afa49f061ced 7
+packages/agent/src/pi-todo-adapter.ts
+  s_a6bc74ce0f99bd::t_e962540ac48750 2
+packages/agent/src/storyforge-agent-harness.ts
+  s_bafce6a927367c::t_9a5bb8b07c2047 9,11-14,468,512,629
+packages/extensions/src/web/web-search-providers.ts
+  s_5cb5733d5d8f60::t_9c5a9955e55a10 1-2
+packages/extensions/src/web/web-tools.ts
+  s_bafce6a927367c::t_eecec4611cc8c5 2
+packages/extensions/src/workspace/guard.ts
+  s_f1319c2b1869d6::t_d0285cf4c7af63 2
+packages/shared/src/index.ts
+  s_5cb5733d5d8f60::t_f5bcda34c5bd0f 6
+packages/shared/src/utils/errors.ts
+  s_5cb5733d5d8f60::t_6ee2df77b08a38 1-7
+packages/shared/src/utils/ids.ts
+  s_5cb5733d5d8f60::t_92f7e1382f0f8f 1-9
+packages/shared/src/utils/index.ts
+  s_5cb5733d5d8f60::t_c0c70fb8987ef0 1-5
+packages/shared/src/utils/numbers.ts
+  s_5cb5733d5d8f60::t_ffe5960f27d323 1-5,7-14
+packages/shared/src/utils/records.ts
+  s_5cb5733d5d8f60::t_dc3b7ae7a7d991 1-15
+packages/shared/src/utils/strings.ts
+  s_5cb5733d5d8f60::t_7719cc27289ffd 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "3e22db86f7746ce6b6c9da113cd5a7a1e41a385d",
+  "prompts": {},
+  "sessions": {
+    "s_5cb5733d5d8f60": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb3-37fb-7ca1-97f3-53781f05b03c",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_a6bc74ce0f99bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb1-d701-73a2-9a27-ed5a377f7756",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_bafce6a927367c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb3-4f28-77a0-a490-91d0b792caa0",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    },
+    "s_f1319c2b1869d6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdcb3-2095-7bd2-ab12-bf88b63d4356",
+        "model": "unknown"
+      },
+      "human_author": "songxiaopeng <songxiaopeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
