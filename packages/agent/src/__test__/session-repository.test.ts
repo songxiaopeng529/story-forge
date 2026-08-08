@@ -8,7 +8,7 @@ import {
   type PersistedMessage,
   SessionRepository,
   type SessionPiAdapter,
-} from "../session-repository";
+} from "../persistence/session-repository";
 
 describe("SessionRepository", () => {
   it("persists multiple independent sessions for the same workspace", async () => {

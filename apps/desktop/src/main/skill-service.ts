@@ -5,7 +5,7 @@ import { cp, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import extractZip from "extract-zip";
 import { z } from "zod";
-import { readJson, writeJsonAtomic } from "./atomic-json";
+import { readJson, writeJsonAtomic } from "@story-forge/agent";
 
 type ExtractArchive = (archivePath: string, destination: string) => Promise<void>;
 

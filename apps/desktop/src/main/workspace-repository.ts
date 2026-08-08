@@ -1,7 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
-import { readJson, writeJsonAtomic } from "./atomic-json";
+import { readJson, writeJsonAtomic } from "@story-forge/agent";
 
 const workspaceSchema = z.object({
   id: z.string(),

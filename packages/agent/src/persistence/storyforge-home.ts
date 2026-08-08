@@ -11,7 +11,7 @@ import {
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { writeJsonAtomic } from "./atomic-json";
+import { isNodeError, writeJsonAtomic } from "./atomic-json";
 
 export const STORYFORGE_HOME_ENV = "STORYFORGE_HOME";
 
@@ -306,8 +306,4 @@ async function pathExists(path: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error && error.code === code;
 }

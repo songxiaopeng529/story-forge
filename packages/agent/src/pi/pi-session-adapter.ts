@@ -4,16 +4,17 @@ import {
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderId, ToolCall } from "@story-forge/shared";
+import { toRecord } from "@story-forge/shared";
 import type {
   LegacySessionRecord,
   PersistedMessage,
   PiSessionReferences,
   SessionMetadataRecord,
   SessionPiAdapter,
-} from "./session-repository";
-import type { StoryForgeWorkspaceStore } from "./host";
+} from "../persistence/session-repository";
+import { resolveStoryForgePaths } from "../persistence/storyforge-home";
+import type { StoryForgeWorkspaceStore } from "../ports/host";
 import type { PiModelService } from "./pi-model-service";
-import { resolveStoryForgePaths } from "./storyforge-home";
 
 type PiTextContent = { type: "text"; text: string };
 type PiImageContent = { type: "image"; data: string; mimeType: string };
@@ -340,12 +341,6 @@ function emptyUsage(): Extract<PiMessage, { role: "assistant" }>["usage"] {
       total: 0,
     },
   };
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
 }
 
 function sanitizePathPart(value: string): string {

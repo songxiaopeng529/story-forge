@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRuntimeEnvironmentExtension } from "../runtime-environment";
+import { createRuntimeEnvironmentExtension } from "../runtime/runtime-environment";
 
 describe("createRuntimeEnvironmentExtension", () => {
   it("appends fresh environment context without mutating or persisting source messages", async () => {

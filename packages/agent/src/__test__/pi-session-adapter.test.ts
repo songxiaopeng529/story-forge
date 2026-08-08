@@ -5,8 +5,8 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { PiSessionAdapter } from "../pi-session-adapter";
-import type { SessionMetadataRecord } from "../session-repository";
+import type { SessionMetadataRecord } from "../persistence/session-repository";
+import { PiSessionAdapter } from "../pi/pi-session-adapter";
 
 describe("PiSessionAdapter", () => {
   it("loads transcript messages without requiring a registered workspace", async () => {

@@ -10,7 +10,7 @@ import type {
   ImageAttachmentView,
   PersistedMessageView,
   SessionView,
-} from "../shared/story-forge-api";
+} from "../../shared/story-forge-api";
 
 export type AutomationProposalTimelineState = {
   proposalId: string;

@@ -1,4 +1,4 @@
-import type { StoryForgeApi } from "../shared/story-forge-api";
+import type { StoryForgeApi } from "../../shared/story-forge-api";
 
 export {};
 

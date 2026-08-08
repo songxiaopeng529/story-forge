@@ -1,4 +1,7 @@
-import type { SessionView, WorkspaceView } from "../shared/story-forge-api";
+import { formatError } from "@story-forge/shared";
+import type { SessionView, WorkspaceView } from "../../shared/story-forge-api";
+
+export { formatError };
 
 export function upsertSession(
   sessions: SessionView[],
@@ -12,8 +15,4 @@ export function upsertWorkspace(
   workspace: WorkspaceView,
 ): WorkspaceView[] {
   return [workspace, ...workspaces.filter((candidate) => candidate.id !== workspace.id)];
-}
-
-export function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

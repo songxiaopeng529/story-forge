@@ -17,6 +17,7 @@ import type {
 } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  GitRepositoryView,
   ProviderView,
   SessionView,
   StoryForgeApi,
@@ -38,6 +39,84 @@ describe("App", () => {
     expect(await screen.findByText("Previous question")).toBeInTheDocument();
     expect(screen.getByText("Previous answer")).toBeInTheDocument();
     expect(screen.getByText("Project session")).toBeInTheDocument();
+  });
+
+  it("loads repository context for the selected workspace", async () => {
+    const fixture = installApi({ repository: sampleGitRepository() });
+
+    render(<App />);
+
+    expect(await screen.findByText("chore/code-optimization")).toBeInTheDocument();
+    expect(screen.getByTitle("origin/main ↑0 ↓0")).toBeInTheDocument();
+    expect(screen.getByTitle("7316a95 · Merge pull request #22")).toBeInTheDocument();
+    expect(fixture.getRepository).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("coalesces focus refreshes while a repository read is still running", async () => {
+    const repository = createDeferred<GitRepositoryView>();
+    const getRepository = vi.fn(() => repository.promise);
+    installApi({ getRepository });
+
+    render(<App />);
+    await screen.findByText("Previous question");
+    await waitFor(() => expect(getRepository).toHaveBeenCalledTimes(1));
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    expect(getRepository).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      repository.resolve(sampleGitRepository());
+      await repository.promise;
+    });
+    expect(await screen.findByText("chore/code-optimization")).toBeInTheDocument();
+  });
+
+  it("does not show repository data from the previously selected workspace", async () => {
+    const secondWorkspace: WorkspaceView = {
+      id: "workspace-2",
+      path: "/tmp/project-two",
+      displayName: "project-two",
+      createdAt: "2026-06-07T00:00:00.000Z",
+      lastOpenedAt: "2026-06-07T00:00:00.000Z",
+    };
+    const secondRepository = createDeferred<GitRepositoryView>();
+    const firstRepository = sampleGitRepository();
+    const getRepository = vi.fn((workspaceId: string) =>
+      workspaceId === "workspace-1"
+        ? Promise.resolve(firstRepository)
+        : secondRepository.promise
+    );
+    installApi({
+      getRepository,
+      workspaces: [
+        {
+          id: "workspace-1",
+          path: "/tmp/project",
+          displayName: "project",
+          createdAt: "2026-06-07T00:00:00.000Z",
+          lastOpenedAt: "2026-06-07T00:00:00.000Z",
+        },
+        secondWorkspace,
+      ],
+    });
+
+    render(<App />);
+    expect(await screen.findByText("chore/code-optimization")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "project-two" }));
+    expect(screen.queryByText("chore/code-optimization")).not.toBeInTheDocument();
+    await waitFor(() => expect(getRepository).toHaveBeenCalledWith("workspace-2"));
+
+    await act(async () => {
+      secondRepository.resolve({
+        ...firstRepository,
+        workspaceId: "workspace-2",
+        rootPath: "/tmp/project-two",
+        head: { ...firstRepository.head, branch: "feature/project-two" },
+      });
+      await secondRepository.promise;
+    });
+    expect(await screen.findByText("feature/project-two")).toBeInTheDocument();
   });
 
   it("sends with Enter, preserves Shift+Enter and IME composition, and stops active turns", async () => {
@@ -346,6 +425,49 @@ describe("App", () => {
 
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
     expect(screen.queryByText("Running workspace.readFile")).not.toBeInTheDocument();
+  });
+
+  it("counts tool calls, not model requests, as turn steps", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "runtime.started",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        createdAt: "2026-06-07T00:00:00.000Z",
+      });
+      fixture.emit({
+        type: "model.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "request-steps",
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        messages: [{ role: "user", content: "Inspect the repo" }],
+        tools: [],
+      });
+    });
+
+    let stepsRow = screen.getByText("Steps").parentElement;
+    expect(stepsRow).not.toBeNull();
+    expect(within(stepsRow as HTMLElement).getByText("0 steps")).toBeInTheDocument();
+
+    await act(async () => {
+      fixture.emit({
+        type: "tool.call",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        callId: "call-steps",
+        name: "workspace.readFile",
+        input: { path: "README.md" },
+      });
+    });
+
+    stepsRow = screen.getByText("Steps").parentElement;
+    expect(within(stepsRow as HTMLElement).getByText("1 step")).toBeInTheDocument();
   });
 
   it("shows pending status, live deltas, and inline tool progress while a turn runs", async () => {
@@ -1230,10 +1352,14 @@ function installApi(options: {
   saveSettings?: StoryForgeApi["settings"]["save"];
   providers?: ProviderView[];
   session?: Partial<SessionView>;
+  workspaces?: WorkspaceView[];
+  sessions?: SessionView[];
   skills?: SkillView[];
   mcpConfig?: McpConfigView;
   automations?: AutomationView[];
   compact?: StoryForgeApi["turns"]["compact"];
+  repository?: GitRepositoryView;
+  getRepository?: StoryForgeApi["git"]["get"];
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -1255,6 +1381,7 @@ function installApi(options: {
     createdAt: "2026-06-07T00:00:00.000Z",
     lastOpenedAt: "2026-06-07T00:00:00.000Z",
   };
+  const allWorkspaces = options.workspaces ?? [workspace];
   const defaultMessages: SessionView["messages"] = [
     {
       id: "message-1",
@@ -1283,6 +1410,7 @@ function installApi(options: {
     messages: options.session?.messages ?? defaultMessages,
     tasks: options.session?.tasks ?? [],
   };
+  const allSessions = options.sessions ?? [session];
   let eventListener: ((event: AgentEvent) => void) | undefined;
   const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
@@ -1291,7 +1419,18 @@ function installApi(options: {
     : vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
   const respondExtensionUi = vi.fn(async () => undefined);
-  const getSession = vi.fn(async () => session);
+  const getSession = vi.fn(async (sessionId: string) =>
+    allSessions.find((candidate) => candidate.id === sessionId) ?? session
+  );
+  const getRepository = options.getRepository
+    ? vi.mocked(options.getRepository)
+    : vi.fn(async (): Promise<GitRepositoryView> =>
+      options.repository ?? {
+        status: "not-repository",
+        workspaceId: workspace.id,
+        checkedAt: 1_786_086_000,
+      }
+    );
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
     developerMode: false,
@@ -1453,12 +1592,15 @@ function installApi(options: {
       discoverModels: vi.fn(async () => provider.recommendedModels),
     },
     workspaces: {
-      list: vi.fn(async () => [workspace]),
+      list: vi.fn(async () => allWorkspaces),
       open: vi.fn(async () => workspace),
       remove: vi.fn(async () => undefined),
     },
+    git: {
+      get: getRepository,
+    },
     sessions: {
-      list: vi.fn(async () => [session]),
+      list: vi.fn(async () => allSessions),
       create: vi.fn(async () => session),
       get: getSession,
       rename: vi.fn(async (_sessionId, title) => ({ ...session, title })),
@@ -1514,6 +1656,7 @@ function installApi(options: {
     respondPermission,
     respondExtensionUi,
     getSession,
+    getRepository,
     saveSettings,
     saveProvider,
     setDefaultProvider,
@@ -1552,6 +1695,63 @@ function sampleAutomation(): AutomationView {
     createdAt: "2026-06-20T00:00:00.000Z",
     updatedAt: "2026-06-20T00:00:00.000Z",
     nextRunAt: "2026-06-20T01:00:00.000Z",
+  };
+}
+
+function sampleGitRepository(): Extract<GitRepositoryView, { status: "ready" }> {
+  return {
+    status: "ready",
+    workspaceId: "workspace-1",
+    checkedAt: 1_786_086_000,
+    rootPath: "/tmp/project",
+    head: {
+      branch: "chore/code-optimization",
+      commit: "7316a95304ce2a41c10d53c052954f892f8b0b90",
+      detached: false,
+      unborn: false,
+    },
+    upstream: {
+      name: "origin/main",
+      ahead: 0,
+      behind: 0,
+      gone: false,
+    },
+    lastCommit: {
+      shortHash: "7316a95",
+      subject: "Merge pull request #22",
+      committedAt: 1_786_085_900,
+    },
+    changes: {
+      total: 0,
+      staged: 0,
+      modified: 0,
+      added: 0,
+      deleted: 0,
+      renamed: 0,
+      untracked: 0,
+      conflicted: 0,
+      files: [],
+    },
+    branches: {
+      local: [{
+        name: "chore/code-optimization",
+        kind: "local",
+        current: true,
+        commit: "7316a95304ce2a41c10d53c052954f892f8b0b90",
+        upstream: "origin/main",
+        ahead: 0,
+        behind: 0,
+      }],
+      remote: [{
+        name: "origin/main",
+        kind: "remote",
+        current: false,
+        commit: "7316a95304ce2a41c10d53c052954f892f8b0b90",
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+      }],
+    },
   };
 }
 

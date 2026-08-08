@@ -2,14 +2,21 @@ import {
   defineTool,
   type AgentSession,
   type AgentSessionEvent,
+  type ContextUsage,
   type InlineExtension,
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import {
+  createId,
   createTurnId,
+  formatError,
+  readOptionalStringField,
+  readStringField,
+  toRecord,
   type AgentEvent,
   type AgentStopReason,
   type CommandExecutionMode,
+  type ContextUsageEvent,
   type ExtensionUiResponse,
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
@@ -37,28 +44,28 @@ import {
 import {
   createStoryForgeAgentSession,
   createStoryForgeSystemPrompt,
-} from "./create-storyforge-session";
+} from "../pi/create-storyforge-session";
 import {
   errorMessageFromPiMessages,
   normalizeModelRequestPayload,
   stopReasonFromPiMessages,
   toPiImageContent,
-} from "./event-mapper";
+} from "../pi/event-mapper";
 import { createRuntimeEnvironmentExtension } from "./runtime-environment";
-import type { PiModelService } from "./pi-model-service";
-import type { PiSessionAdapter } from "./pi-session-adapter";
+import type { PiModelService } from "../pi/pi-model-service";
+import type { PiSessionAdapter } from "../pi/pi-session-adapter";
 import {
   type SessionMetadataRecord,
   type SessionRepository,
   type SessionStatus,
-} from "./session-repository";
+} from "../persistence/session-repository";
 import type {
   StoryForgeMcpSource,
   StoryForgeSkillSource,
   StoryForgeWorkspaceStore,
-} from "./host";
-import { PiExtensionUiBridge } from "./pi-extension-ui";
-import { toSessionTasksFromPiTodoResult } from "./pi-todo-adapter";
+} from "../ports/host";
+import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
+import { toSessionTasksFromPiTodoResult } from "../pi/pi-todo-adapter";
 
 export type SkillInvocationResolver = StoryForgeSkillSource;
 
@@ -460,7 +467,7 @@ export class StoryForgeAgentHarness {
             type: "model.request",
             sessionId: input.session.id,
             turnId: input.turnId,
-            requestId: createModelRequestId(),
+            requestId: createId("model_request"),
             providerId: input.session.providerId,
             model: input.session.model,
             ...(environment ? { environment } : {}),
@@ -504,7 +511,7 @@ export class StoryForgeAgentHarness {
             type: "automation.proposal",
             sessionId: input.session.id,
             turnId: input.turnId,
-            proposalId: createAutomationProposalId(),
+            proposalId: createId("automation_proposal"),
             proposal: {
               kind: proposal.kind,
               name: proposal.name,
@@ -621,7 +628,7 @@ export class StoryForgeAgentHarness {
     };
     signal: AbortSignal;
   }): Promise<boolean> {
-    const requestId = createPermissionRequestId();
+    const requestId = createId("permission");
 
     return new Promise((resolve) => {
       let settled = false;
@@ -670,6 +677,7 @@ export class StoryForgeAgentHarness {
         turnId,
         createdAt: new Date().toISOString(),
       });
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "message_update") {
@@ -683,6 +691,10 @@ export class StoryForgeAgentHarness {
           delivery: "live",
         });
       }
+      return;
+    }
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "tool_execution_start") {
@@ -719,6 +731,11 @@ export class StoryForgeAgentHarness {
     if (event.type === "agent_end") {
       active.stopReason = stopReasonFromPiMessages(event.messages, active.controller.signal.aborted);
       active.errorMessage = errorMessageFromPiMessages(event.messages);
+      // PI notifies message_end listeners before persisting that message to its
+      // SessionManager. In particular, the first response after compaction can
+      // therefore report unknown usage at message_end. By agent_end the message
+      // has been persisted, so emit once more to publish the recovered usage.
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "compaction_end") {
@@ -735,6 +752,17 @@ export class StoryForgeAgentHarness {
     // PI extensions may continue the workflow after the model settles, for
     // example by asking whether a completed plan should be implemented. The
     // enclosing prompt/waitForIdle lifecycle owns the terminal event.
+  }
+
+  private emitContextUsage(active: ActiveTurn, turnId: TurnId): void {
+    const event = toContextUsageEvent({
+      sessionId: active.sessionId,
+      turnId,
+      usage: active.piSession?.getContextUsage(),
+    });
+    if (event) {
+      this.emitEvent(event);
+    }
   }
 
   private async syncTodoTasks(
@@ -887,25 +915,6 @@ function validateAutomationProposal(draft: AutomationProposalDraft) {
   };
 }
 
-function readStringField(input: unknown, field: string): string {
-  const value = toRecord(input)[field];
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`Expected non-empty string field: ${field}`);
-  }
-  return value.trim();
-}
-
-function readOptionalStringField(input: unknown, field: string): string | undefined {
-  const value = toRecord(input)[field];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
 function formatToolOutput(output: unknown): string {
   return typeof output === "string" ? output : JSON.stringify(output, null, 2);
 }
@@ -915,22 +924,32 @@ function deriveTitle(content: string): string {
   return firstLine.slice(0, 50) || "New session";
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function createPermissionRequestId(): string {
-  return `sf_permission_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
-
-function createAutomationProposalId(): string {
-  return `sf_automation_proposal_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
-
-function createModelRequestId(): string {
-  return `sf_model_request_${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-}
-
 function readEnvSecret(primary: string, fallback: string): string | undefined {
   return process.env[primary] || process.env[fallback] || undefined;
+}
+
+export function toContextUsageEvent(input: {
+  sessionId: SessionId;
+  turnId: TurnId;
+  usage: ContextUsage | undefined;
+}): ContextUsageEvent | undefined {
+  const { usage } = input;
+  if (
+    usage?.tokens === null
+    || usage === undefined
+    || !Number.isFinite(usage.tokens)
+    || !Number.isFinite(usage.contextWindow)
+    || usage.contextWindow <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    type: "context.usage",
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    usedTokens: Math.max(0, Math.round(usage.tokens)),
+    budgetTokens: Math.round(usage.contextWindow),
+    windowTokens: Math.round(usage.contextWindow),
+    source: "estimate",
+  };
 }

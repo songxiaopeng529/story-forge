@@ -1,3 +1,5 @@
+import { clampInteger } from "@story-forge/shared";
+
 export type WebProviderName = "tavily" | "serpapi";
 
 export type FetchLike = (
@@ -194,18 +196,6 @@ async function parseJsonObject(response: Response, providerLabel: string): Promi
 
 function readFetch(fetchImpl: FetchLike | undefined): FetchLike {
   return fetchImpl ?? globalThis.fetch.bind(globalThis);
-}
-
-function clampInteger(
-  value: number | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
-  if (!Number.isInteger(value)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Number(value)));
 }
 
 function readNestedString(record: Record<string, unknown>, path: string[]): string | undefined {

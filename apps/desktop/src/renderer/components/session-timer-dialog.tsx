@@ -14,7 +14,7 @@ import type {
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import { formatError } from "../renderer-utils";
+import { formatError } from "../utils/renderer-utils";
 
 export function SessionTimerDialog(props: {
   session: SessionView;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { PI_TODO_TOOL_NAME, resolvePiTodoExtensionPath } from "../../../extensions/src/todo/pi9-todo";
+import { PI_TODO_TOOL_NAME, resolvePiTodoExtensionPath } from "@story-forge/extensions";
 
 describe("PI todo integration", () => {
   it("loads @pi9/todo as a PI extension without a restricted Plan mode", async () => {

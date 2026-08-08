@@ -8,12 +8,13 @@ import type {
 } from "@story-forge/shared";
 import type { KeyboardEvent } from "react";
 import type {
+  GitRepositoryView,
   ImageAttachmentView,
   ProviderView,
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import type { AutomationProposalTimelineState } from "../timeline";
+import type { AutomationProposalTimelineState } from "../utils/timeline";
 import { AgentWorkspace } from "./agent-workspace";
 import { RunContextPanel, type RunStatus } from "./run-context-panel";
 import { SessionSidebar } from "./session-sidebar";
@@ -34,6 +35,8 @@ export type AgentLayoutProps = {
   selectedSessionProvider: ProviderView | undefined;
   selectedWorkspaceId: string | undefined;
   selectedSessionId: SessionId | undefined;
+  repository: GitRepositoryView | undefined;
+  repositoryLoading: boolean;
   activeTurns: Record<string, TurnId>;
   activities: AgentEvent[];
   automationProposals: AutomationProposalTimelineState[];
@@ -58,6 +61,7 @@ export type AgentLayoutProps = {
   onExpandContext: () => void;
   onCollapseSidebar: () => void;
   onCollapseContext: () => void;
+  onRefreshRepository: () => void;
   onOpenWorkspace: () => void;
   onCreateSession: (workspaceId: string) => void;
   onRemoveWorkspace: (workspaceId: string) => void;
@@ -94,6 +98,8 @@ export function AgentLayout(props: AgentLayoutProps) {
     selectedSessionProvider,
     selectedWorkspaceId,
     selectedSessionId,
+    repository,
+    repositoryLoading,
     activeTurns,
     activities,
     automationProposals,
@@ -116,12 +122,12 @@ export function AgentLayout(props: AgentLayoutProps) {
   } = props;
 
   const showSidebar = !sidebarCollapsed;
-  const showContextPanel = Boolean(selectedSession) && !contextCollapsed;
+  const showContextPanel = Boolean(selectedWorkspace) && !contextCollapsed;
 
   const gridTemplateColumns = [
     showSidebar ? "288px" : null,
     "1fr",
-    showContextPanel ? "292px" : null,
+    showContextPanel ? "304px" : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -164,7 +170,7 @@ export function AgentLayout(props: AgentLayoutProps) {
         activeTurnId={activeTurnId}
         navCollapsed={navCollapsed}
         sidebarCollapsed={sidebarCollapsed}
-        contextCollapsed={Boolean(selectedSession) && contextCollapsed}
+        contextCollapsed={Boolean(selectedWorkspace) && contextCollapsed}
         onExpandNav={props.onExpandNav}
         onExpandSidebar={props.onExpandSidebar}
         onExpandContext={props.onExpandContext}
@@ -193,16 +199,19 @@ export function AgentLayout(props: AgentLayoutProps) {
         onCreateAutomationProposal={props.onCreateAutomationProposal}
         onCancelAutomationProposal={props.onCancelAutomationProposal}
       />
-      {showContextPanel && selectedSession ? (
+      {showContextPanel ? (
         <RunContextPanel
           session={selectedSession}
           provider={selectedSessionProvider}
-          commandExecutionMode={commandExecutionMode}
           runtime={runtime}
           activities={activities}
           developerMode={developerMode}
+          workspacePath={selectedWorkspace?.path}
+          repository={repository}
+          repositoryLoading={repositoryLoading}
           onCollapse={props.onCollapseContext}
           onOpenInspector={props.onModelInspectorOpen}
+          onRefreshRepository={props.onRefreshRepository}
         />
       ) : null}
     </div>

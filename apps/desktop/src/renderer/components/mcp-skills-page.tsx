@@ -1,7 +1,7 @@
 import type { McpConfigView, McpServerView, SkillView } from "@story-forge/shared";
 import { Save, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatError } from "../renderer-utils";
+import { formatError } from "../utils/renderer-utils";
 
 type ExtensionTab = "skills" | "mcp";
 

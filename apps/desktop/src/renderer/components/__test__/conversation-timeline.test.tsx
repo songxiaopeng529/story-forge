@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ConversationTimeline } from "../conversation-timeline";
-import type { TimelineItem } from "../../timeline";
+import type { TimelineItem } from "../../utils/timeline";
 
 afterEach(() => {
   cleanup();

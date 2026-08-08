@@ -21,6 +21,7 @@ import { AutomationRepository } from "./automation-repository";
 import { AutomationScheduler } from "./automation-scheduler";
 import { AutomationService } from "./automation-service";
 import { loadStoryForgeDotEnv } from "./env-loader";
+import { GitRepositoryService } from "./git-repository-service";
 import { registerIpcHandlers } from "./ipc-handlers";
 import { McpConfigService } from "./mcp-config-service";
 import { ProviderService } from "./provider-service";
@@ -66,6 +67,9 @@ async function initializeApplication(): Promise<void> {
   const settingsStore = new AppSettingsStore({ rootDir });
   const piModels = new PiModelService({ rootDir });
   const workspaceRepository = new WorkspaceRepository({ rootDir });
+  const gitRepositoryService = new GitRepositoryService({
+    workspaces: workspaceRepository,
+  });
   await piModels.migrateLegacyCredentials({
     crypto: {
       isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
@@ -116,6 +120,7 @@ async function initializeApplication(): Promise<void> {
     ipc: ipcMain,
     providers: providerService,
     workspaces: workspaceRepository,
+    git: gitRepositoryService,
     sessions: sessionRepository,
     settings: settingsStore,
     coordinator,

@@ -2,8 +2,8 @@ import { Check, Clock3, FoldVertical, ListChecks, OctagonAlert, Sparkles } from 
 import type { ReactNode } from "react";
 import { code } from "@streamdown/code";
 import { Streamdown } from "streamdown";
-import type { TimelineItem } from "../timeline";
-import { useTypewriterText } from "../use-typewriter-text";
+import type { TimelineItem } from "../utils/timeline";
+import { useTypewriterText } from "../hooks/use-typewriter-text";
 
 export function ConversationTimeline(props: {
   items: TimelineItem[];

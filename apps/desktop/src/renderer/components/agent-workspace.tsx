@@ -37,8 +37,8 @@ import type {
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import { commandModeMeta } from "../command-mode-meta";
-import { buildTimeline, type AutomationProposalTimelineState } from "../timeline";
+import { commandModeMeta } from "../utils/command-mode-meta";
+import { buildTimeline, type AutomationProposalTimelineState } from "../utils/timeline";
 import { ConversationTimeline } from "./conversation-timeline";
 import { ModelRequestDrawer } from "./model-request-drawer";
 import { SessionTimerDialog } from "./session-timer-dialog";
@@ -542,10 +542,10 @@ export function AgentWorkspace(props: {
           ) : null}
           {props.contextCollapsed ? (
             <button
-              aria-label="Expand run context"
+              aria-label="Expand workspace context"
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
               onClick={props.onExpandContext}
-              title="Expand run context"
+              title="Expand workspace context"
               type="button"
             >
               <PanelRightOpen size={16} />

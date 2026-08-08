@@ -1,6 +1,6 @@
 import type { AgentEvent } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
-import { PiExtensionUiBridge } from "../pi-extension-ui";
+import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
 
 describe("PiExtensionUiBridge", () => {
   it("round-trips PI selection requests through StoryForge events", async () => {
