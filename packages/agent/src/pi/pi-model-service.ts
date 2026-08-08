@@ -7,8 +7,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { ProviderId, ProviderView } from "@story-forge/shared";
-import { writeJsonAtomic } from "./atomic-json";
-import { resolveStoryForgePaths } from "./storyforge-home";
+import { writeJsonAtomic } from "../persistence/atomic-json";
+import { resolveStoryForgePaths } from "../persistence/storyforge-home";
 import type { CreateStoryForgeAgentSessionInput } from "./create-storyforge-session";
 
 export type LegacyCredentialCrypto = {

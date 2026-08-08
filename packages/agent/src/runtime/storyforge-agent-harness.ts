@@ -2,6 +2,7 @@ import {
   defineTool,
   type AgentSession,
   type AgentSessionEvent,
+  type ContextUsage,
   type InlineExtension,
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -15,6 +16,7 @@ import {
   type AgentEvent,
   type AgentStopReason,
   type CommandExecutionMode,
+  type ContextUsageEvent,
   type ExtensionUiResponse,
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
@@ -42,28 +44,28 @@ import {
 import {
   createStoryForgeAgentSession,
   createStoryForgeSystemPrompt,
-} from "./create-storyforge-session";
+} from "../pi/create-storyforge-session";
 import {
   errorMessageFromPiMessages,
   normalizeModelRequestPayload,
   stopReasonFromPiMessages,
   toPiImageContent,
-} from "./event-mapper";
+} from "../pi/event-mapper";
 import { createRuntimeEnvironmentExtension } from "./runtime-environment";
-import type { PiModelService } from "./pi-model-service";
-import type { PiSessionAdapter } from "./pi-session-adapter";
+import type { PiModelService } from "../pi/pi-model-service";
+import type { PiSessionAdapter } from "../pi/pi-session-adapter";
 import {
   type SessionMetadataRecord,
   type SessionRepository,
   type SessionStatus,
-} from "./session-repository";
+} from "../persistence/session-repository";
 import type {
   StoryForgeMcpSource,
   StoryForgeSkillSource,
   StoryForgeWorkspaceStore,
-} from "./host";
-import { PiExtensionUiBridge } from "./pi-extension-ui";
-import { toSessionTasksFromPiTodoResult } from "./pi-todo-adapter";
+} from "../ports/host";
+import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
+import { toSessionTasksFromPiTodoResult } from "../pi/pi-todo-adapter";
 
 export type SkillInvocationResolver = StoryForgeSkillSource;
 
@@ -675,6 +677,7 @@ export class StoryForgeAgentHarness {
         turnId,
         createdAt: new Date().toISOString(),
       });
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "message_update") {
@@ -688,6 +691,10 @@ export class StoryForgeAgentHarness {
           delivery: "live",
         });
       }
+      return;
+    }
+    if (event.type === "message_end" && event.message.role === "assistant") {
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "tool_execution_start") {
@@ -724,6 +731,11 @@ export class StoryForgeAgentHarness {
     if (event.type === "agent_end") {
       active.stopReason = stopReasonFromPiMessages(event.messages, active.controller.signal.aborted);
       active.errorMessage = errorMessageFromPiMessages(event.messages);
+      // PI notifies message_end listeners before persisting that message to its
+      // SessionManager. In particular, the first response after compaction can
+      // therefore report unknown usage at message_end. By agent_end the message
+      // has been persisted, so emit once more to publish the recovered usage.
+      this.emitContextUsage(active, turnId);
       return;
     }
     if (event.type === "compaction_end") {
@@ -740,6 +752,17 @@ export class StoryForgeAgentHarness {
     // PI extensions may continue the workflow after the model settles, for
     // example by asking whether a completed plan should be implemented. The
     // enclosing prompt/waitForIdle lifecycle owns the terminal event.
+  }
+
+  private emitContextUsage(active: ActiveTurn, turnId: TurnId): void {
+    const event = toContextUsageEvent({
+      sessionId: active.sessionId,
+      turnId,
+      usage: active.piSession?.getContextUsage(),
+    });
+    if (event) {
+      this.emitEvent(event);
+    }
   }
 
   private async syncTodoTasks(
@@ -903,4 +926,30 @@ function deriveTitle(content: string): string {
 
 function readEnvSecret(primary: string, fallback: string): string | undefined {
   return process.env[primary] || process.env[fallback] || undefined;
+}
+
+export function toContextUsageEvent(input: {
+  sessionId: SessionId;
+  turnId: TurnId;
+  usage: ContextUsage | undefined;
+}): ContextUsageEvent | undefined {
+  const { usage } = input;
+  if (
+    usage?.tokens === null
+    || usage === undefined
+    || !Number.isFinite(usage.tokens)
+    || !Number.isFinite(usage.contextWindow)
+    || usage.contextWindow <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    type: "context.usage",
+    sessionId: input.sessionId,
+    turnId: input.turnId,
+    usedTokens: Math.max(0, Math.round(usage.tokens)),
+    budgetTokens: Math.round(usage.contextWindow),
+    windowTokens: Math.round(usage.contextWindow),
+    source: "estimate",
+  };
 }

@@ -1,8 +1,8 @@
 import { Check, Eye, EyeOff, Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
-import { getProviderIconUrl } from "../provider-icons";
-import { formatError } from "../renderer-utils";
+import { getProviderIconUrl } from "../utils/provider-icons";
+import { formatError } from "../utils/renderer-utils";
 
 const SAVED_API_KEY_MASK = "************";
 

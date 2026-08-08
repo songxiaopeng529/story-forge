@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   errorMessageFromPiMessages,
   normalizeModelRequestPayload,
-} from "../event-mapper";
+} from "./event-mapper";
 
 describe("normalizeModelRequestPayload", () => {
   it("materializes Anthropic system blocks and tool schemas for Inspector", () => {

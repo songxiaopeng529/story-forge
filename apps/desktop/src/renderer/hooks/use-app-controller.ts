@@ -12,16 +12,17 @@ import type {
 } from "@story-forge/shared";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
+  GitRepositoryView,
   ImageAttachmentView,
   PersistedMessageView,
   ProviderId,
   ProviderView,
   SessionView,
   WorkspaceView,
-} from "../shared/story-forge-api";
-import type { TurnRuntimeState } from "./components/agent-layout";
-import { formatError, upsertSession, upsertWorkspace } from "./renderer-utils";
-import type { AutomationProposalTimelineState } from "./timeline";
+} from "../../shared/story-forge-api";
+import type { TurnRuntimeState } from "../components/agent-layout";
+import { formatError, upsertSession, upsertWorkspace } from "../utils/renderer-utils";
+import type { AutomationProposalTimelineState } from "../utils/timeline";
 
 export type Page = "agent" | "models" | "extensions" | "automations" | "settings";
 
@@ -55,6 +56,8 @@ export type AppController = {
   setSelectedSessionId: (id: SessionId | undefined) => void;
   selectedProviderId: ProviderId;
   setSelectedProviderId: (id: ProviderId) => void;
+  gitRepository: GitRepositoryView | undefined;
+  gitRepositoryLoading: boolean;
 
   // derived
   selectedSession: SessionView | undefined;
@@ -117,6 +120,7 @@ export type AppController = {
   removeWorkspace: (workspaceId: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => void;
   selectSession: (sessionId: SessionId, workspaceId: string) => void;
+  refreshGitRepository: (workspaceId?: string, showLoading?: boolean) => Promise<void>;
 };
 
 export function useAppController(): AppController {
@@ -154,12 +158,19 @@ export function useAppController(): AppController {
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextCollapsed, setContextCollapsed] = useState(false);
+  const [gitRepository, setGitRepository] = useState<GitRepositoryView>();
+  const [gitRepositoryLoading, setGitRepositoryLoading] = useState(false);
   const composingRef = useRef(false);
+  const selectedWorkspaceIdRef = useRef<string | undefined>(undefined);
+  const gitMountedRef = useRef(true);
+  const gitRequestsRef = useRef(new Map<string, Promise<void>>());
   const persistedDeveloperModeRef = useRef(false);
   const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const persistedWebAccessEnabledRef = useRef(false);
   const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
   const settingsSaveInFlightRef = useRef(false);
+
+  selectedWorkspaceIdRef.current = selectedWorkspaceId;
 
   const selectedSession = sessions.find((session) => session.id === selectedSessionId);
   const selectedWorkspace = workspaces.find(
@@ -196,6 +207,7 @@ export function useAppController(): AppController {
   const sessionTurnRuntime = selectedSessionId ? turnRuntimes[selectedSessionId] : undefined;
 
   useEffect(() => {
+    gitMountedRef.current = true;
     let disposed = false;
     const unsubscribe = window.storyForge.turns.onEvent((event) => {
       if (disposed) {
@@ -230,7 +242,7 @@ export function useAppController(): AppController {
           };
         });
       }
-      if (event.type === "tool.call" || event.type === "model.request") {
+      if (event.type === "tool.call") {
         setTurnRuntimes((current) => {
           const existing = current[event.sessionId];
           if (!existing || existing.turnId !== event.turnId || existing.endedAt) {
@@ -311,6 +323,7 @@ export function useAppController(): AppController {
           };
         });
         void refreshSession(event.sessionId);
+        void refreshGitRepository(selectedWorkspaceIdRef.current);
       }
     });
 
@@ -366,6 +379,7 @@ export function useAppController(): AppController {
 
     return () => {
       disposed = true;
+      gitMountedRef.current = false;
       unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -375,12 +389,119 @@ export function useAppController(): AppController {
     setImageAttachments([]);
   }, [selectedSessionId]);
 
+  useEffect(() => {
+    if (!selectedWorkspaceId) {
+      setGitRepository(undefined);
+      setGitRepositoryLoading(false);
+      return;
+    }
+
+    setGitRepository((current) =>
+      current?.workspaceId === selectedWorkspaceId ? current : undefined
+    );
+    if (page !== "agent" || contextCollapsed) {
+      setGitRepositoryLoading(false);
+      return;
+    }
+
+    let stopped = false;
+    let timeoutId: number | undefined;
+    const scheduleNext = () => {
+      if (stopped) {
+        return;
+      }
+      timeoutId = window.setTimeout(() => {
+        const refresh = document.visibilityState === "visible"
+          ? refreshGitRepository(selectedWorkspaceId)
+          : Promise.resolve();
+        void refresh.finally(scheduleNext);
+      }, 3_000);
+    };
+    void refreshGitRepository(selectedWorkspaceId, true).finally(scheduleNext);
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        void refreshGitRepository(selectedWorkspaceId);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      stopped = true;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      window.removeEventListener("focus", handleFocus);
+    };
+  // The refresh function deliberately uses refs and same-workspace requests are coalesced.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextCollapsed, page, selectedWorkspaceId]);
+
   async function refreshSession(sessionId: SessionId): Promise<void> {
     try {
       const session = await window.storyForge.sessions.get(sessionId);
       setSessions((current) => upsertSession(current, session));
     } catch (refreshError) {
       setError(formatError(refreshError));
+    }
+  }
+
+  async function refreshGitRepository(
+    workspaceId = selectedWorkspaceIdRef.current,
+    showLoading = false,
+  ): Promise<void> {
+    if (!workspaceId) {
+      return;
+    }
+    const existingRequest = gitRequestsRef.current.get(workspaceId);
+    if (existingRequest) {
+      if (showLoading && workspaceId === selectedWorkspaceIdRef.current) {
+        setGitRepositoryLoading(true);
+      }
+      return existingRequest;
+    }
+    if (showLoading) {
+      setGitRepositoryLoading(true);
+    }
+    const request = (async () => {
+      try {
+        const next = await window.storyForge.git.get(workspaceId);
+        if (
+          !gitMountedRef.current
+          || workspaceId !== selectedWorkspaceIdRef.current
+        ) {
+          return;
+        }
+        setGitRepository((current) =>
+          gitRepositoryContentKey(current) === gitRepositoryContentKey(next) ? current : next
+        );
+      } catch (repositoryError) {
+        if (
+          !gitMountedRef.current
+          || workspaceId !== selectedWorkspaceIdRef.current
+        ) {
+          return;
+        }
+        setGitRepository({
+          status: "unavailable",
+          workspaceId,
+          checkedAt: Math.floor(Date.now() / 1_000),
+          message: formatError(repositoryError),
+        });
+      } finally {
+        if (
+          gitMountedRef.current
+          && workspaceId === selectedWorkspaceIdRef.current
+        ) {
+          setGitRepositoryLoading(false);
+        }
+      }
+    })();
+    gitRequestsRef.current.set(workspaceId, request);
+    try {
+      await request;
+    } finally {
+      if (gitRequestsRef.current.get(workspaceId) === request) {
+        gitRequestsRef.current.delete(workspaceId);
+      }
     }
   }
 
@@ -857,6 +978,8 @@ export function useAppController(): AppController {
     setSelectedSessionId,
     selectedProviderId,
     setSelectedProviderId,
+    gitRepository: gitRepository?.workspaceId === selectedWorkspaceId ? gitRepository : undefined,
+    gitRepositoryLoading,
 
     // derived
     selectedSession,
@@ -919,5 +1042,13 @@ export function useAppController(): AppController {
     removeWorkspace,
     selectWorkspace,
     selectSession,
+    refreshGitRepository,
   };
+}
+
+function gitRepositoryContentKey(repository: GitRepositoryView | undefined): string {
+  if (!repository) {
+    return "";
+  }
+  return JSON.stringify({ ...repository, checkedAt: 0 });
 }

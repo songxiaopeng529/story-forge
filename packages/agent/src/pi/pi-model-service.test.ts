@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PiModelService } from "../pi-model-service";
+import { PiModelService } from "./pi-model-service";
 
 describe("PiModelService", () => {
   it("registers the StoryForge-managed Volcano Engine provider", async () => {

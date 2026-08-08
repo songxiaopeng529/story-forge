@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PiModelService } from "@story-forge/agent";
-import { hasProviderIcon } from "../provider-icons";
+import { hasProviderIcon } from "../utils/provider-icons";
 
 describe("provider icons", () => {
   it("maps every current PI provider to a Lobe icon", async () => {

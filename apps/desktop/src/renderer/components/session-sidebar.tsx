@@ -2,7 +2,7 @@ import type { CommandExecutionMode, SessionId, TurnId } from "@story-forge/share
 import { Folder, FolderOpen, PanelLeftClose, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionView, WorkspaceView } from "../../shared/story-forge-api";
-import { commandModeMeta } from "../command-mode-meta";
+import { commandModeMeta } from "../utils/command-mode-meta";
 
 export function SessionSidebar(props: {
   workspaces: WorkspaceView[];

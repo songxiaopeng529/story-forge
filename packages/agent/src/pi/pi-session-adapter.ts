@@ -11,10 +11,10 @@ import type {
   PiSessionReferences,
   SessionMetadataRecord,
   SessionPiAdapter,
-} from "./session-repository";
-import type { StoryForgeWorkspaceStore } from "./host";
+} from "../persistence/session-repository";
+import { resolveStoryForgePaths } from "../persistence/storyforge-home";
+import type { StoryForgeWorkspaceStore } from "../ports/host";
 import type { PiModelService } from "./pi-model-service";
-import { resolveStoryForgePaths } from "./storyforge-home";
 
 type PiTextContent = { type: "text"; text: string };
 type PiImageContent = { type: "image"; data: string; mimeType: string };

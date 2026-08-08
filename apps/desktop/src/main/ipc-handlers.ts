@@ -4,6 +4,7 @@ import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import type { AgentCoordinator, SessionRepository } from "@story-forge/agent";
 import type { AppSettingsStore } from "./app-settings-store";
+import type { GitRepositoryService } from "./git-repository-service";
 import type { McpConfigService } from "./mcp-config-service";
 import type { ProviderService } from "./provider-service";
 import type { SkillService } from "./skill-service";
@@ -33,6 +34,7 @@ export type IpcHandlerOptions = {
   ipc: IpcRegistrar;
   providers: ProviderService;
   workspaces: WorkspaceRepository;
+  git: Pick<GitRepositoryService, "get">;
   sessions: SessionRepository;
   settings: AppSettingsStore;
   coordinator: AgentCoordinator;
@@ -195,6 +197,9 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   });
   handle(options.ipc, IPC_CHANNELS.workspacesRemove, workspaceIdSchema, (workspaceId) =>
     options.workspaces.remove(workspaceId)
+  );
+  handle(options.ipc, IPC_CHANNELS.gitGet, workspaceIdSchema, (workspaceId) =>
+    options.git.get(workspaceId)
   );
   handle(
     options.ipc,

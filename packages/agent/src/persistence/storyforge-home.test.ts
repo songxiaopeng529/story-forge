@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   migrateLegacyStoryForgeHome,
   resolveStoryForgePaths,
-} from "../storyforge-home";
+} from "./storyforge-home";
 
 describe("StoryForge home", () => {
   it("resolves the default and configured StoryForge home", () => {

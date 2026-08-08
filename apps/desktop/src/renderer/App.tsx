@@ -2,7 +2,7 @@ import { PageRouter } from "./components/page-router";
 import { PermissionRequestPrompt } from "./components/permission-request-prompt";
 import { ExtensionUiPrompt } from "./components/extension-ui-prompt";
 import { PrimaryNavigation } from "./components/primary-navigation";
-import { useAppController } from "./use-app-controller";
+import { useAppController } from "./hooks/use-app-controller";
 
 export function App() {
   const c = useAppController();
@@ -59,6 +59,8 @@ export function App() {
           selectedSessionProvider: c.selectedSessionProvider,
           selectedWorkspaceId: c.selectedWorkspaceId,
           selectedSessionId: c.selectedSessionId,
+          repository: c.gitRepository,
+          repositoryLoading: c.gitRepositoryLoading,
           activeTurns: c.activeTurns,
           activities: c.activities,
           automationProposals: c.automationProposals,
@@ -83,6 +85,7 @@ export function App() {
           onExpandContext: () => c.setContextCollapsed(false),
           onCollapseSidebar: () => c.setSidebarCollapsed(true),
           onCollapseContext: () => c.setContextCollapsed(true),
+          onRefreshRepository: () => void c.refreshGitRepository(undefined, true),
           onOpenWorkspace: () => void c.openWorkspace(),
           onCreateSession: (workspaceId) => void c.createSession(workspaceId),
           onRemoveWorkspace: (workspaceId) => void c.removeWorkspace(workspaceId),

@@ -37,6 +37,7 @@ export const IPC_CHANNELS = {
   workspacesList: "story-forge:workspaces:list",
   workspacesOpen: "story-forge:workspaces:open",
   workspacesRemove: "story-forge:workspaces:remove",
+  gitGet: "story-forge:git:get",
   sessionsList: "story-forge:sessions:list",
   sessionsCreate: "story-forge:sessions:create",
   sessionsGet: "story-forge:sessions:get",
@@ -72,6 +73,87 @@ export type WorkspaceView = {
   createdAt: string;
   lastOpenedAt: string;
 };
+
+export type GitFileStatusView =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "copied"
+  | "type-changed"
+  | "unmerged";
+
+export type GitChangedFileView = {
+  path: string;
+  originalPath: string | null;
+  indexStatus: GitFileStatusView | null;
+  worktreeStatus: GitFileStatusView | null;
+  untracked: boolean;
+  conflicted: boolean;
+};
+
+export type GitBranchView = {
+  name: string;
+  kind: "local" | "remote";
+  current: boolean;
+  commit: string;
+  upstream: string | null;
+  ahead: number | null;
+  behind: number | null;
+};
+
+export type GitRepositoryReadyView = {
+  status: "ready";
+  workspaceId: string;
+  checkedAt: number;
+  rootPath: string;
+  head: {
+    branch: string | null;
+    commit: string | null;
+    detached: boolean;
+    unborn: boolean;
+  };
+  upstream: {
+    name: string;
+    ahead: number;
+    behind: number;
+    gone: boolean;
+  } | null;
+  lastCommit: {
+    shortHash: string;
+    subject: string;
+    committedAt: number;
+  } | null;
+  changes: {
+    total: number;
+    staged: number;
+    modified: number;
+    added: number;
+    deleted: number;
+    renamed: number;
+    untracked: number;
+    conflicted: number;
+    files: GitChangedFileView[];
+  };
+  branches: {
+    local: GitBranchView[];
+    remote: GitBranchView[];
+  };
+};
+
+export type GitRepositoryView =
+  | GitRepositoryReadyView
+  | {
+      status: "not-repository";
+      workspaceId: string;
+      checkedAt: number;
+    }
+  | {
+      status: "unavailable";
+      workspaceId: string;
+      checkedAt: number;
+      message: string;
+    };
 
 export type PersistedMessageView =
   | {
@@ -146,6 +228,9 @@ export type StoryForgeApi = {
     list(): Promise<WorkspaceView[]>;
     open(): Promise<WorkspaceView | undefined>;
     remove(workspaceId: string): Promise<void>;
+  };
+  git: {
+    get(workspaceId: string): Promise<GitRepositoryView>;
   };
   sessions: {
     list(workspaceId?: string): Promise<SessionView[]>;

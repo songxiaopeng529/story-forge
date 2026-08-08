@@ -1,5 +1,5 @@
 import { formatError } from "@story-forge/shared";
-import type { SessionView, WorkspaceView } from "../shared/story-forge-api";
+import type { SessionView, WorkspaceView } from "../../shared/story-forge-api";
 
 export { formatError };
 

@@ -1,7 +1,10 @@
 // @vitest-environment node
 
 import { describe, expect, it, vi } from "vitest";
-import { IPC_CHANNELS } from "../../shared/story-forge-api";
+import {
+  IPC_CHANNELS,
+  type GitRepositoryView,
+} from "../../shared/story-forge-api";
 import type { AgentCoordinator } from "../agent-coordinator";
 import type { AppSettingsStore } from "../app-settings-store";
 import { registerIpcHandlers, type IpcRegistrar } from "../ipc-handlers";
@@ -21,6 +24,7 @@ describe("registerIpcHandlers", () => {
     expect(fixture.handlers.has(IPC_CHANNELS.automationsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.skillsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.mcpGet)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.gitGet)).toBe(true);
     await expect(
       fixture.invoke(IPC_CHANNELS.turnsStart, {
         sessionId: "invalid",
@@ -59,6 +63,25 @@ describe("registerIpcHandlers", () => {
     await expect(
       fixture.invoke(IPC_CHANNELS.providersSetDefault, "deepseek"),
     ).rejects.toThrow("Invalid IPC payload");
+  });
+
+  it("returns Git repository state and validates the workspace id", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(
+      fixture.invoke(IPC_CHANNELS.gitGet, "workspace-1"),
+    ).resolves.toMatchObject({
+      status: "ready",
+      workspaceId: "workspace-1",
+      head: { branch: "main" },
+    });
+    expect(fixture.getGit).toHaveBeenCalledWith("workspace-1");
+
+    await expect(
+      fixture.invoke(IPC_CHANNELS.gitGet, ""),
+    ).rejects.toThrow("Invalid IPC payload");
+    expect(fixture.getGit).toHaveBeenCalledTimes(1);
   });
 
   it("registers Skills and MCP APIs with payload validation", async () => {
@@ -316,6 +339,52 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     ...input,
   }));
   const setDefaultProvider = vi.fn();
+  const getGit = vi.fn(async (workspaceId: string): Promise<GitRepositoryView> => ({
+    status: "ready",
+    workspaceId,
+    checkedAt: 1_786_032_000,
+    rootPath: "/workspace/story-forge",
+    head: {
+      branch: "main",
+      commit: "7316a95304ce2a41c10d53c052954f892f8b0b90",
+      detached: false,
+      unborn: false,
+    },
+    upstream: {
+      name: "origin/main",
+      ahead: 0,
+      behind: 0,
+      gone: false,
+    },
+    lastCommit: {
+      shortHash: "7316a95",
+      subject: "Merge pull request #22",
+      committedAt: 1_786_031_900,
+    },
+    changes: {
+      total: 0,
+      staged: 0,
+      modified: 0,
+      added: 0,
+      deleted: 0,
+      renamed: 0,
+      untracked: 0,
+      conflicted: 0,
+      files: [],
+    },
+    branches: {
+      local: [{
+        name: "main",
+        kind: "local",
+        current: true,
+        commit: "7316a95304ce2a41c10d53c052954f892f8b0b90",
+        upstream: "origin/main",
+        ahead: 0,
+        behind: 0,
+      }],
+      remote: [],
+    },
+  }));
   const providers = {
     list: vi.fn(async () => options.providers ?? [{
       providerId: "deepseek",
@@ -340,6 +409,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     open: vi.fn(),
     remove: vi.fn(),
   } as unknown as WorkspaceRepository;
+  const git = { get: getGit };
   const sessions = {
     list: vi.fn(),
     create: createSession,
@@ -471,12 +541,14 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     start,
     createSession,
     setDefaultProvider,
+    getGit,
     respondToPermission: coordinator.respondToPermission,
     respondToExtensionUi: coordinator.respondToExtensionUi,
     options: {
       ipc,
       providers,
       workspaces,
+      git,
       sessions,
       settings,
       coordinator,

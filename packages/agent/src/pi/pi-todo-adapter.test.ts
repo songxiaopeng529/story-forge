@@ -1,6 +1,6 @@
 import type { SessionTask, TurnId } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
-import { toSessionTasksFromPiTodoResult } from "../pi-todo-adapter";
+import { toSessionTasksFromPiTodoResult } from "./pi-todo-adapter";
 
 describe("PI todo adapter", () => {
   it("flattens phased todo state into stable StoryForge tasks", () => {

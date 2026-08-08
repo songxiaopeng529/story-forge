@@ -30,6 +30,9 @@ const api = {
     remove: (workspaceId) =>
       ipcRenderer.invoke(IPC_CHANNELS.workspacesRemove, workspaceId),
   },
+  git: {
+    get: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.gitGet, workspaceId),
+  },
   sessions: {
     list: (workspaceId) =>
       ipcRenderer.invoke(IPC_CHANNELS.sessionsList, {

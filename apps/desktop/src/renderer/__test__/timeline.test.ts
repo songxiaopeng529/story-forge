@@ -3,7 +3,7 @@
 import type { AgentEvent } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
 import type { PersistedMessageView, SessionView } from "../../shared/story-forge-api";
-import { buildTimeline } from "../timeline";
+import { buildTimeline } from "../utils/timeline";
 
 const userMessage: PersistedMessageView = {
   id: "message-user",
