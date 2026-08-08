@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   StoryForgeAgentHarness,
   toContextUsageEvent,
-} from "./storyforge-agent-harness";
+} from "../runtime/storyforge-agent-harness";
 import type { SessionRepository } from "../persistence/session-repository";
 import type { PiModelService } from "../pi/pi-model-service";
 import type { PiSessionAdapter } from "../pi/pi-session-adapter";

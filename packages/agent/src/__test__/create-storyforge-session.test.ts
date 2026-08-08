@@ -12,8 +12,8 @@ import { PI_TODO_TOOL_NAME, resolvePiTodoExtensionPath } from "@story-forge/exte
 import {
   createStoryForgeAgentSession,
   createStoryForgeSystemPrompt,
-} from "./create-storyforge-session";
-import { PiExtensionUiBridge } from "./pi-extension-ui";
+} from "../pi/create-storyforge-session";
+import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
 
 describe("createStoryForgeAgentSession", () => {
   it("loads StoryForge skills and exposes PI, StoryForge, and MCP tools", async () => {
