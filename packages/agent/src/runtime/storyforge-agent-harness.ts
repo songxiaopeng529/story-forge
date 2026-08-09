@@ -18,6 +18,8 @@ import {
   type CommandExecutionMode,
   type ContextUsageEvent,
   type ExtensionUiResponse,
+  type HumanInputRequestPayload,
+  type HumanInputResponse,
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
   type SessionId,
@@ -29,6 +31,7 @@ import {
   checkWorkspaceToolCall,
   createAutomationProposalTool,
   createCurrentTimeTool,
+  createHumanInputTool,
   createWebTools,
   NodeMcpToolSession,
   parseShellCommandForPolicy,
@@ -38,6 +41,7 @@ import {
   type RuntimeClock,
   type RuntimeTimezoneResolver,
   type AutomationProposalDraft,
+  type HumanInputToolResponse,
   type ToolDefinition as StoryForgeToolDefinition,
   validateSchedule,
 } from "@story-forge/extensions";
@@ -105,6 +109,12 @@ type TurnSettings = {
   webSearchCoverage: WebSearchCoverage;
 };
 
+type PendingHumanInputRequest = {
+  turnId: TurnId;
+  resolve(response: HumanInputToolResponse): void;
+  cancel(): void;
+};
+
 const PERMISSION_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
 const PI_TODO_EXTENSION_PATH = resolvePiTodoExtensionPath();
 export class StoryForgeAgentHarness {
@@ -124,6 +134,7 @@ export class StoryForgeAgentHarness {
   private readonly extensionUi: PiExtensionUiBridge;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
   private readonly pendingPermissions = new Map<string, (approved: boolean) => void>();
+  private readonly pendingHumanInputs = new Map<string, PendingHumanInputRequest>();
   private readonly reservedSessions = new Set<SessionId>();
   private readonly turnPromises = new Map<TurnId, Promise<void>>();
   private readonly piSessionCleanups = new WeakMap<AgentSession, () => void>();
@@ -187,6 +198,7 @@ export class StoryForgeAgentHarness {
         prompt: input.prompt,
         imageAttachments,
       }).finally(() => {
+        this.cancelHumanInputTurn(turnId);
         this.extensionUi.cancelTurn(turnId);
         active.unsubscribe?.();
         this.disposePiSession(active.piSession);
@@ -229,6 +241,7 @@ export class StoryForgeAgentHarness {
   async stop(turnId: TurnId): Promise<void> {
     const active = this.activeTurns.get(turnId);
     active?.controller.abort();
+    this.cancelHumanInputTurn(turnId);
     this.extensionUi.cancelTurn(turnId);
     await active?.piSession?.abort();
   }
@@ -285,6 +298,14 @@ export class StoryForgeAgentHarness {
 
   respondToExtensionUi(input: ExtensionUiResponse): void {
     this.extensionUi.respond(input);
+  }
+
+  respondToHumanInput(input: HumanInputResponse): void {
+    const pending = this.pendingHumanInputs.get(input.requestId);
+    if (!pending) {
+      return;
+    }
+    pending.resolve(toHumanInputToolResponse(input));
   }
 
   private async executeTurn(input: {
@@ -376,6 +397,7 @@ export class StoryForgeAgentHarness {
         turnId: input.turnId,
         workspacePath: workspace.path,
         settings: input.settings,
+        signal: input.signal,
       }),
       ...mcpRuntime.tools.map(toPiToolDefinition),
     ];
@@ -487,6 +509,7 @@ export class StoryForgeAgentHarness {
     turnId: TurnId;
     workspacePath: string;
     settings: TurnSettings;
+    signal: AbortSignal;
   }): PiToolDefinition[] {
     const environmentTools = [
       createCurrentTimeTool({
@@ -530,7 +553,17 @@ export class StoryForgeAgentHarness {
         },
       }),
     ];
-    return [...environmentTools, ...webTools, ...automationTools]
+    const humanInputTools = [
+      createHumanInputTool({
+        request: (request, context) => this.requestHumanInput({
+          sessionId: input.session.id,
+          turnId: input.turnId,
+          request,
+          signal: context.signal ?? input.signal,
+        }),
+      }),
+    ];
+    return [...environmentTools, ...webTools, ...automationTools, ...humanInputTools]
       .map(toPiToolDefinition);
   }
 
@@ -662,6 +695,54 @@ export class StoryForgeAgentHarness {
         risk: input.request.risk,
       });
     });
+  }
+
+  private requestHumanInput(input: {
+    sessionId: SessionId;
+    turnId: TurnId;
+    request: HumanInputRequestPayload;
+    signal?: AbortSignal;
+  }): Promise<HumanInputToolResponse> {
+    const requestId = createId("human_input");
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (response: HumanInputToolResponse) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        input.signal?.removeEventListener("abort", cancel);
+        this.pendingHumanInputs.delete(requestId);
+        resolve(response);
+      };
+      const cancel = () => finish({ cancelled: true });
+      this.pendingHumanInputs.set(requestId, {
+        turnId: input.turnId,
+        resolve: finish,
+        cancel,
+      });
+      if (input.signal?.aborted) {
+        finish({ cancelled: true });
+        return;
+      }
+      input.signal?.addEventListener("abort", cancel, { once: true });
+      this.emitEvent({
+        type: "human.input.request",
+        sessionId: input.sessionId,
+        turnId: input.turnId,
+        requestId,
+        ...input.request,
+      });
+    });
+  }
+
+  private cancelHumanInputTurn(turnId: TurnId): void {
+    for (const pending of this.pendingHumanInputs.values()) {
+      if (pending.turnId === turnId) {
+        pending.cancel();
+      }
+    }
   }
 
   private mapPiEvent(input: {
@@ -886,6 +967,14 @@ function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
       };
     },
   });
+}
+
+function toHumanInputToolResponse(response: HumanInputResponse): HumanInputToolResponse {
+  return {
+    ...(response.cancelled !== undefined ? { cancelled: response.cancelled } : {}),
+    ...(response.answers ? { answers: response.answers } : {}),
+    ...(response.remark !== undefined ? { remark: response.remark } : {}),
+  };
 }
 
 function statusForStopReason(stopReason: AgentStopReason): SessionStatus {

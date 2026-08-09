@@ -2,6 +2,8 @@ import type {
   AgentEvent,
   AutomationView,
   CommandExecutionMode,
+  HumanInputRequestEvent,
+  HumanInputResponse,
   ModelRequestEvent,
   SkillView,
   TurnId,
@@ -49,6 +51,8 @@ export function AgentWorkspace(props: {
   session: SessionView | undefined;
   activities: AgentEvent[];
   automationProposals: AutomationProposalTimelineState[];
+  currentHumanInputRequest: HumanInputRequestEvent | undefined;
+  humanInputResponding: boolean;
   modelRequests: ModelRequestEvent[];
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
@@ -86,6 +90,7 @@ export function AgentWorkspace(props: {
   onError: (error: string | undefined) => void;
   onCreateAutomationProposal: (proposalId: string) => void;
   onCancelAutomationProposal: (proposalId: string) => void;
+  onHumanInputRespond: (response: Omit<HumanInputResponse, "requestId">) => void;
 }) {
   const [title, setTitle] = useState("");
   const [timerDialogOpen, setTimerDialogOpen] = useState(false);
@@ -102,6 +107,8 @@ export function AgentWorkspace(props: {
     activities: props.activities,
     activeTurnId: props.activeTurnId,
     automationProposals: props.automationProposals,
+    ...(props.currentHumanInputRequest ? { humanInputRequest: props.currentHumanInputRequest } : {}),
+    humanInputResponding: props.humanInputResponding,
   });
   const timelineFingerprint = timelineItems.map((item) => {
     if (item.type === "assistant-message") {
@@ -575,6 +582,7 @@ export function AgentWorkspace(props: {
                 startedAt={props.session.createdAt}
                 onCancelAutomationProposal={props.onCancelAutomationProposal}
                 onCreateAutomationProposal={props.onCreateAutomationProposal}
+                onHumanInputRespond={props.onHumanInputRespond}
               />
             )}
             {props.session && props.compacting ? (

@@ -106,6 +106,8 @@ Run the StoryForge review checklist.
     expect(prompt).toContain("- bash:");
     expect(prompt).not.toContain("Pi documentation");
     expect(prompt).toContain("transient environment context");
+    expect(prompt).toContain("call ask_user to ask focused clarification questions");
+    expect(prompt).toContain("Use ask_user for decisions only the user can make");
     expect(prompt).not.toContain("<current_date>");
   });
 

@@ -144,6 +144,62 @@ export type ExtensionWidgetEvent = {
   lines?: string[];
 };
 
+export type HumanInputQuestionType = "single_select" | "multi_select" | "text";
+
+export type HumanInputOption = {
+  id: string;
+  label: string;
+  description?: string;
+};
+
+export type HumanInputQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  type: HumanInputQuestionType;
+  options?: HumanInputOption[];
+  allowOther?: boolean;
+  required?: boolean;
+};
+
+export type HumanInputRemark = {
+  enabled: boolean;
+  label?: string;
+  placeholder?: string;
+  required?: boolean;
+};
+
+export type HumanInputRequestPayload = {
+  title: string;
+  description?: string;
+  questions: HumanInputQuestion[];
+  remark?: HumanInputRemark;
+};
+
+export type HumanInputRequestEvent = HumanInputRequestPayload & {
+  type: "human.input.request";
+  sessionId: SessionId;
+  turnId: TurnId;
+  requestId: string;
+};
+
+export type HumanInputAnswer = {
+  id: string;
+  header: string;
+  question: string;
+  type: HumanInputQuestionType;
+  selectedOptionIds?: string[];
+  selectedLabels?: string[];
+  text?: string;
+};
+
+export type HumanInputResponse = {
+  requestId: string;
+  cancelled?: boolean;
+  answers?: HumanInputAnswer[];
+  remark?: string;
+};
+
 export type ResponseFallbackEvent = {
   type: "response.fallback";
   sessionId: SessionId;
@@ -245,6 +301,7 @@ export type AgentEvent =
   | ExtensionNotificationEvent
   | ExtensionStatusEvent
   | ExtensionWidgetEvent
+  | HumanInputRequestEvent
   | ResponseFallbackEvent
   | ModelRequestEvent
   | ContextUsageEvent

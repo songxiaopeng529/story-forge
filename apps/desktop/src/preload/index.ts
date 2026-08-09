@@ -66,6 +66,9 @@ const api = {
   extensionUi: {
     respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.extensionUiRespond, input),
   },
+  humanInput: {
+    respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.humanInputRespond, input),
+  },
   automations: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.automationsList),
     getRuns: (automationId) =>

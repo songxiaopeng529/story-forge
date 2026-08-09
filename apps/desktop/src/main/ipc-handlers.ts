@@ -1,4 +1,4 @@
-import type { SessionId, TurnId } from "@story-forge/shared";
+import type { HumanInputResponse, SessionId, TurnId } from "@story-forge/shared";
 import type { ProviderId } from "../shared/story-forge-api";
 import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
@@ -74,6 +74,21 @@ const permissionResponseSchema = z.object({
   requestId: z.string().min(1),
   approved: z.boolean(),
 });
+const humanInputAnswerSchema = z.object({
+  id: z.string().min(1),
+  header: z.string().min(1),
+  question: z.string().min(1),
+  type: z.enum(["single_select", "multi_select", "text"]),
+  selectedOptionIds: z.array(z.string().min(1)).optional(),
+  selectedLabels: z.array(z.string().min(1)).optional(),
+  text: z.string().optional(),
+}).strict();
+const humanInputResponseSchema = z.object({
+  requestId: z.string().min(1),
+  cancelled: z.boolean().optional(),
+  answers: z.array(humanInputAnswerSchema).optional(),
+  remark: z.string().optional(),
+}).strict();
 const skillIdSchema = z.string().min(1);
 const skillEnabledSchema = z.object({
   skillId: skillIdSchema,
@@ -284,6 +299,12 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
       ...(input.confirmed !== undefined ? { confirmed: input.confirmed } : {}),
     }),
   );
+  handle(
+    options.ipc,
+    IPC_CHANNELS.humanInputRespond,
+    humanInputResponseSchema,
+    (input) => options.coordinator.respondToHumanInput(toHumanInputResponse(input)),
+  );
   handle(options.ipc, IPC_CHANNELS.automationsList, z.undefined(), () =>
     options.automations.list()
   );
@@ -354,6 +375,27 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.mcpTestServer, mcpServerNameSchema, (name) =>
     options.mcp.testServer(name)
   );
+}
+
+function toHumanInputResponse(input: z.infer<typeof humanInputResponseSchema>): HumanInputResponse {
+  return {
+    requestId: input.requestId,
+    ...(input.cancelled !== undefined ? { cancelled: input.cancelled } : {}),
+    ...(input.answers !== undefined
+      ? {
+          answers: input.answers.map((answer) => ({
+            id: answer.id,
+            header: answer.header,
+            question: answer.question,
+            type: answer.type,
+            ...(answer.selectedOptionIds !== undefined ? { selectedOptionIds: answer.selectedOptionIds } : {}),
+            ...(answer.selectedLabels !== undefined ? { selectedLabels: answer.selectedLabels } : {}),
+            ...(answer.text !== undefined ? { text: answer.text } : {}),
+          })),
+        }
+      : {}),
+    ...(input.remark !== undefined ? { remark: input.remark } : {}),
+  };
 }
 
 function handle<Schema extends z.ZodType>(

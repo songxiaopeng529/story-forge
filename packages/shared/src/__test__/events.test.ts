@@ -5,6 +5,7 @@ import {
   createTurnId,
   isTerminalAgentEvent,
   type AgentEvent,
+  type HumanInputResponse,
   type SessionId,
   type TurnId,
 } from "../events";
@@ -95,6 +96,58 @@ const permissionRequestEvent = {
   risk: "high",
 } satisfies AgentEvent;
 
+const humanInputRequestEvent = {
+  type: "human.input.request",
+  sessionId,
+  turnId,
+  requestId: "human-input-1",
+  title: "Choose implementation scope",
+  description: "StoryForge needs your preference before editing files.",
+  questions: [
+    {
+      id: "scope",
+      header: "Scope",
+      question: "Which implementation scope should StoryForge use?",
+      type: "single_select",
+      options: [
+        { id: "minimal", label: "Minimal", description: "Touch only the requested files." },
+        { id: "full", label: "Full", description: "Include the full UI flow." },
+      ],
+      required: true,
+    },
+    {
+      id: "targets",
+      header: "Targets",
+      question: "Which targets should be included?",
+      type: "multi_select",
+      options: [
+        { id: "types", label: "Types" },
+        { id: "tests", label: "Tests" },
+      ],
+    },
+  ],
+  remark: {
+    enabled: true,
+    label: "Additional context",
+    placeholder: "Optional constraints",
+  },
+} satisfies AgentEvent;
+
+const humanInputResponse = {
+  requestId: "human-input-1",
+  answers: [
+    {
+      id: "scope",
+      header: "Scope",
+      question: "Which implementation scope should StoryForge use?",
+      type: "single_select",
+      selectedOptionIds: ["minimal"],
+      selectedLabels: ["Minimal"],
+    },
+  ],
+  remark: "Keep it narrow.",
+} satisfies HumanInputResponse;
+
 const modelRequestEvent = {
   type: "model.request",
   sessionId,
@@ -172,6 +225,7 @@ const agentEventFixtures = [
   toolCallEvent,
   toolResultEvent,
   permissionRequestEvent,
+  humanInputRequestEvent,
   modelRequestEvent,
   contextUsageEvent,
   contextCompactedEvent,
@@ -297,6 +351,12 @@ describe("AgentEvent", () => {
     expect(automationProposalEvent.proposal.cron).toBe("0 9 * * *");
     expect(automationProposalEvent.proposal.kind).toBe("scheduled_chat");
     expect(isTerminalAgentEvent(automationProposalEvent)).toBe(false);
+  });
+
+  it("allows human input request events and responses without marking them terminal", () => {
+    expect(humanInputRequestEvent.questions[0]?.type).toBe("single_select");
+    expect(humanInputResponse.answers?.[0]?.selectedOptionIds).toEqual(["minimal"]);
+    expect(isTerminalAgentEvent(humanInputRequestEvent)).toBe(false);
   });
 });
 

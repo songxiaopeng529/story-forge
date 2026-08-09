@@ -64,6 +64,8 @@ export function App() {
           activeTurns: c.activeTurns,
           activities: c.activities,
           automationProposals: c.automationProposals,
+          currentHumanInputRequest: c.currentHumanInputRequest,
+          humanInputResponding: c.humanInputResponding,
           modelRequests: c.modelRequests,
           runtime: c.turnRuntime,
           activeTurnId: c.activeTurnId,
@@ -112,6 +114,7 @@ export function App() {
           onCreateAutomationProposal: (proposalId) =>
             void c.createAutomationFromProposal(proposalId),
           onCancelAutomationProposal: c.cancelAutomationProposal,
+          onHumanInputRespond: (response) => void c.respondToHumanInput(response),
         }}
       />
       {c.currentPermissionRequest ? (

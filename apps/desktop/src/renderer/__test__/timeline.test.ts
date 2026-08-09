@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import type { AgentEvent } from "@story-forge/shared";
+import type { AgentEvent, HumanInputRequestEvent } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
 import type { PersistedMessageView, SessionView } from "../../shared/story-forge-api";
 import { buildTimeline } from "../utils/timeline";
@@ -257,6 +257,71 @@ describe("buildTimeline", () => {
       proposalId: "automation-proposal-1",
       status: "pending",
     }));
+  });
+
+  it("renders a pending human input request as a timeline item", () => {
+    const humanInputRequest = {
+      type: "human.input.request",
+      sessionId: "sf_session_test",
+      turnId: "sf_turn_active",
+      requestId: "human_input_1",
+      title: "Choose implementation scope",
+      questions: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which scope?",
+          type: "single_select",
+          options: [
+            { id: "minimal", label: "Minimal" },
+            { id: "full", label: "Full" },
+          ],
+        },
+      ],
+    } satisfies HumanInputRequestEvent;
+    const items = buildTimeline({
+      session: baseSession,
+      activities: [],
+      activeTurnId: "sf_turn_active",
+      humanInputRequest,
+      humanInputResponding: true,
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({
+      type: "human-input",
+      id: "human-input-sf_turn_active-human_input_1",
+      request: humanInputRequest,
+      responding: true,
+    }));
+    expect(items.some((item) => item.type === "assistant-message" && item.content === "Thinking...")).toBe(false);
+  });
+
+  it("hides ask_user tool steps from the timeline", () => {
+    const items = buildTimeline({
+      session: baseSession,
+      activeTurnId: "sf_turn_active",
+      activities: [
+        {
+          type: "tool.call",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call_human",
+          name: "ask_user",
+          input: { title: "Choose" },
+        },
+        {
+          type: "tool.result",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call_human",
+          name: "ask_user",
+          ok: true,
+          output: { answers: [] },
+        },
+      ],
+    });
+
+    expect(items.some((item) => item.type === "tool-step" && item.name === "ask_user")).toBe(false);
   });
 
   it("adds a consolidated task list from persisted session tasks", () => {

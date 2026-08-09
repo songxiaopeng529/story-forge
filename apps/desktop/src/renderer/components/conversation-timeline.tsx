@@ -2,14 +2,17 @@ import { Check, Clock3, FoldVertical, ListChecks, OctagonAlert, Sparkles } from 
 import type { ReactNode } from "react";
 import { code } from "@streamdown/code";
 import { Streamdown } from "streamdown";
+import type { HumanInputResponse } from "@story-forge/shared";
 import type { TimelineItem } from "../utils/timeline";
 import { useTypewriterText } from "../hooks/use-typewriter-text";
+import { HumanInputCard } from "./human-input-prompt";
 
 export function ConversationTimeline(props: {
   items: TimelineItem[];
   startedAt?: string | undefined;
   onCreateAutomationProposal?: ((proposalId: string) => void) | undefined;
   onCancelAutomationProposal?: ((proposalId: string) => void) | undefined;
+  onHumanInputRespond?: ((response: Omit<HumanInputResponse, "requestId">) => void) | undefined;
 }) {
   const timeChip = formatTimeChip(props.startedAt);
   return (
@@ -27,6 +30,7 @@ export function ConversationTimeline(props: {
           key={item.id}
           onCancelAutomationProposal={props.onCancelAutomationProposal}
           onCreateAutomationProposal={props.onCreateAutomationProposal}
+          onHumanInputRespond={props.onHumanInputRespond}
         />
       ))}
     </div>
@@ -37,6 +41,7 @@ function TimelineItemView(props: {
   item: TimelineItem;
   onCreateAutomationProposal?: ((proposalId: string) => void) | undefined;
   onCancelAutomationProposal?: ((proposalId: string) => void) | undefined;
+  onHumanInputRespond?: ((response: Omit<HumanInputResponse, "requestId">) => void) | undefined;
 }) {
   const { item } = props;
   if (item.type === "user-message") {
@@ -87,6 +92,15 @@ function TimelineItemView(props: {
         item={item}
         onCancel={props.onCancelAutomationProposal}
         onCreate={props.onCreateAutomationProposal}
+      />
+    );
+  }
+  if (item.type === "human-input") {
+    return (
+      <HumanInputCard
+        request={item.request}
+        responding={item.responding}
+        onRespond={(response) => props.onHumanInputRespond?.(response)}
       />
     );
   }
