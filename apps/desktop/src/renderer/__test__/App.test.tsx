@@ -1198,6 +1198,24 @@ describe("App", () => {
     expect(developerMode).toBeChecked();
   });
 
+  it("loads and saves language from Settings and applies it immediately", async () => {
+    const fixture = installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const languageGroup = await screen.findByRole("radiogroup", { name: "Language" });
+    expect(within(languageGroup).getByRole("radio", { name: "English" }))
+      .toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(within(languageGroup).getByRole("radio", { name: "中文" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      language: "zh",
+    }));
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "编码智能体" })).toBeInTheDocument();
+  });
+
   it("loads and saves command execution mode from Settings", async () => {
     const fixture = installApi({
       settings: {
@@ -1212,22 +1230,22 @@ describe("App", () => {
     const commandModeGroup = await screen.findByRole("radiogroup", {
       name: "Command execution",
     });
-    expect(within(commandModeGroup).getByRole("radio", { name: "哨兵模式" }))
+    expect(within(commandModeGroup).getByRole("radio", { name: "Sentinel mode" }))
       .toHaveAttribute("aria-checked", "true");
-    expect(within(commandModeGroup).getByRole("radio", { name: "无缰模式" }))
+    expect(within(commandModeGroup).getByRole("radio", { name: "Unleashed mode" }))
       .toHaveAccessibleDescription(
-        "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
+        "Unleashed mode runs every command as your current system user without confirmation.",
       );
     expect(screen.getByText(
-      "StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。",
+      "StoryForge uses command guards and an isolated command environment. This is not an OS sandbox; Unleashed mode runs commands as the current system user.",
     )).toBeInTheDocument();
 
-    fireEvent.click(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }));
+    fireEvent.click(within(commandModeGroup).getByRole("radio", { name: "Cruise mode" }));
 
     await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
       commandExecutionMode: "cruise",
     }));
-    expect(within(commandModeGroup).getByRole("radio", { name: "巡航模式" }))
+    expect(within(commandModeGroup).getByRole("radio", { name: "Cruise mode" }))
       .toHaveAttribute("aria-checked", "true");
   });
 
@@ -1433,6 +1451,7 @@ function installApi(options: {
     );
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
+    language: "en",
     developerMode: false,
     commandExecutionMode: "sentinel" as const,
     webAccessEnabled: false,

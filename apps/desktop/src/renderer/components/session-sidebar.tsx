@@ -2,7 +2,7 @@ import type { CommandExecutionMode, SessionId, TurnId } from "@story-forge/share
 import { Folder, FolderOpen, PanelLeftClose, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionView, WorkspaceView } from "../../shared/story-forge-api";
-import { commandModeMeta } from "../utils/command-mode-meta";
+import { useI18n } from "../i18n";
 
 export function SessionSidebar(props: {
   workspaces: WorkspaceView[];
@@ -19,21 +19,22 @@ export function SessionSidebar(props: {
   onSelectWorkspace: (workspaceId: string) => void;
   onSelectSession: (sessionId: SessionId, workspaceId: string) => void;
 }) {
+  const t = useI18n();
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
-  const meta = commandModeMeta[props.commandExecutionMode];
+  const meta = t.commandMode[props.commandExecutionMode];
   const totalSessions = props.sessions.length;
 
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden border-r border-forge-line bg-forge-sidebar">
       <div className="flex flex-none items-start justify-between px-4 pt-[18px]">
         <div>
-          <div className="text-sm font-semibold text-forge-ink">Workspaces</div>
-          <div className="text-[11px] text-forge-muted">Persistent local sessions</div>
+          <div className="text-sm font-semibold text-forge-ink">{t.sidebar.workspaces}</div>
+          <div className="text-[11px] text-forge-muted">{t.sidebar.persistentSessions}</div>
         </div>
         <div className="flex items-center gap-2">
           <button
-            aria-label="Open workspace"
+            aria-label={t.sidebar.openWorkspace}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas"
             onClick={props.onOpenWorkspace}
             type="button"
@@ -41,10 +42,10 @@ export function SessionSidebar(props: {
             <FolderOpen size={16} />
           </button>
           <button
-            aria-label="Collapse session sidebar"
+            aria-label={t.sidebar.collapseSidebar}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas"
             onClick={props.onCollapse}
-            title="Collapse sidebar"
+            title={t.sidebar.collapseSidebarTitle}
             type="button"
           >
             <PanelLeftClose size={16} />
@@ -56,10 +57,10 @@ export function SessionSidebar(props: {
         <div className="flex h-9 items-center gap-2 rounded-lg border border-forge-line bg-white px-2.5">
           <Search className="text-forge-muted" size={16} />
           <input
-            aria-label="Search sessions"
+            aria-label={t.sidebar.searchSessions}
             className="min-w-0 flex-1 bg-transparent text-xs text-forge-ink outline-none placeholder:text-forge-muted"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search sessions"
+            placeholder={t.sidebar.searchSessions}
             value={query}
           />
         </div>
@@ -72,7 +73,7 @@ export function SessionSidebar(props: {
             onClick={props.onOpenWorkspace}
             type="button"
           >
-            Open a workspace
+            {t.sidebar.openWorkspace}
           </button>
         ) : null}
 
@@ -97,7 +98,7 @@ export function SessionSidebar(props: {
                     {workspace.displayName}
                   </button>
                   <button
-                    aria-label={`New session in ${workspace.displayName}`}
+                    aria-label={t.sidebar.newSessionIn(workspace.displayName)}
                     className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
                     onClick={() => props.onCreateSession(workspace.id)}
                     type="button"
@@ -105,7 +106,7 @@ export function SessionSidebar(props: {
                     <Plus size={16} />
                   </button>
                   <button
-                    aria-label={`Remove ${workspace.displayName}`}
+                    aria-label={t.sidebar.removeWorkspace(workspace.displayName)}
                     className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-forge-muted hover:bg-forge-danger-bg hover:text-forge-danger"
                     onClick={() => props.onRemoveWorkspace(workspace.id)}
                     type="button"
@@ -121,7 +122,7 @@ export function SessionSidebar(props: {
               <div className="my-4 h-px bg-forge-divider" />
 
               <div className="flex items-center justify-between px-1">
-                <span className="text-[11px] font-medium text-forge-ink">Recent sessions</span>
+                <span className="text-[11px] font-medium text-forge-ink">{t.sidebar.recentSessions}</span>
                 <span className="text-[11px] text-forge-muted">{totalSessions}</span>
               </div>
 
@@ -157,11 +158,11 @@ export function SessionSidebar(props: {
                         </span>
                       </button>
                       <button
-                        aria-label={`Delete session ${session.title}`}
+                        aria-label={t.sidebar.deleteSession(session.title)}
                         className="flex h-6 w-6 flex-none items-center justify-center rounded-md text-forge-muted opacity-0 hover:bg-forge-danger-bg hover:text-forge-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-default disabled:opacity-0"
                         disabled={running}
                         onClick={() => props.onRemoveSession(session.id)}
-                        title="Delete session"
+                        title={t.sidebar.deleteSessionTitle}
                         type="button"
                       >
                         <Trash2 size={14} />
@@ -175,7 +176,7 @@ export function SessionSidebar(props: {
                     onClick={() => props.onCreateSession(workspace.id)}
                     type="button"
                   >
-                    {normalizedQuery ? "No matching sessions" : "Create first session"}
+                    {normalizedQuery ? t.sidebar.noMatchingSessions : t.sidebar.createFirstSession}
                   </button>
                 ) : null}
               </div>

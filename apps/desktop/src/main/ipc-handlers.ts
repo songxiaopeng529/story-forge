@@ -47,6 +47,7 @@ export type IpcHandlerOptions = {
 
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
+const languageSchema = z.enum(["en", "zh"]);
 const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<SessionId>(
   (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
@@ -65,6 +66,7 @@ const imageAttachmentSchema = z.object({
   size: z.number().int().nonnegative(),
 });
 const settingsSaveSchema = z.object({
+  language: languageSchema.optional(),
   developerMode: z.boolean().optional(),
   commandExecutionMode: commandExecutionModeSchema.optional(),
   webAccessEnabled: z.boolean().optional(),

@@ -1,4 +1,5 @@
 import type {
+  AppLanguage,
   AppSettingsView,
   CommandExecutionMode,
   WebSearchCoverage,
@@ -9,9 +10,11 @@ import { readJson, writeJsonAtomic } from "@story-forge/agent";
 
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
+const languageSchema = z.enum(["en", "zh"]);
 
 const appSettingsSchema = z.object({
   schemaVersion: z.literal(1),
+  language: languageSchema.default("en"),
   developerMode: z.boolean().default(false),
   commandExecutionMode: commandExecutionModeSchema.default("sentinel"),
   webAccessEnabled: z.boolean().default(false),
@@ -19,6 +22,7 @@ const appSettingsSchema = z.object({
 });
 
 export type SaveAppSettingsInput = {
+  language?: AppLanguage | undefined;
   developerMode?: boolean | undefined;
   commandExecutionMode?: CommandExecutionMode | undefined;
   webAccessEnabled?: boolean | undefined;
@@ -51,6 +55,7 @@ export class AppSettingsStore {
 function createDefaultSettings(): AppSettingsView {
   return {
     schemaVersion: 1,
+    language: "en",
     developerMode: false,
     commandExecutionMode: "sentinel",
     webAccessEnabled: false,

@@ -3,33 +3,42 @@ import { PermissionRequestPrompt } from "./components/permission-request-prompt"
 import { ExtensionUiPrompt } from "./components/extension-ui-prompt";
 import { PrimaryNavigation } from "./components/primary-navigation";
 import { useAppController } from "./hooks/use-app-controller";
+import { I18nProvider } from "./i18n";
+import { useEffect } from "react";
 
 export function App() {
   const c = useAppController();
 
+  useEffect(() => {
+    document.documentElement.lang = c.language === "zh" ? "zh-CN" : "en";
+  }, [c.language]);
+
   return (
-    <main
-      className={`grid h-screen overflow-hidden bg-forge-canvas text-forge-ink ${
-        c.effectiveNavCollapsed ? "grid-cols-[1fr]" : "grid-cols-[72px_1fr]"
-      }`}
-    >
-      {c.effectiveNavCollapsed ? null : (
-        <PrimaryNavigation
-          page={c.page}
-          onChange={c.setPage}
-          collapsible={c.agentHeaderVisible}
-          onCollapse={() => c.setNavCollapsed(true)}
-        />
-      )}
-      <PageRouter
+    <I18nProvider language={c.language}>
+      <main
+        className={`grid h-screen overflow-hidden bg-forge-canvas text-forge-ink ${
+          c.effectiveNavCollapsed ? "grid-cols-[1fr]" : "grid-cols-[72px_1fr]"
+        }`}
+      >
+        {c.effectiveNavCollapsed ? null : (
+          <PrimaryNavigation
+            page={c.page}
+            onChange={c.setPage}
+            collapsible={c.agentHeaderVisible}
+            onCollapse={() => c.setNavCollapsed(true)}
+          />
+        )}
+        <PageRouter
         page={c.page}
         settings={{
+          language: c.language,
           developerMode: c.developerMode,
           commandExecutionMode: c.commandExecutionMode,
           webAccessEnabled: c.webAccessEnabled,
           webSearchCoverage: c.webSearchCoverage,
           saving: c.settingsSaving,
           error: c.error,
+          onLanguageChange: (next) => void c.saveLanguage(next),
           onDeveloperModeChange: (next) => void c.saveDeveloperMode(next),
           onCommandExecutionModeChange: (next) => void c.saveCommandExecutionMode(next),
           onWebAccessEnabledChange: (next) => void c.saveWebAccessEnabled(next),
@@ -113,22 +122,23 @@ export function App() {
             void c.createAutomationFromProposal(proposalId),
           onCancelAutomationProposal: c.cancelAutomationProposal,
         }}
-      />
-      {c.currentPermissionRequest ? (
-        <PermissionRequestPrompt
-          request={c.currentPermissionRequest}
-          responding={c.permissionResponding}
-          onApprove={() => void c.respondToPermission(true)}
-          onDeny={() => void c.respondToPermission(false)}
         />
-      ) : null}
-      {c.currentExtensionUiRequest ? (
-        <ExtensionUiPrompt
-          request={c.currentExtensionUiRequest}
-          responding={c.extensionUiResponding}
-          onRespond={(response) => void c.respondToExtensionUi(response)}
-        />
-      ) : null}
-    </main>
+        {c.currentPermissionRequest ? (
+          <PermissionRequestPrompt
+            request={c.currentPermissionRequest}
+            responding={c.permissionResponding}
+            onApprove={() => void c.respondToPermission(true)}
+            onDeny={() => void c.respondToPermission(false)}
+          />
+        ) : null}
+        {c.currentExtensionUiRequest ? (
+          <ExtensionUiPrompt
+            request={c.currentExtensionUiRequest}
+            responding={c.extensionUiResponding}
+            onRespond={(response) => void c.respondToExtensionUi(response)}
+          />
+        ) : null}
+      </main>
+    </I18nProvider>
   );
 }

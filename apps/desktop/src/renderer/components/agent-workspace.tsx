@@ -37,7 +37,7 @@ import type {
   SessionView,
   WorkspaceView,
 } from "../../shared/story-forge-api";
-import { commandModeMeta } from "../utils/command-mode-meta";
+import { useI18n } from "../i18n";
 import { buildTimeline, type AutomationProposalTimelineState } from "../utils/timeline";
 import { ConversationTimeline } from "./conversation-timeline";
 import { ModelRequestDrawer } from "./model-request-drawer";
@@ -87,6 +87,7 @@ export function AgentWorkspace(props: {
   onCreateAutomationProposal: (proposalId: string) => void;
   onCancelAutomationProposal: (proposalId: string) => void;
 }) {
+  const t = useI18n();
   const [title, setTitle] = useState("");
   const [timerDialogOpen, setTimerDialogOpen] = useState(false);
   const [slashRange, setSlashRange] = useState<SlashRange>();
@@ -162,8 +163,8 @@ export function AgentWorkspace(props: {
       {
         id: "timer",
         invocation: "/timer",
-        title: "Session timer",
-        description: "Create an automation that continues this session.",
+        title: t.agent.builtinCommands.timer.title,
+        description: t.agent.builtinCommands.timer.description,
         kind: "builtin",
         icon: <CalendarClock size={15} />,
         action: () => {
@@ -174,8 +175,8 @@ export function AgentWorkspace(props: {
       {
         id: "compact",
         invocation: "/compact",
-        title: "Compact context",
-        description: "Summarize and shrink this conversation's context.",
+        title: t.agent.builtinCommands.compact.title,
+        description: t.agent.builtinCommands.compact.description,
         kind: "builtin",
         icon: <FoldVertical size={15} />,
         action: () => {
@@ -186,8 +187,8 @@ export function AgentWorkspace(props: {
       {
         id: "models",
         invocation: "/models",
-        title: "Models",
-        description: "Open provider and model settings.",
+        title: t.agent.builtinCommands.models.title,
+        description: t.agent.builtinCommands.models.description,
         kind: "builtin",
         icon: <KeyRound size={15} />,
         action: () => {
@@ -198,8 +199,8 @@ export function AgentWorkspace(props: {
       {
         id: "skills",
         invocation: "/skills",
-        title: "MCP & Skills",
-        description: "Manage installed skills and MCP servers.",
+        title: t.agent.builtinCommands.skills.title,
+        description: t.agent.builtinCommands.skills.description,
         kind: "builtin",
         icon: <Puzzle size={15} />,
         action: () => {
@@ -210,8 +211,8 @@ export function AgentWorkspace(props: {
       {
         id: "settings",
         invocation: "/settings",
-        title: "Settings",
-        description: "Open application preferences.",
+        title: t.agent.builtinCommands.settings.title,
+        description: t.agent.builtinCommands.settings.description,
         kind: "builtin",
         icon: <Settings size={15} />,
         action: () => {
@@ -224,7 +225,7 @@ export function AgentWorkspace(props: {
       id: `skill:${skill.id}`,
       invocation: skill.invocationName,
       title: skill.name,
-      description: skill.description || "Invoke installed skill.",
+      description: skill.description || t.agent.builtinCommands.skillFallbackDescription,
       kind: "skill",
       icon: <Puzzle size={15} />,
     }));
@@ -249,6 +250,7 @@ export function AgentWorkspace(props: {
     props.onPromptChange,
     slashRange?.query,
     slashSkills,
+    t,
   ]);
   const slashMenuOpen = Boolean(slashRange && props.session);
 
@@ -259,23 +261,23 @@ export function AgentWorkspace(props: {
   }, [slashCommands.length]);
 
   if (props.loading) {
-    return <div className="flex items-center justify-center text-sm text-slate-500">Loading...</div>;
+    return <div className="flex items-center justify-center text-sm text-slate-500">{t.agent.loading}</div>;
   }
   if (!props.workspace) {
     return (
       <div className="flex items-center justify-center">
         <div className="max-w-sm rounded-xl border border-forge-line bg-white p-8 text-center shadow-sm">
           <FolderOpen className="mx-auto text-forge-ember" size={28} />
-          <h2 className="mt-4 text-lg font-semibold">Open a workspace</h2>
+          <h2 className="mt-4 text-lg font-semibold">{t.agent.openWorkspaceTitle}</h2>
           <p className="mt-2 text-sm text-slate-600">
-            Sessions and full conversation history are stored locally per workspace.
+            {t.agent.openWorkspaceDescription}
           </p>
           <button
             className="mt-5 rounded-md bg-forge-ember px-4 py-2 text-sm font-medium text-white"
             onClick={props.onOpenWorkspace}
             type="button"
           >
-            Choose folder
+            {t.agent.chooseFolder}
           </button>
         </div>
       </div>
@@ -430,12 +432,12 @@ export function AgentWorkspace(props: {
 
   const attachDisabled = !props.session || !props.imageInputEnabled || Boolean(props.activeTurnId);
   const attachTitle = !props.session
-    ? "Create a session to attach images"
+    ? t.agent.createSessionToAttachImages
     : !props.imageInputEnabled
-      ? "The current model does not support image input"
+      ? t.agent.modelNoImageInput
       : props.activeTurnId
-        ? "Wait for the current turn to finish"
-        : "Attach image";
+        ? t.agent.waitForTurn
+        : t.agent.attachImage;
   const canSend = Boolean(props.session)
     && (Boolean(props.prompt.trim())
       || props.imageAttachments.length > 0
@@ -456,10 +458,10 @@ export function AgentWorkspace(props: {
           <div className="flex flex-none items-center gap-2">
             {props.navCollapsed ? (
               <button
-                aria-label="Expand navigation"
+                aria-label={t.agent.expandNavigation}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
                 onClick={props.onExpandNav}
-                title="Expand navigation"
+                title={t.agent.expandNavigation}
                 type="button"
               >
                 <PanelLeftOpen size={16} />
@@ -467,10 +469,10 @@ export function AgentWorkspace(props: {
             ) : null}
             {props.sidebarCollapsed ? (
               <button
-                aria-label="Expand session sidebar"
+                aria-label={t.agent.expandSessionSidebar}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
                 onClick={props.onExpandSidebar}
-                title="Expand sidebar"
+                title={t.agent.expandSidebar}
                 type="button"
               >
                 <PanelRightOpen size={16} />
@@ -481,7 +483,7 @@ export function AgentWorkspace(props: {
         <div className="min-w-0 flex-1">
           {props.session ? (
             <input
-              aria-label="Session title"
+              aria-label={t.agent.sessionTitle}
               className="w-full truncate bg-transparent text-sm font-semibold text-forge-ink outline-none"
               onBlur={() => props.onRename(title)}
               onChange={(event) => setTitle(event.target.value)}
@@ -497,18 +499,18 @@ export function AgentWorkspace(props: {
           )}
           <div className="truncate text-[11px] text-forge-muted">
             {props.session
-              ? `${props.workspace.displayName} / ${props.session.model} / live response`
+              ? `${props.workspace.displayName} / ${props.session.model} / ${t.agent.liveResponse}`
               : props.workspace.path}
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
           {props.session ? (
             <button
-              aria-label="Create session timer"
+              aria-label={t.agent.createSessionTimer}
               className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink disabled:opacity-40"
               disabled={Boolean(props.activeTurnId)}
               onClick={() => setTimerDialogOpen(true)}
-              title="Create session timer"
+              title={t.agent.createSessionTimer}
               type="button"
             >
               <CalendarClock size={16} />
@@ -521,7 +523,7 @@ export function AgentWorkspace(props: {
           ) : null}
           {props.developerMode ? (
             <button
-              aria-label="Open model request inspector"
+              aria-label={t.agent.openModelInspector}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
               onClick={props.onModelInspectorOpen}
               type="button"
@@ -531,7 +533,7 @@ export function AgentWorkspace(props: {
           ) : null}
           {props.session ? (
             <button
-              aria-label="Delete session"
+              aria-label={t.agent.deleteSession}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-danger-bg hover:text-forge-danger disabled:opacity-40"
               disabled={Boolean(props.activeTurnId)}
               onClick={props.onDelete}
@@ -542,10 +544,10 @@ export function AgentWorkspace(props: {
           ) : null}
           {props.contextCollapsed ? (
             <button
-              aria-label="Expand workspace context"
+              aria-label={t.agent.expandWorkspaceContext}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-forge-line bg-white text-forge-muted hover:bg-forge-canvas hover:text-forge-ink"
               onClick={props.onExpandContext}
-              title="Expand workspace context"
+              title={t.agent.expandWorkspaceContext}
               type="button"
             >
               <PanelRightOpen size={16} />
@@ -563,11 +565,11 @@ export function AgentWorkspace(props: {
           >
             {!props.session ? (
               <div className="mx-auto max-w-xl rounded-[10px] border border-dashed border-forge-line p-8 text-center text-sm text-forge-muted">
-                Create a session from the workspace sidebar to begin.
+                {t.agent.createSessionHint}
               </div>
             ) : props.session.messages.length === 0 && timelineItems.length === 0 ? (
               <div className="mx-auto max-w-[560px] rounded-[10px] border border-forge-line bg-white p-5 text-sm text-forge-muted">
-                Ask StoryForge to inspect code, edit workspace files, or run an allowed development command.
+                {t.agent.emptySessionHint}
               </div>
             ) : (
               <ConversationTimeline
@@ -586,7 +588,7 @@ export function AgentWorkspace(props: {
                   role="status"
                 >
                   <Loader2 className="animate-spin text-forge-ink" size={14} />
-                  正在压缩上下文…
+                  {t.agent.compacting}
                 </span>
               </div>
             ) : null}
@@ -604,11 +606,11 @@ export function AgentWorkspace(props: {
                   {slashMenuOpen ? (
                     <div className="absolute bottom-full left-3 right-3 z-30 mb-2 overflow-hidden rounded-xl border border-forge-line bg-white shadow-xl">
                       <div className="border-b border-forge-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-forge-muted">
-                        Slash commands
+                        {t.agent.slashCommands}
                       </div>
                       {slashCommands.length > 0 ? (
                         <div
-                          aria-label="Slash commands"
+                          aria-label={t.agent.slashCommands}
                           className="max-h-64 overflow-y-auto p-1"
                           id="slash-command-menu"
                           role="listbox"
@@ -650,7 +652,7 @@ export function AgentWorkspace(props: {
                         </div>
                       ) : (
                         <div className="px-3 py-4 text-sm text-forge-muted">
-                          No matching slash commands.
+                          {t.agent.noMatchingSlashCommands}
                         </div>
                       )}
                     </div>
@@ -666,7 +668,7 @@ export function AgentWorkspace(props: {
                       </span>
                       <span className="font-mono font-semibold">{activeSlashCommand.invocation}</span>
                       <button
-                        aria-label={`Remove ${activeSlashCommand.invocation} command`}
+                        aria-label={t.agent.removeCommand(activeSlashCommand.invocation)}
                         className="ml-0.5 text-forge-muted hover:text-forge-ink"
                         onClick={clearActiveSlashCommand}
                         type="button"
@@ -689,8 +691,8 @@ export function AgentWorkspace(props: {
                   onKeyDown={handlePromptKeyDown}
                   onKeyUp={handlePromptKeyUp}
                   placeholder={activeSlashCommand
-                    ? `为 ${activeSlashCommand.invocation} 补充说明…`
-                    : "Ask StoryForge to inspect, explain, or change code..."}
+                    ? t.agent.activeCommandPlaceholder(activeSlashCommand.invocation)
+                    : t.agent.promptPlaceholder}
                   ref={promptInputRef}
                   value={props.prompt}
                 />
@@ -716,7 +718,7 @@ export function AgentWorkspace(props: {
                           </div>
                         </div>
                         <button
-                          aria-label={`Remove image ${attachment.name}`}
+                          aria-label={t.agent.removeImage(attachment.name)}
                           className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-forge-line bg-white text-forge-muted shadow-sm hover:text-forge-ink"
                           onClick={() => removeImageAttachment(attachment.id)}
                           type="button"
@@ -731,7 +733,7 @@ export function AgentWorkspace(props: {
                   <div className="flex items-center gap-2">
                     <input
                       accept="image/png,image/jpeg,image/webp,image/gif"
-                      aria-label="Choose image"
+                      aria-label={t.agent.chooseImage}
                       className="sr-only"
                       disabled={attachDisabled}
                       multiple
@@ -740,7 +742,7 @@ export function AgentWorkspace(props: {
                       type="file"
                     />
                     <button
-                      aria-label="Attach image"
+                      aria-label={t.agent.attachImage}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-forge-muted hover:bg-forge-canvas hover:text-forge-ink disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={attachDisabled}
                       onClick={() => imageInputRef.current?.click()}
@@ -750,7 +752,7 @@ export function AgentWorkspace(props: {
                       <ImagePlus size={16} />
                     </button>
                     <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-danger">
-                      {commandModeMeta[props.commandExecutionMode].chip}
+                      {t.commandMode[props.commandExecutionMode].chip}
                     </span>
                   </div>
                   {props.activeTurnId ? (
@@ -760,7 +762,7 @@ export function AgentWorkspace(props: {
                       type="button"
                     >
                       <CircleStop size={15} />
-                      Stop
+                      {t.agent.stop}
                     </button>
                   ) : (
                     <button
@@ -770,13 +772,13 @@ export function AgentWorkspace(props: {
                       type="button"
                     >
                       <Play size={15} />
-                      Send
+                      {t.agent.send}
                     </button>
                   )}
                 </div>
               </div>
               <div className="mt-2 text-[10px] leading-[14px] text-forge-muted">
-                Enter to send, Shift+Enter for newline
+                {t.agent.enterToSend}
               </div>
             </div>
           </footer>

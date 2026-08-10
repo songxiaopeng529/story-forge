@@ -1,101 +1,72 @@
 import type {
+  AppLanguage,
   CommandExecutionMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
-
-const commandExecutionModes: Array<{
-  value: CommandExecutionMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "sentinel",
-    label: "哨兵模式",
-    description: "防守最强。安全命令直接执行；未知、高风险、破坏性或提权命令会先询问你。",
-  },
-  {
-    value: "cruise",
-    label: "巡航模式",
-    description: "推进更快。普通命令直接执行；高风险、破坏性或提权命令会先询问你。",
-  },
-  {
-    value: "unleashed",
-    label: "无缰模式",
-    description: "完全放开。任何命令都不会弹出确认，会以当前系统用户身份执行。",
-  },
-];
-
-const webSearchCoverageModes: Array<{
-  value: WebSearchCoverage;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "focused",
-    label: "Focused",
-    description: "Use Tavily only for faster, lower-cost search.",
-  },
-  {
-    value: "wide",
-    label: "Wide",
-    description: "Search Tavily and SerpApi concurrently for broader coverage.",
-  },
-];
+import { useI18n } from "../i18n";
 
 export function SettingsPage(props: {
+  language: AppLanguage;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
   saving: boolean;
   error: string | undefined;
+  onLanguageChange: (language: AppLanguage) => void;
   onDeveloperModeChange: (developerMode: boolean) => void;
   onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
   onWebAccessEnabledChange: (enabled: boolean) => void;
   onWebSearchCoverageChange: (coverage: WebSearchCoverage) => void;
 }) {
+  const t = useI18n();
+  const commandExecutionModes = (["sentinel", "cruise", "unleashed"] as const)
+    .map((value) => ({ value, ...t.commandMode[value] }));
+  const webSearchCoverageModes = (["focused", "wide"] as const)
+    .map((value) => ({ value, ...t.webSearchCoverage[value] }));
+
   return (
     <section className="min-h-0 min-w-0 overflow-y-auto p-8">
       <div className="mx-auto max-w-2xl">
-        <h2 className="text-xl font-semibold">Settings</h2>
+        <h2 className="text-xl font-semibold">{t.settings.title}</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Global preferences for StoryForge behavior.
+          {t.settings.subtitle}
         </p>
 
         <div className="mt-7 rounded-lg border border-forge-line bg-white p-5 shadow-sm">
           <div>
             <div className="flex items-start justify-between gap-4">
               <div>
-              <h3 className="text-sm font-semibold" id="command-execution-mode-label">
-                Command execution
+              <h3 className="text-sm font-semibold" id="language-label">
+                {t.settings.languageTitle}
               </h3>
               <p className="mt-1 text-sm text-slate-500">
-                Choose how often StoryForge asks before running workspace commands.
+                {t.settings.languageDescription}
               </p>
               </div>
-              {props.saving ? <span className="text-xs text-slate-500">Saving...</span> : null}
+              {props.saving ? <span className="text-xs text-slate-500">{t.settings.saving}</span> : null}
             </div>
 
             <div
-              aria-labelledby="command-execution-mode-label"
-              className="mt-4 grid gap-2 sm:grid-cols-3"
+              aria-labelledby="language-label"
+              className="mt-4 grid gap-2 sm:grid-cols-2"
               role="radiogroup"
             >
-              {commandExecutionModes.map((mode) => {
-                const descriptionId = `command-execution-mode-${mode.value}-description`;
+              {t.settings.languageOptions.map((mode) => {
+                const descriptionId = `language-${mode.value}-description`;
                 return (
                   <button
-                    aria-checked={props.commandExecutionMode === mode.value}
+                    aria-checked={props.language === mode.value}
                     aria-describedby={descriptionId}
                     aria-label={mode.label}
                     className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
-                      props.commandExecutionMode === mode.value
+                      props.language === mode.value
                         ? "border-2 border-forge-ember text-forge-ember"
                         : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
                     }`}
                     disabled={props.saving}
                     key={mode.value}
-                    onClick={() => props.onCommandExecutionModeChange(mode.value)}
+                    onClick={() => props.onLanguageChange(mode.value)}
                     role="radio"
                     type="button"
                   >
@@ -110,20 +81,68 @@ export function SettingsPage(props: {
                 );
               })}
             </div>
+          </div>
+
+          <div className="mt-5 border-t border-forge-line pt-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+              <h3 className="text-sm font-semibold" id="command-execution-mode-label">
+                {t.settings.commandExecutionTitle}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {t.settings.commandExecutionDescription}
+              </p>
+              </div>
+            </div>
+
+            <div
+              aria-labelledby="command-execution-mode-label"
+              className="mt-4 grid gap-2 sm:grid-cols-3"
+              role="radiogroup"
+            >
+              {commandExecutionModes.map((mode) => {
+                const descriptionId = `command-execution-mode-${mode.value}-description`;
+                return (
+                  <button
+                    aria-checked={props.commandExecutionMode === mode.value}
+                    aria-describedby={descriptionId}
+                    aria-label={mode.chip}
+                    className={`rounded-md border px-3 py-3 text-left disabled:cursor-not-allowed disabled:opacity-70 ${
+                      props.commandExecutionMode === mode.value
+                        ? "border-2 border-forge-ember text-forge-ember"
+                        : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
+                    }`}
+                    disabled={props.saving}
+                    key={mode.value}
+                    onClick={() => props.onCommandExecutionModeChange(mode.value)}
+                    role="radio"
+                    type="button"
+                  >
+                    <span className="block text-sm font-medium">{mode.chip}</span>
+                    <span
+                      className="mt-1 block text-xs text-slate-500"
+                      id={descriptionId}
+                    >
+                      {mode.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">
-              StoryForge 使用命令守卫和隔离后的命令环境；这不是 OS 级沙箱，无缰模式会以当前系统用户身份执行。
+              {t.settings.commandExecutionNotice}
             </p>
           </div>
 
           <label className="mt-5 flex items-center justify-between gap-4 border-t border-forge-line pt-5">
             <span>
-              <span className="block text-sm font-semibold">Developer mode</span>
+              <span className="block text-sm font-semibold">{t.settings.developerModeTitle}</span>
               <span className="mt-1 block text-sm text-slate-500">
-                Show model request messages in the chat inspector.
+                {t.settings.developerModeDescription}
               </span>
             </span>
             <input
-              aria-label="Developer mode"
+              aria-label={t.settings.developerModeTitle}
               checked={props.developerMode}
               className="h-5 w-9 accent-forge-ember"
               disabled={props.saving}
@@ -136,13 +155,13 @@ export function SettingsPage(props: {
           <div className="mt-5 border-t border-forge-line pt-5">
             <label className="flex items-center justify-between gap-4">
               <span>
-                <span className="block text-sm font-semibold">Web access</span>
+                <span className="block text-sm font-semibold">{t.settings.webAccessTitle}</span>
                 <span className="mt-1 block text-sm text-slate-500">
-                  Allow StoryForge to use web search and public page extraction tools.
+                  {t.settings.webAccessDescription}
                 </span>
               </span>
               <input
-                aria-label="Web access"
+                aria-label={t.settings.webAccessTitle}
                 checked={props.webAccessEnabled}
                 className="h-5 w-9 accent-forge-ember"
                 disabled={props.saving}
@@ -156,10 +175,10 @@ export function SettingsPage(props: {
             <div className="mt-5">
               <div>
                 <h3 className="text-sm font-semibold" id="web-search-coverage-label">
-                  Web Search Coverage
+                  {t.settings.webSearchCoverageTitle}
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Choose how broadly StoryForge searches when web access is enabled.
+                  {t.settings.webSearchCoverageDescription}
                 </p>
               </div>
 

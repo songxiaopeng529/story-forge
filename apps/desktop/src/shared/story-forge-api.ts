@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentStopReason,
+  AppLanguage,
   AppSettingsView,
   AutomationRunView,
   AutomationView,
@@ -204,6 +205,7 @@ export type StoryForgeApi = {
   settings: {
     get(): Promise<AppSettingsView>;
     save(input: {
+      language?: AppLanguage;
       developerMode?: boolean;
       commandExecutionMode?: CommandExecutionMode;
       webAccessEnabled?: boolean;

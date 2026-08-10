@@ -15,6 +15,7 @@ import type {
   WorkspaceView,
 } from "../../shared/story-forge-api";
 import { formatError } from "../utils/renderer-utils";
+import { useI18n } from "../i18n";
 
 export function SessionTimerDialog(props: {
   session: SessionView;
@@ -24,7 +25,8 @@ export function SessionTimerDialog(props: {
   onCreated: (automation: AutomationView) => void;
   onError: (error: string | undefined) => void;
 }) {
-  const [name, setName] = useState(defaultTimerName(props.session.title));
+  const t = useI18n();
+  const [name, setName] = useState(t.timer.defaultName(props.session.title));
   const [scheduleText, setScheduleText] = useState("");
   const [cron, setCron] = useState("");
   const [timezone, setTimezone] = useState(getDefaultTimezone());
@@ -34,7 +36,7 @@ export function SessionTimerDialog(props: {
   const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
-    setName(defaultTimerName(props.session.title));
+    setName(t.timer.defaultName(props.session.title));
     setScheduleText("");
     setCron("");
     setPrompt("");
@@ -45,7 +47,7 @@ export function SessionTimerDialog(props: {
     const trimmedScheduleText = scheduleText.trim();
     props.onError(undefined);
     if (!trimmedScheduleText) {
-      props.onError("Please enter a schedule description first");
+      props.onError(t.timer.scheduleRequired);
       return;
     }
     setGenerating(true);
@@ -91,7 +93,7 @@ export function SessionTimerDialog(props: {
     const trimmedPrompt = prompt.trim();
     const trimmedScheduleText = scheduleText.trim();
     if (!trimmedName || !trimmedPrompt) {
-      props.onError("Timer name and prompt are required.");
+      props.onError(t.timer.requiredFields);
       return;
     }
 
@@ -135,13 +137,13 @@ export function SessionTimerDialog(props: {
             <CalendarClock size={18} />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">Session timer</h2>
+            <h2 className="text-sm font-semibold">{t.timer.title}</h2>
             <p className="truncate text-xs text-slate-500">
-              {props.timerCount} active in {props.session.title}
+              {t.timer.activeInSession(props.timerCount, props.session.title)}
             </p>
           </div>
           <button
-            aria-label="Close timer dialog"
+            aria-label={t.timer.close}
             className="rounded-md border border-forge-line p-2 text-slate-500 hover:bg-slate-50"
             onClick={props.onClose}
             type="button"
@@ -152,9 +154,9 @@ export function SessionTimerDialog(props: {
 
         <div className="space-y-4 px-4 py-4">
           <label className="block text-xs font-medium text-slate-600">
-            Timer name
+            {t.timer.name}
             <input
-              aria-label="Timer name"
+              aria-label={t.timer.name}
               className="mt-1 w-full rounded-md border border-forge-line px-3 py-2 text-sm outline-none focus:border-forge-ember"
               onChange={(event) => setName(event.target.value)}
               value={name}
@@ -162,12 +164,12 @@ export function SessionTimerDialog(props: {
           </label>
 
           <label className="block text-xs font-medium text-slate-600">
-            Schedule
+            {t.timer.schedule}
             <textarea
-              aria-label="Schedule description"
+              aria-label={t.timer.scheduleDescription}
               className="mt-1 h-20 w-full resize-none rounded-md border border-forge-line px-3 py-2 text-sm outline-none focus:border-forge-ember"
               onChange={(event) => setScheduleText(event.target.value)}
-              placeholder="Every weekday at 9 AM"
+              placeholder={t.timer.schedulePlaceholder}
               value={scheduleText}
             />
           </label>
@@ -178,27 +180,27 @@ export function SessionTimerDialog(props: {
             type="button"
           >
             {generating ? <Loader2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
-            Generate schedule
+            {t.timer.generateSchedule}
           </button>
 
           <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
             <label className="block text-xs font-medium text-slate-600">
-              Cron
+              {t.timer.cron}
               <input
-                aria-label="Cron expression"
+                aria-label={t.timer.cronExpression}
                 className="mt-1 w-full rounded-md border border-forge-line px-3 py-2 font-mono text-sm outline-none focus:border-forge-ember"
                 onChange={(event) => {
                   setCron(event.target.value);
                   setValidation(undefined);
                 }}
-                placeholder="0 9 * * *"
+                placeholder={t.timer.cronPlaceholder}
                 value={cron}
               />
             </label>
             <label className="block text-xs font-medium text-slate-600">
-              Timezone
+              {t.timer.timezone}
               <input
-                aria-label="Timezone"
+                aria-label={t.timer.timezone}
                 className="mt-1 w-full rounded-md border border-forge-line px-3 py-2 text-sm outline-none focus:border-forge-ember"
                 onChange={(event) => {
                   setTimezone(event.target.value);
@@ -216,12 +218,12 @@ export function SessionTimerDialog(props: {
           ) : null}
 
           <label className="block text-xs font-medium text-slate-600">
-            Prompt
+            {t.timer.prompt}
             <textarea
-              aria-label="Timer prompt"
+              aria-label={t.timer.timerPrompt}
               className="mt-1 h-24 w-full resize-none rounded-md border border-forge-line px-3 py-2 text-sm outline-none focus:border-forge-ember"
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="Continue from the current session and check..."
+              placeholder={t.timer.promptPlaceholder}
               value={prompt}
             />
           </label>
@@ -233,7 +235,7 @@ export function SessionTimerDialog(props: {
             onClick={props.onClose}
             type="button"
           >
-            Cancel
+            {t.timer.cancel}
           </button>
           <button
             className="inline-flex items-center gap-2 rounded-md bg-forge-ember px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
@@ -242,16 +244,12 @@ export function SessionTimerDialog(props: {
             type="button"
           >
             {saving ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
-            Create timer
+            {t.timer.create}
           </button>
         </footer>
       </section>
     </div>
   );
-}
-
-function defaultTimerName(title: string): string {
-  return title.trim() ? `${title.trim()} timer` : "Session timer";
 }
 
 function getDefaultTimezone(): string {

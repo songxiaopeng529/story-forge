@@ -1,11 +1,13 @@
 import type { ExtensionUiRequestEvent, ExtensionUiResponse } from "@story-forge/shared";
 import { useEffect, useState } from "react";
+import { useI18n } from "../i18n";
 
 export function ExtensionUiPrompt(props: {
   request: ExtensionUiRequestEvent;
   responding: boolean;
   onRespond: (response: Omit<ExtensionUiResponse, "requestId">) => void;
 }) {
+  const t = useI18n();
   const [value, setValue] = useState("");
 
   useEffect(() => {
@@ -72,7 +74,7 @@ export function ExtensionUiPrompt(props: {
             onClick={() => props.onRespond({ cancelled: true })}
             type="button"
           >
-            Cancel
+            {t.dialogs.cancel}
           </button>
           {props.request.method === "confirm" ? (
             <button
@@ -81,7 +83,7 @@ export function ExtensionUiPrompt(props: {
               onClick={() => props.onRespond({ confirmed: true })}
               type="button"
             >
-              Confirm
+              {t.dialogs.confirm}
             </button>
           ) : null}
           {props.request.method === "input" || props.request.method === "editor" ? (
@@ -91,7 +93,7 @@ export function ExtensionUiPrompt(props: {
               onClick={() => props.onRespond({ value: value.trim() })}
               type="button"
             >
-              Submit
+              {t.dialogs.submit}
             </button>
           ) : null}
         </div>

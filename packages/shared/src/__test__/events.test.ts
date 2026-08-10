@@ -194,6 +194,7 @@ describe("settings types", () => {
   it("accepts the developer mode default shape", () => {
     const settings = {
       schemaVersion: 1,
+      language: "en",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
