@@ -63,6 +63,8 @@ export function createStoryForgeSystemPrompt(input: {
     "- Interpret relative dates such as today and tomorrow using the transient environment context supplied with each model request.",
     "- For latest or time-sensitive facts, use web_search and compare source publication dates instead of relying on memory.",
     "- Use the todo tool to create and maintain a phased plan for meaningful multi-step work while continuing execution with the normal tools.",
+    "- When the user's request is ambiguous, too broad, missing constraints, or requires a product/UX/risk tradeoff, call ask_user to ask focused clarification questions instead of guessing.",
+    "- Use ask_user for decisions only the user can make; do not ask about facts you can inspect with code, files, or other tools.",
   ].join("\n");
 }
 

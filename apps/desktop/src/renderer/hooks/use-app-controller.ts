@@ -4,6 +4,8 @@ import type {
   CommandExecutionMode,
   ExtensionUiRequestEvent,
   ExtensionUiResponse,
+  HumanInputRequestEvent,
+  HumanInputResponse,
   ModelRequestEvent,
   PermissionRequestEvent,
   SessionId,
@@ -69,6 +71,7 @@ export type AppController = {
   selectedSessionTimerCount: number;
   currentPermissionRequest: PermissionRequestEvent | undefined;
   currentExtensionUiRequest: ExtensionUiRequestEvent | undefined;
+  currentHumanInputRequest: HumanInputRequestEvent | undefined;
 
   // per-session runtime state
   activities: AgentEvent[];
@@ -92,6 +95,7 @@ export type AppController = {
   setModelInspectorOpen: (open: boolean) => void;
   permissionResponding: boolean;
   extensionUiResponding: boolean;
+  humanInputResponding: boolean;
   compactingSessionId: SessionId | undefined;
 
   // IME composition
@@ -111,6 +115,7 @@ export type AppController = {
   saveWebSearchCoverage: (next: WebSearchCoverage) => Promise<void>;
   respondToPermission: (approved: boolean) => Promise<void>;
   respondToExtensionUi: (response: Omit<ExtensionUiResponse, "requestId">) => Promise<void>;
+  respondToHumanInput: (response: Omit<HumanInputResponse, "requestId">) => Promise<void>;
   renameSession: (title: string) => Promise<void>;
   deleteSession: () => Promise<void>;
   removeSession: (sessionId: SessionId) => Promise<void>;
@@ -151,6 +156,8 @@ export function useAppController(): AppController {
   const [permissionResponding, setPermissionResponding] = useState(false);
   const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequestEvent[]>([]);
   const [extensionUiResponding, setExtensionUiResponding] = useState(false);
+  const [humanInputRequests, setHumanInputRequests] = useState<HumanInputRequestEvent[]>([]);
+  const [humanInputResponding, setHumanInputResponding] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [compactingSessionId, setCompactingSessionId] = useState<SessionId>();
   const [error, setError] = useState<string>();
@@ -192,6 +199,7 @@ export function useAppController(): AppController {
     : 0;
   const currentPermissionRequest = permissionRequests[0];
   const currentExtensionUiRequest = extensionUiRequests[0];
+  const currentHumanInputRequest = humanInputRequests[0];
   // The agent header (which hosts the expand buttons) only renders on the agent
   // page once a workspace is open, so panels may only collapse while it is visible.
   const agentHeaderVisible = page === "agent" && !loading && Boolean(selectedWorkspace);
@@ -280,6 +288,19 @@ export function useAppController(): AppController {
           };
         });
       }
+      if (event.type === "human.input.request") {
+        setHumanInputRequests((current) => [...current, event]);
+        setTurnRuntimes((current) => {
+          const existing = current[event.sessionId];
+          if (!existing || existing.turnId !== event.turnId) {
+            return current;
+          }
+          return {
+            ...current,
+            [event.sessionId]: { ...existing, status: "waiting-approval" },
+          };
+        });
+      }
       if (event.type === "extension.notification" && event.level === "error") {
         setError(event.message);
       }
@@ -305,6 +326,9 @@ export function useAppController(): AppController {
           current.filter((request) => request.sessionId !== event.sessionId)
         );
         setExtensionUiRequests((current) =>
+          current.filter((request) => request.sessionId !== event.sessionId)
+        );
+        setHumanInputRequests((current) =>
           current.filter((request) => request.sessionId !== event.sessionId)
         );
         setTurnRuntimes((current) => {
@@ -809,6 +833,35 @@ export function useAppController(): AppController {
     }
   }
 
+  async function respondToHumanInput(
+    response: Omit<HumanInputResponse, "requestId">,
+  ): Promise<void> {
+    if (!currentHumanInputRequest || humanInputResponding) {
+      return;
+    }
+    setHumanInputResponding(true);
+    setError(undefined);
+    const requestId = currentHumanInputRequest.requestId;
+    const sessionId = currentHumanInputRequest.sessionId;
+    try {
+      await window.storyForge.humanInput.respond({ requestId, ...response });
+      setHumanInputRequests((current) =>
+        current.filter((request) => request.requestId !== requestId)
+      );
+      setTurnRuntimes((current) => {
+        const existing = current[sessionId];
+        if (!existing || existing.status !== "waiting-approval") {
+          return current;
+        }
+        return { ...current, [sessionId]: { ...existing, status: "running" } };
+      });
+    } catch (humanInputError) {
+      setError(formatError(humanInputError));
+    } finally {
+      setHumanInputResponding(false);
+    }
+  }
+
   async function renameSession(title: string): Promise<void> {
     if (!selectedSession || !title.trim()) {
       return;
@@ -991,6 +1044,7 @@ export function useAppController(): AppController {
     selectedSessionTimerCount,
     currentPermissionRequest,
     currentExtensionUiRequest,
+    currentHumanInputRequest,
 
     // per-session runtime
     activities: sessionActivities,
@@ -1014,6 +1068,7 @@ export function useAppController(): AppController {
     setModelInspectorOpen,
     permissionResponding,
     extensionUiResponding,
+    humanInputResponding,
     compactingSessionId,
 
     // IME
@@ -1033,6 +1088,7 @@ export function useAppController(): AppController {
     saveWebSearchCoverage,
     respondToPermission,
     respondToExtensionUi,
+    respondToHumanInput,
     renameSession,
     deleteSession,
     removeSession,

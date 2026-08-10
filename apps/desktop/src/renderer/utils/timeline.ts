@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   AutomationProposalView,
   ContextCompactedEvent,
+  HumanInputRequestEvent,
   MessageDeliveryMode,
   SessionTask,
   TurnId,
@@ -17,6 +18,8 @@ export type AutomationProposalTimelineState = {
   proposal: AutomationProposalView;
   status: "pending" | "created";
 };
+
+const HUMAN_INPUT_TOOL_NAME = "ask_user";
 
 export type TimelineItem =
   | {
@@ -52,6 +55,12 @@ export type TimelineItem =
       status: "pending" | "created";
     }
   | {
+      type: "human-input";
+      id: string;
+      request: HumanInputRequestEvent;
+      responding: boolean;
+    }
+  | {
       type: "task-list";
       id: string;
       tasks: SessionTask[];
@@ -68,6 +77,8 @@ export function buildTimeline(input: {
   activities: AgentEvent[];
   activeTurnId: TurnId | undefined;
   automationProposals?: AutomationProposalTimelineState[];
+  humanInputRequest?: HumanInputRequestEvent;
+  humanInputResponding?: boolean;
 }): TimelineItem[] {
   const items = buildPersistedItems(input.session?.messages ?? []);
   if (
@@ -94,6 +105,17 @@ export function buildTimeline(input: {
 
   if (activeTurnId) {
     appendActiveTurnItems(items, input.activities, activeTurnId);
+  }
+  if (input.humanInputRequest) {
+    items.push({
+      type: "human-input",
+      id: `human-input-${input.humanInputRequest.turnId}-${input.humanInputRequest.requestId}`,
+      request: input.humanInputRequest,
+      responding: input.humanInputResponding ?? false,
+    });
+  }
+
+  if (activeTurnId) {
     if (!items.some((item) => isActiveTurnItem(item, activeTurnId))) {
       items.push({
         type: "assistant-message",
@@ -195,6 +217,9 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
     }
 
     if (message.role === "tool") {
+      if (message.name === HUMAN_INPUT_TOOL_NAME) {
+        continue;
+      }
       if (message.name === "plan_mode_complete") {
         items.push({
           type: "plan",
@@ -233,6 +258,9 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
     }
 
     for (const toolCall of message.toolCalls ?? []) {
+      if (toolCall.name === HUMAN_INPUT_TOOL_NAME) {
+        continue;
+      }
       if (toolResultIds.has(toolCall.id)) {
         continue;
       }
@@ -306,7 +334,7 @@ function appendActiveTurnItems(
     streamIndex = undefined;
 
     if (event.type === "tool.call") {
-      if (event.name === "plan_mode_complete") {
+      if (event.name === "plan_mode_complete" || event.name === HUMAN_INPUT_TOOL_NAME) {
         continue;
       }
       const index = items.length;
@@ -323,7 +351,7 @@ function appendActiveTurnItems(
     }
 
     if (event.type === "tool.result") {
-      if (event.name === "plan_mode_complete") {
+      if (event.name === "plan_mode_complete" || event.name === HUMAN_INPUT_TOOL_NAME) {
         continue;
       }
       const index = toolIndexes.get(event.callId);

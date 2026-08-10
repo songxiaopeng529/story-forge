@@ -1332,6 +1332,66 @@ describe("App", () => {
     }));
   });
 
+  it("responds to human input requests", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous question");
+
+    await act(async () => {
+      fixture.emit({
+        type: "human.input.request",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        requestId: "human_input_1",
+        title: "Choose implementation scope",
+        description: "StoryForge needs your preference before editing files.",
+        questions: [
+          {
+            id: "scope",
+            header: "Scope",
+            question: "Which scope should StoryForge use?",
+            type: "single_select",
+            required: true,
+            options: [
+              { id: "minimal", label: "Minimal", description: "Touch only requested files." },
+              { id: "full", label: "Full", description: "Include the full UI flow." },
+            ],
+          },
+        ],
+        remark: {
+          enabled: true,
+          label: "Additional context",
+        },
+      });
+    });
+
+    const messageScroll = screen.getByTestId("agent-message-scroll");
+    expect(await within(messageScroll).findByTestId("human-input-card")).toBeInTheDocument();
+    expect(within(messageScroll).getByText("Choose implementation scope")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Minimal/ }));
+    fireEvent.change(screen.getByLabelText("Additional context"), {
+      target: { value: "Keep it narrow." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+    await waitFor(() => expect(fixture.respondHumanInput).toHaveBeenCalledWith({
+      requestId: "human_input_1",
+      answers: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which scope should StoryForge use?",
+          type: "single_select",
+          selectedOptionIds: ["minimal"],
+          selectedLabels: ["Minimal"],
+        },
+      ],
+      remark: "Keep it narrow.",
+    }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose implementation scope" }))
+      .not.toBeInTheDocument());
+  });
+
 });
 
 function changePrompt(input: HTMLElement, value: string): void {
@@ -1419,6 +1479,7 @@ function installApi(options: {
     : vi.fn(async () => undefined);
   const respondPermission = vi.fn(async () => undefined);
   const respondExtensionUi = vi.fn(async () => undefined);
+  const respondHumanInput = vi.fn(async () => undefined);
   const getSession = vi.fn(async (sessionId: string) =>
     allSessions.find((candidate) => candidate.id === sessionId) ?? session
   );
@@ -1623,6 +1684,9 @@ function installApi(options: {
     extensionUi: {
       respond: respondExtensionUi,
     },
+    humanInput: {
+      respond: respondHumanInput,
+    },
     skills: {
       list: vi.fn(async () => currentSkills),
       importZip: importSkill,
@@ -1655,6 +1719,7 @@ function installApi(options: {
     compact,
     respondPermission,
     respondExtensionUi,
+    respondHumanInput,
     getSession,
     getRepository,
     saveSettings,

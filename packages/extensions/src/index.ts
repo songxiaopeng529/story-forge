@@ -1,6 +1,7 @@
 export * from "./automation/proposal-tool";
 export * from "./automation/schedule";
 export * from "./environment/runtime-environment";
+export * from "./human/human-input-tool";
 export * from "./mcp/client";
 export * from "./mcp/config";
 export * from "./mcp/disabled-client";

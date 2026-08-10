@@ -7,6 +7,7 @@ import type {
   CommandExecutionMode,
   CreateAutomationInput,
   ExtensionUiResponse,
+  HumanInputResponse,
   McpConfigView,
   McpServerView,
   ProviderId,
@@ -49,6 +50,7 @@ export const IPC_CHANNELS = {
   turnEvent: "story-forge:turns:event",
   permissionRespond: "story-forge:permissions:respond",
   extensionUiRespond: "story-forge:extension-ui:respond",
+  humanInputRespond: "story-forge:human-input:respond",
   automationsList: "story-forge:automations:list",
   automationsGetRuns: "story-forge:automations:get-runs",
   automationsValidateSchedule: "story-forge:automations:validate-schedule",
@@ -258,6 +260,9 @@ export type StoryForgeApi = {
   };
   extensionUi: {
     respond(input: ExtensionUiResponse): Promise<void>;
+  };
+  humanInput: {
+    respond(input: HumanInputResponse): Promise<void>;
   };
   automations: {
     list(): Promise<AutomationView[]>;

@@ -2,6 +2,8 @@ import type {
   AgentEvent,
   AutomationView,
   CommandExecutionMode,
+  HumanInputRequestEvent,
+  HumanInputResponse,
   ModelRequestEvent,
   SessionId,
   TurnId,
@@ -40,6 +42,8 @@ export type AgentLayoutProps = {
   activeTurns: Record<string, TurnId>;
   activities: AgentEvent[];
   automationProposals: AutomationProposalTimelineState[];
+  currentHumanInputRequest: HumanInputRequestEvent | undefined;
+  humanInputResponding: boolean;
   modelRequests: ModelRequestEvent[];
   runtime: TurnRuntimeState | undefined;
   activeTurnId: TurnId | undefined;
@@ -87,6 +91,7 @@ export type AgentLayoutProps = {
   onError: (message: string | undefined) => void;
   onCreateAutomationProposal: (proposalId: string) => void;
   onCancelAutomationProposal: (proposalId: string) => void;
+  onHumanInputRespond: (response: Omit<HumanInputResponse, "requestId">) => void;
 };
 
 export function AgentLayout(props: AgentLayoutProps) {
@@ -103,6 +108,8 @@ export function AgentLayout(props: AgentLayoutProps) {
     activeTurns,
     activities,
     automationProposals,
+    currentHumanInputRequest,
+    humanInputResponding,
     modelRequests,
     runtime,
     activeTurnId,
@@ -161,6 +168,8 @@ export function AgentLayout(props: AgentLayoutProps) {
         session={selectedSession}
         activities={activities}
         automationProposals={automationProposals}
+        currentHumanInputRequest={currentHumanInputRequest}
+        humanInputResponding={humanInputResponding}
         modelRequests={modelRequests}
         developerMode={developerMode}
         commandExecutionMode={commandExecutionMode}
@@ -198,6 +207,7 @@ export function AgentLayout(props: AgentLayoutProps) {
         onError={props.onError}
         onCreateAutomationProposal={props.onCreateAutomationProposal}
         onCancelAutomationProposal={props.onCancelAutomationProposal}
+        onHumanInputRespond={props.onHumanInputRespond}
       />
       {showContextPanel ? (
         <RunContextPanel

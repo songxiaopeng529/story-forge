@@ -255,6 +255,44 @@ describe("registerIpcHandlers", () => {
     })).rejects.toThrow("Invalid IPC payload");
   });
 
+  it("registers human input response IPC", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.humanInputRespond, {
+      requestId: "human_input_1",
+      answers: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which scope should StoryForge use?",
+          type: "single_select",
+          selectedOptionIds: ["minimal"],
+          selectedLabels: ["Minimal"],
+        },
+      ],
+      remark: "Keep it narrow.",
+    })).resolves.toBeUndefined();
+    expect(fixture.respondToHumanInput).toHaveBeenCalledWith({
+      requestId: "human_input_1",
+      answers: [
+        {
+          id: "scope",
+          header: "Scope",
+          question: "Which scope should StoryForge use?",
+          type: "single_select",
+          selectedOptionIds: ["minimal"],
+          selectedLabels: ["Minimal"],
+        },
+      ],
+      remark: "Keep it narrow.",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.humanInputRespond, {
+      requestId: "",
+      answers: [],
+    })).rejects.toThrow("Invalid IPC payload");
+  });
+
   it("registers Automations APIs with payload validation", async () => {
     const fixture = createFixture();
     registerIpcHandlers(fixture.options);
@@ -534,6 +572,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     stop: vi.fn(),
     respondToPermission: vi.fn(),
     respondToExtensionUi: vi.fn(),
+    respondToHumanInput: vi.fn(),
   } as unknown as AgentCoordinator;
 
   return {
@@ -544,6 +583,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     getGit,
     respondToPermission: coordinator.respondToPermission,
     respondToExtensionUi: coordinator.respondToExtensionUi,
+    respondToHumanInput: coordinator.respondToHumanInput,
     options: {
       ipc,
       providers,
