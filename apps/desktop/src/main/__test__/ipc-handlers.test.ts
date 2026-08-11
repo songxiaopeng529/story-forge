@@ -284,6 +284,8 @@ describe("registerIpcHandlers", () => {
     await expect(fixture.invoke(IPC_CHANNELS.automationsInterpretSchedule, {
       scheduleText: "每天上午 9 点",
       timezone: "Asia/Shanghai",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
     })).resolves.toMatchObject({ ok: true });
     await expect(fixture.invoke(IPC_CHANNELS.automationsCreate, {
       name: "Daily check",

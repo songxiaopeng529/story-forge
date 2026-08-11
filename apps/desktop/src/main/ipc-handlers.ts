@@ -23,7 +23,12 @@ type AutomationsIpcService = {
   list(): unknown;
   getRuns(automationId: string): unknown;
   validateSchedule(input: { cron: string; timezone: string }): unknown;
-  interpretSchedule(input: { scheduleText: string; timezone: string }): unknown;
+  interpretSchedule(input: {
+    scheduleText: string;
+    timezone: string;
+    providerId: ProviderId;
+    model: string;
+  }): unknown;
   create(input: z.infer<typeof automationCreateSchema>): unknown;
   update(input: z.infer<typeof automationUpdateSchema>): unknown;
   delete(automationId: string): unknown;
@@ -129,6 +134,8 @@ const automationValidateScheduleSchema = z.object({
 const automationInterpretScheduleSchema = z.object({
   scheduleText: z.string().min(1),
   timezone: z.string().min(1),
+  providerId: providerIdSchema,
+  model: z.string().min(1),
 });
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {

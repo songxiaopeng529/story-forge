@@ -18,6 +18,7 @@ import {
 } from "@story-forge/agent";
 import { AppSettingsStore } from "./app-settings-store";
 import { AutomationRepository } from "./automation-repository";
+import { createScheduleCronGenerator } from "./automation-schedule-generator";
 import { AutomationScheduler } from "./automation-scheduler";
 import { AutomationService } from "./automation-service";
 import { loadStoryForgeDotEnv } from "./env-loader";
@@ -86,6 +87,7 @@ async function initializeApplication(): Promise<void> {
   const mcpConfigService = new McpConfigService({ rootDir });
   const automationService = new AutomationService({
     repository: new AutomationRepository({ rootDir }),
+    generateCron: createScheduleCronGenerator(piModels),
   });
   await sessionRepository.recoverInterruptedSessions();
   await automationService.recoverRunningRuns();

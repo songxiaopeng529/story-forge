@@ -271,6 +271,8 @@ export type StoryForgeApi = {
     interpretSchedule(input: {
       scheduleText: string;
       timezone: string;
+      providerId: ProviderId;
+      model: string;
     }): Promise<ScheduleValidationResult>;
     create(input: CreateAutomationInput): Promise<AutomationView>;
     update(input: UpdateAutomationInput): Promise<AutomationView>;

@@ -941,6 +941,8 @@ describe("App", () => {
     await waitFor(() => expect(fixture.interpretAutomationSchedule).toHaveBeenCalledWith({
       scheduleText: "每天早上 9 点",
       timezone: "Asia/Shanghai",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
     }));
     expect(await screen.findByDisplayValue("0 9 * * *")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save automation" }));
@@ -1099,6 +1101,8 @@ describe("App", () => {
     await waitFor(() => expect(fixture.interpretAutomationSchedule).toHaveBeenCalledWith({
       scheduleText: "每小时",
       timezone: expect.any(String),
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
     }));
     fireEvent.change(screen.getByLabelText("Timer name"), {
       target: { value: "Thread follow-up" },

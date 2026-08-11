@@ -77,7 +77,9 @@ export class AutomationScheduler {
   interpretSchedule(input: {
     scheduleText: string;
     timezone: string;
-  }): ScheduleValidationResult {
+    providerId: AutomationView["providerId"];
+    model: string;
+  }): Promise<ScheduleValidationResult> {
     return this.service.interpretSchedule(input);
   }
 

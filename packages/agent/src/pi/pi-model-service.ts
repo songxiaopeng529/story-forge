@@ -245,6 +245,51 @@ export class PiModelService {
     return undefined;
   }
 
+  async completeText(input: {
+    providerId: ProviderId;
+    model: string;
+    systemPrompt: string;
+    prompt: string;
+    maxTokens?: number;
+    signal?: AbortSignal;
+  }): Promise<string> {
+    const model = await this.resolveModel(input.providerId, input.model);
+    if (!model) {
+      throw new Error(`Model not found: ${input.providerId}/${input.model}`);
+    }
+    const runtime = await this.getModelRuntime();
+    const response = await runtime.completeSimple(
+      model,
+      {
+        systemPrompt: input.systemPrompt,
+        messages: [{
+          role: "user",
+          content: input.prompt,
+          timestamp: Date.now(),
+        }],
+      },
+      {
+        temperature: 0,
+        ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      },
+    );
+    if (response.stopReason === "error" || response.stopReason === "aborted") {
+      throw new Error(response.errorMessage ?? `Model request ${response.stopReason}`);
+    }
+    const text = response.content
+      .filter((content): content is Extract<typeof content, { type: "text" }> =>
+        content.type === "text"
+      )
+      .map((content) => content.text)
+      .join("\n")
+      .trim();
+    if (!text) {
+      throw new Error("Model returned no text.");
+    }
+    return text;
+  }
+
   async migrateLegacyCredentials(options: { crypto: LegacyCredentialCrypto }): Promise<void> {
     if (!options.crypto.isEncryptionAvailable()) {
       return;

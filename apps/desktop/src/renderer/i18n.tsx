@@ -243,6 +243,7 @@ const en = {
     pauseResumeLabel: (action: string, name: string) => `${action} ${name}`,
     deleteLabel: (name: string) => `Delete ${name}`,
     scheduleRequired: "Please enter a schedule description first",
+    modelRequiredForSchedule: "Provider and model are required to generate a schedule.",
     requiredFields: "Automation name, workspace, model, and prompt are required.",
   },
   dialogs: {
@@ -513,6 +514,7 @@ const zh: typeof en = {
     pauseResumeLabel: (action: string, name: string) => `${action} ${name}`,
     deleteLabel: (name: string) => `删除 ${name}`,
     scheduleRequired: "请先输入调度描述",
+    modelRequiredForSchedule: "生成调度需要先选择供应商和模型。",
     requiredFields: "自动化名称、工作区、模型和提示词必填。",
   },
   dialogs: {

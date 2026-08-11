@@ -55,6 +55,8 @@ export function SessionTimerDialog(props: {
       const nextValidation = await window.storyForge.automations.interpretSchedule({
         scheduleText: trimmedScheduleText,
         timezone,
+        providerId: props.session.providerId,
+        model: props.session.model,
       });
       setValidation(nextValidation);
       if (nextValidation.ok) {

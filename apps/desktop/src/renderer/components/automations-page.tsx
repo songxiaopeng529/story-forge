@@ -4,6 +4,7 @@ import type {
 } from "@story-forge/shared";
 import {
   CalendarClock,
+  Loader2,
   Pause,
   Play,
   RefreshCw,
@@ -34,6 +35,7 @@ export function AutomationsPage(props: {
   const [automations, setAutomations] = useState<AutomationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [name, setName] = useState("");
   const [workspaceId, setWorkspaceId] = useState(defaultWorkspace?.id ?? "");
   const [providerId, setProviderId] = useState<ProviderId>(
@@ -92,10 +94,18 @@ export function AutomationsPage(props: {
       props.onError(t.automations.scheduleRequired);
       return;
     }
+    const trimmedModel = model.trim();
+    if (!providerId || !trimmedModel) {
+      props.onError(t.automations.modelRequiredForSchedule);
+      return;
+    }
+    setGenerating(true);
     try {
       const nextValidation = await window.storyForge.automations.interpretSchedule({
         scheduleText: trimmedScheduleText,
         timezone,
+        providerId,
+        model: trimmedModel,
       });
       setValidation(nextValidation);
       if (nextValidation.ok) {
@@ -106,6 +116,8 @@ export function AutomationsPage(props: {
       }
     } catch (generateError) {
       props.onError(formatError(generateError));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -315,11 +327,12 @@ export function AutomationsPage(props: {
               </Field>
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <button
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-forge-line px-3 text-sm font-medium hover:bg-slate-50"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-forge-line px-3 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                  disabled={generating}
                   onClick={() => void generateSchedule()}
                   type="button"
                 >
-                  <Wand2 size={15} />
+                  {generating ? <Loader2 className="animate-spin" size={15} /> : <Wand2 size={15} />}
                   {t.automations.generateSchedule}
                 </button>
                 <button
