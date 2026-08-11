@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
 import { getProviderIconUrl } from "../utils/provider-icons";
 import { formatError } from "../utils/renderer-utils";
+import { useI18n } from "../i18n";
 
 const SAVED_API_KEY_MASK = "************";
 
@@ -14,6 +15,7 @@ export function ModelsPage(props: {
   onError: (message: string | undefined) => void;
   error: string | undefined;
 }) {
+  const t = useI18n();
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -53,7 +55,7 @@ export function ModelsPage(props: {
       setApiKey(saved.hasSecret ? SAVED_API_KEY_MASK : "");
       setApiKeyDirty(false);
       setApiKeyVisible(false);
-      setNotice("Provider saved");
+      setNotice(t.models.providerSaved);
     } catch (saveError) {
       props.onError(formatError(saveError));
     } finally {
@@ -71,7 +73,7 @@ export function ModelsPage(props: {
         props.selectedProvider.providerId,
       );
       setModels(result.models);
-      setNotice(`Connection succeeded · ${result.models.length} models`);
+      setNotice(t.models.connectionSucceeded(result.models.length));
       props.onProvidersChange(await window.storyForge.providers.list());
     } catch (testError) {
       props.onError(formatError(testError));
@@ -90,7 +92,7 @@ export function ModelsPage(props: {
         props.selectedProvider.providerId,
       );
       setModels(discovered);
-      setNotice(`Found ${discovered.length} models`);
+      setNotice(t.models.foundModels(discovered.length));
     } catch (discoverError) {
       props.onError(formatError(discoverError));
     } finally {
@@ -109,7 +111,7 @@ export function ModelsPage(props: {
       setApiKey("");
       setApiKeyDirty(false);
       setApiKeyVisible(false);
-      setNotice("API key cleared");
+      setNotice(t.models.apiKeyCleared);
     } catch (clearError) {
       props.onError(formatError(clearError));
     } finally {
@@ -129,7 +131,7 @@ export function ModelsPage(props: {
       if (props.selectedProvider?.providerId === providerId) {
         setModel(modelId);
       }
-      setNotice(`Default model set to ${modelId}`);
+      setNotice(t.models.defaultModelSet(modelId));
     } catch (defaultError) {
       props.onError(formatError(defaultError));
     } finally {
@@ -158,7 +160,7 @@ export function ModelsPage(props: {
           props.selectedProvider.providerId,
         );
         if (!secret) {
-          props.onError("No saved API key is available to reveal for this provider.");
+          props.onError(t.models.noSavedKey);
           return;
         }
         setApiKey(secret);
@@ -182,8 +184,8 @@ export function ModelsPage(props: {
     >
       <aside className="flex min-h-0 flex-col overflow-hidden border-r border-forge-line bg-white p-3">
         <div className="flex-none px-2 py-3">
-          <h2 className="text-sm font-semibold">Model providers</h2>
-          <p className="mt-1 text-xs text-slate-500">Keys stay local in PI auth storage.</p>
+          <h2 className="text-sm font-semibold">{t.models.providersTitle}</h2>
+          <p className="mt-1 text-xs text-slate-500">{t.models.providersSubtitle}</p>
         </div>
         <div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1" data-testid="model-provider-list">
           {props.providers.map((provider) => (
@@ -202,7 +204,7 @@ export function ModelsPage(props: {
                 }
               }}
               title={provider.hasSecret && provider.model
-                ? `${provider.displayName} · Double-click to use ${provider.model}`
+                ? t.models.providerTitle(provider.displayName, provider.model)
                 : provider.displayName}
               type="button"
             >
@@ -211,13 +213,13 @@ export function ModelsPage(props: {
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{provider.displayName}</span>
                   <span className="mt-0.5 block text-xs text-slate-500">
-                    {provider.hasSecret ? "Key configured" : "Not configured"}
+                    {provider.hasSecret ? t.models.keyConfigured : t.models.notConfigured}
                   </span>
                 </span>
               </span>
               {provider.isDefault ? (
                 <Check
-                  aria-label="Default provider"
+                  aria-label={t.models.defaultProvider}
                   className="ml-2 flex-none text-emerald-600"
                   size={16}
                 />
@@ -233,7 +235,7 @@ export function ModelsPage(props: {
               <div>
                 <h2 className="text-xl font-semibold">{props.selectedProvider.displayName}</h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Configure a recommended or custom model ID.
+                  {t.models.configureModel}
                 </p>
               </div>
               <span className={`rounded-full px-2.5 py-1 text-xs ${
@@ -253,17 +255,17 @@ export function ModelsPage(props: {
                   {props.error}
                 </div>
               ) : null}
-              <Field label="Base URL">
+              <Field label={t.models.baseUrl}>
                 <input
-                  aria-label="Base URL"
+                  aria-label={t.models.baseUrl}
                   className="form-input"
                   onChange={(event) => setBaseUrl(event.target.value)}
                   value={baseUrl}
                 />
               </Field>
-              <Field label="Model ID">
+              <Field label={t.models.modelId}>
                 <input
-                  aria-label="Model ID"
+                  aria-label={t.models.modelId}
                   className="form-input"
                   list="provider-models"
                   onChange={(event) => setModel(event.target.value)}
@@ -278,6 +280,7 @@ export function ModelsPage(props: {
                 disabled={Boolean(busy)}
                 models={models}
                 selectedModel={model}
+                text={t.models}
                 onMakeDefault={(modelId) => {
                   const providerId = props.selectedProvider?.providerId;
                   if (providerId) {
@@ -286,10 +289,10 @@ export function ModelsPage(props: {
                 }}
                 onSelect={setModel}
               />
-              <Field label="API key">
+              <Field label={t.models.apiKey}>
                 <div className="relative">
                   <input
-                    aria-label="API key"
+                    aria-label={t.models.apiKey}
                     autoComplete="off"
                     className="form-input pr-11"
                     onBlur={() => {
@@ -306,23 +309,23 @@ export function ModelsPage(props: {
                         setApiKey("");
                       }
                     }}
-                    placeholder={props.selectedProvider.hasSecret ? "Saved key" : "Enter API key"}
+                    placeholder={props.selectedProvider.hasSecret ? t.models.savedKey : t.models.enterApiKey}
                     type={apiKeyVisible ? "text" : "password"}
                     value={apiKey}
                   />
                   <button
-                    aria-label={apiKeyVisible ? "Hide API key" : "Show API key"}
+                    aria-label={apiKeyVisible ? t.models.hideApiKey : t.models.showApiKey}
                     className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 disabled:opacity-50"
                     disabled={Boolean(busy)}
                     onClick={() => void toggleApiKeyVisibility()}
-                    title={apiKeyVisible ? "Hide API key" : "Show API key"}
+                    title={apiKeyVisible ? t.models.hideApiKey : t.models.showApiKey}
                     type="button"
                   >
                     {apiKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  Leave blank to keep the current key. Click the visibility button to reveal a saved key.
+                  {t.models.apiKeyHelp}
                 </p>
               </Field>
 
@@ -339,7 +342,7 @@ export function ModelsPage(props: {
                   type="button"
                 >
                   <Save size={15} />
-                  Save provider
+                  {t.models.saveProvider}
                 </button>
                 <button
                   className="secondary-button"
@@ -347,7 +350,7 @@ export function ModelsPage(props: {
                   onClick={() => void testProvider()}
                   type="button"
                 >
-                  Test connection
+                  {t.models.testConnection}
                 </button>
                 <button
                   className="secondary-button"
@@ -355,7 +358,7 @@ export function ModelsPage(props: {
                   onClick={() => void discoverModels()}
                   type="button"
                 >
-                  Discover models
+                  {t.models.discoverModels}
                 </button>
                 {props.selectedProvider.hasSecret ? (
                   <button
@@ -364,7 +367,7 @@ export function ModelsPage(props: {
                     onClick={() => void clearSecret()}
                     type="button"
                   >
-                    Clear key
+                    {t.models.clearKey}
                   </button>
                 ) : null}
               </div>
@@ -381,6 +384,7 @@ function ModelOptions(props: {
   disabled: boolean;
   models: string[];
   selectedModel: string;
+  text: ReturnType<typeof useI18n>["models"];
   onMakeDefault: (modelId: string) => void;
   onSelect: (modelId: string) => void;
 }) {
@@ -391,7 +395,7 @@ function ModelOptions(props: {
   return (
     <div className="space-y-2" data-testid="provider-model-options">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-700">Available models</span>
+        <span className="text-sm font-medium text-slate-700">{props.text.availableModels}</span>
         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
           {props.models.length}
         </span>
@@ -412,13 +416,13 @@ function ModelOptions(props: {
               key={modelId}
               onClick={() => props.onSelect(modelId)}
               onDoubleClick={() => props.onMakeDefault(modelId)}
-              title={`${modelId} · Double-click to make default`}
+              title={props.text.modelTitle(modelId)}
               type="button"
             >
               <span className="min-w-0 truncate">{modelId}</span>
               {isDefault ? (
                 <span className="flex-none rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-white">
-                  Default
+                  {props.text.defaultBadge}
                 </span>
               ) : null}
             </button>
@@ -438,13 +442,19 @@ function ProviderLogo(props: { provider: ProviderView }) {
   return (
     <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-slate-200 bg-white p-1">
       <img
-        alt={`${props.provider.displayName} provider logo`}
+        alt={getProviderLogoAlt(props.provider)}
         className="h-full w-full object-contain"
         draggable={false}
         src={iconUrl}
       />
     </span>
   );
+}
+
+function getProviderLogoAlt(provider: ProviderView): string {
+  return getProviderIconUrl(provider.providerId)
+    ? `${provider.displayName} provider logo`
+    : provider.displayName;
 }
 
 function Field(props: { label: string; children: ReactNode }) {

@@ -2,6 +2,7 @@ import type { McpConfigView, McpServerView, SkillView } from "@story-forge/share
 import { Save, Trash2, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatError } from "../utils/renderer-utils";
+import { useI18n } from "../i18n";
 
 type ExtensionTab = "skills" | "mcp";
 
@@ -9,6 +10,7 @@ export function McpSkillsPage(props: {
   error: string | undefined;
   onError: (message: string | undefined) => void;
 }) {
+  const t = useI18n();
   const [tab, setTab] = useState<ExtensionTab>("skills");
   const [skills, setSkills] = useState<SkillView[]>([]);
   const [mcpConfig, setMcpConfig] = useState<McpConfigView>();
@@ -54,7 +56,7 @@ export function McpSkillsPage(props: {
         ...current.filter((skill) => skill.id !== imported.id),
         imported,
       ]);
-      setNotice(`Imported ${imported.name}`);
+      setNotice(t.extensions.importedSkill(imported.name));
     } catch (error) {
       props.onError(formatError(error));
     } finally {
@@ -101,7 +103,7 @@ export function McpSkillsPage(props: {
       const saved = await window.storyForge.mcp.save({ rawJson: mcpJson });
       setMcpConfig(saved);
       setMcpJson(saved.rawJson);
-      setNotice("MCP config saved");
+      setNotice(t.extensions.mcpConfigSaved);
     } catch (error) {
       props.onError(formatError(error));
     } finally {
@@ -124,7 +126,7 @@ export function McpSkillsPage(props: {
           }
         : current
       );
-      setNotice(`${tested.name} ${tested.status}`);
+      setNotice(t.extensions.serverStatus(tested.name, tested.status));
     } catch (error) {
       props.onError(formatError(error));
     } finally {
@@ -137,9 +139,9 @@ export function McpSkillsPage(props: {
       <div className="mx-auto max-w-5xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold">MCP & Skills</h2>
+            <h2 className="text-xl font-semibold">{t.extensions.title}</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Manage callable Skills and MCP server configuration.
+              {t.extensions.subtitle}
             </p>
           </div>
           {notice ? (
@@ -150,8 +152,8 @@ export function McpSkillsPage(props: {
         </div>
 
         <div className="mt-6 inline-flex rounded-md border border-forge-line bg-white p-1" role="tablist">
-          <TabButton active={tab === "skills"} label="Skills" onClick={() => setTab("skills")} />
-          <TabButton active={tab === "mcp"} label="MCP Servers" onClick={() => setTab("mcp")} />
+          <TabButton active={tab === "skills"} label={t.extensions.skillsTab} onClick={() => setTab("skills")} />
+          <TabButton active={tab === "mcp"} label={t.extensions.mcpServersTab} onClick={() => setTab("mcp")} />
         </div>
 
         {props.error ? (
@@ -163,7 +165,7 @@ export function McpSkillsPage(props: {
         {tab === "skills" ? (
           <div className="mt-5 rounded-lg border border-forge-line bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold">Skills</h3>
+              <h3 className="text-sm font-semibold">{t.extensions.skillsTitle}</h3>
               <button
                 className="inline-flex items-center gap-2 rounded-md bg-forge-ember px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                 disabled={Boolean(busy)}
@@ -171,7 +173,7 @@ export function McpSkillsPage(props: {
                 type="button"
               >
                 <Upload size={15} />
-                Import Skill
+                {t.extensions.importSkill}
               </button>
             </div>
             <div className="mt-4 divide-y divide-forge-line">
@@ -186,16 +188,16 @@ export function McpSkillsPage(props: {
                       <span className={`rounded-full px-2 py-0.5 text-xs ${
                         skill.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
                       }`}>
-                        {skill.enabled ? "enabled" : "disabled"}
+                        {skill.enabled ? t.extensions.enabledBadge : t.extensions.disabledBadge}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-500">{skill.description}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                      <span>Enabled</span>
+                      <span>{t.extensions.enabled}</span>
                       <input
-                        aria-label={`Enable ${skill.name}`}
+                        aria-label={t.extensions.enableSkill(skill.name)}
                         checked={skill.enabled}
                         className="h-5 w-9 accent-forge-ember"
                         disabled={Boolean(busy)}
@@ -205,7 +207,7 @@ export function McpSkillsPage(props: {
                       />
                     </label>
                     <button
-                      aria-label={`Delete ${skill.name}`}
+                      aria-label={t.extensions.deleteSkill(skill.name)}
                       className="secondary-button inline-flex items-center gap-2"
                       disabled={Boolean(busy)}
                       onClick={() => void removeSkill(skill)}
@@ -216,7 +218,7 @@ export function McpSkillsPage(props: {
                   </div>
                 </div>
               )) : (
-                <p className="py-5 text-sm text-slate-500">No skills installed.</p>
+                <p className="py-5 text-sm text-slate-500">{t.extensions.noSkills}</p>
               )}
             </div>
           </div>
@@ -224,7 +226,7 @@ export function McpSkillsPage(props: {
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="rounded-lg border border-forge-line bg-white p-5 shadow-sm">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold">MCP JSON</h3>
+                <h3 className="text-sm font-semibold">{t.extensions.mcpJson}</h3>
                 <button
                   className="inline-flex items-center gap-2 rounded-md bg-forge-ember px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                   disabled={Boolean(busy)}
@@ -232,11 +234,11 @@ export function McpSkillsPage(props: {
                   type="button"
                 >
                   <Save size={15} />
-                  Save MCP config
+                  {t.extensions.saveMcpConfig}
                 </button>
               </div>
               <textarea
-                aria-label="MCP configuration JSON"
+                aria-label={t.extensions.mcpConfigJson}
                 className="mt-4 min-h-[360px] w-full resize-y rounded-md border border-forge-line bg-slate-950 p-4 font-mono text-sm leading-6 text-slate-50 outline-none ring-forge-ember focus:ring-2"
                 onChange={(event) => setMcpJson(event.currentTarget.value)}
                 spellCheck={false}
@@ -244,7 +246,7 @@ export function McpSkillsPage(props: {
               />
             </div>
             <div className="rounded-lg border border-forge-line bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-semibold">Servers</h3>
+              <h3 className="text-sm font-semibold">{t.extensions.servers}</h3>
               <div className="mt-3 space-y-3">
                 {mcpConfig?.servers.length ? mcpConfig.servers.map((server) => (
                   <div className="rounded-md border border-forge-line p-3" key={server.name}>
@@ -263,13 +265,13 @@ export function McpSkillsPage(props: {
                       </p>
                     ) : null}
                     <button
-                      aria-label={`Test ${server.name}`}
+                      aria-label={t.extensions.testServer(server.name)}
                       className="secondary-button mt-3 w-full"
                       disabled={Boolean(busy)}
                       onClick={() => void testMcpServer(server)}
                       type="button"
                     >
-                      Test connection
+                      {t.extensions.testConnection}
                     </button>
                     {server.tools.length > 0 ? (
                       <div className="mt-3 space-y-2">
@@ -285,7 +287,7 @@ export function McpSkillsPage(props: {
                     ) : null}
                   </div>
                 )) : (
-                  <p className="text-sm text-slate-500">No MCP servers configured.</p>
+                  <p className="text-sm text-slate-500">{t.extensions.noServers}</p>
                 )}
               </div>
             </div>

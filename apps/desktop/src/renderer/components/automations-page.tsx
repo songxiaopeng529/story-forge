@@ -4,6 +4,7 @@ import type {
 } from "@story-forge/shared";
 import {
   CalendarClock,
+  Loader2,
   Pause,
   Play,
   RefreshCw,
@@ -18,6 +19,7 @@ import type {
   WorkspaceView,
 } from "../../shared/story-forge-api";
 import { formatError } from "../utils/renderer-utils";
+import { useI18n } from "../i18n";
 
 export function AutomationsPage(props: {
   providers: ProviderView[];
@@ -26,12 +28,14 @@ export function AutomationsPage(props: {
   error: string | undefined;
   onError: (error: string | undefined) => void;
 }) {
+  const t = useI18n();
   const defaultProvider = props.providers.find((provider) => provider.isDefault)
     ?? props.providers[0];
   const defaultWorkspace = props.workspaces[0];
   const [automations, setAutomations] = useState<AutomationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [name, setName] = useState("");
   const [workspaceId, setWorkspaceId] = useState(defaultWorkspace?.id ?? "");
   const [providerId, setProviderId] = useState<ProviderId>(
@@ -87,13 +91,21 @@ export function AutomationsPage(props: {
     props.onError(undefined);
     const trimmedScheduleText = scheduleText.trim();
     if (!trimmedScheduleText) {
-      props.onError("Please enter a schedule description first");
+      props.onError(t.automations.scheduleRequired);
       return;
     }
+    const trimmedModel = model.trim();
+    if (!providerId || !trimmedModel) {
+      props.onError(t.automations.modelRequiredForSchedule);
+      return;
+    }
+    setGenerating(true);
     try {
       const nextValidation = await window.storyForge.automations.interpretSchedule({
         scheduleText: trimmedScheduleText,
         timezone,
+        providerId,
+        model: trimmedModel,
       });
       setValidation(nextValidation);
       if (nextValidation.ok) {
@@ -104,6 +116,8 @@ export function AutomationsPage(props: {
       }
     } catch (generateError) {
       props.onError(formatError(generateError));
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -130,7 +144,7 @@ export function AutomationsPage(props: {
     const trimmedPrompt = prompt.trim();
     const trimmedScheduleText = scheduleText.trim();
     if (!trimmedName || !trimmedPrompt || !workspaceId || !model.trim()) {
-      props.onError("Automation name, workspace, model, and prompt are required.");
+      props.onError(t.automations.requiredFields);
       return;
     }
 
@@ -215,9 +229,9 @@ export function AutomationsPage(props: {
       <div className="mx-auto max-w-6xl">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold">Automations</h2>
+            <h2 className="text-xl font-semibold">{t.automations.title}</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Schedule local StoryForge chats while the desktop app is open.
+              {t.automations.subtitle}
             </p>
           </div>
           <CalendarClock className="text-forge-ember" size={24} />
@@ -237,20 +251,20 @@ export function AutomationsPage(props: {
               void saveAutomation();
             }}
           >
-            <div className="text-sm font-semibold">New automation</div>
+            <div className="text-sm font-semibold">{t.automations.newAutomation}</div>
             <div className="mt-4 space-y-3">
-              <Field label="Automation name">
+              <Field label={t.automations.automationName}>
                 <input
-                  aria-label="Automation name"
+                  aria-label={t.automations.automationName}
                   className={inputClassName}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Daily risk audit"
                   value={name}
                 />
               </Field>
-              <Field label="Workspace">
+              <Field label={t.automations.workspace}>
                 <select
-                  aria-label="Workspace"
+                  aria-label={t.automations.workspace}
                   className={inputClassName}
                   onChange={(event) => setWorkspaceId(event.target.value)}
                   value={workspaceId}
@@ -263,9 +277,9 @@ export function AutomationsPage(props: {
                 </select>
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Provider">
+                <Field label={t.automations.provider}>
                   <select
-                    aria-label="Provider"
+                    aria-label={t.automations.provider}
                     className={inputClassName}
                     onChange={(event) => {
                       const nextProviderId = event.target.value as ProviderId;
@@ -284,9 +298,9 @@ export function AutomationsPage(props: {
                     ))}
                   </select>
                 </Field>
-                <Field label="Model">
+                <Field label={t.automations.model}>
                   <input
-                    aria-label="Model"
+                    aria-label={t.automations.model}
                     className={inputClassName}
                     list="automation-models"
                     onChange={(event) => setModel(event.target.value)}
@@ -299,26 +313,27 @@ export function AutomationsPage(props: {
                   </datalist>
                 </Field>
               </div>
-              <Field label="Schedule description">
+              <Field label={t.automations.scheduleDescription}>
                 <input
-                  aria-label="Schedule description"
+                  aria-label={t.automations.scheduleDescription}
                   className={inputClassName}
                   onChange={(event) => {
                     setScheduleText(event.target.value);
                     setValidation(undefined);
                   }}
-                  placeholder="每天早上 9 点"
+                  placeholder={t.automations.schedulePlaceholder}
                   value={scheduleText}
                 />
               </Field>
               <div className="grid grid-cols-[1fr_auto] gap-2">
                 <button
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-forge-line px-3 text-sm font-medium hover:bg-slate-50"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-forge-line px-3 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+                  disabled={generating}
                   onClick={() => void generateSchedule()}
                   type="button"
                 >
-                  <Wand2 size={15} />
-                  Generate schedule
+                  {generating ? <Loader2 className="animate-spin" size={15} /> : <Wand2 size={15} />}
+                  {t.automations.generateSchedule}
                 </button>
                 <button
                   className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-forge-line px-3 text-sm font-medium hover:bg-slate-50"
@@ -326,25 +341,25 @@ export function AutomationsPage(props: {
                   type="button"
                 >
                   <RefreshCw size={15} />
-                  Validate
+                  {t.automations.validate}
                 </button>
               </div>
               <div className="grid grid-cols-[1fr_150px] gap-3">
-                <Field label="Cron">
+                <Field label={t.automations.cron}>
                   <input
-                    aria-label="Cron"
+                    aria-label={t.automations.cron}
                     className={inputClassName}
                     onChange={(event) => {
                       setCron(event.target.value);
                       setValidation(undefined);
                     }}
-                    placeholder="0 9 * * *"
+                    placeholder={t.automations.cronPlaceholder}
                     value={cron}
                   />
                 </Field>
-                <Field label="Timezone">
+                <Field label={t.automations.timezone}>
                   <input
-                    aria-label="Timezone"
+                    aria-label={t.automations.timezone}
                     className={inputClassName}
                     onChange={(event) => {
                       setTimezone(event.target.value);
@@ -360,12 +375,12 @@ export function AutomationsPage(props: {
                   <div>{validation.nextRuns.map(formatDateTime).join(" / ")}</div>
                 </div>
               ) : null}
-              <Field label="Automation prompt">
+              <Field label={t.automations.automationPrompt}>
                 <textarea
-                  aria-label="Automation prompt"
+                  aria-label={t.automations.automationPrompt}
                   className={`${inputClassName} h-24 resize-none`}
                   onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="Ask StoryForge to inspect the repo and summarize risks."
+                  placeholder={t.automations.automationPromptPlaceholder}
                   value={prompt}
                 />
               </Field>
@@ -376,21 +391,21 @@ export function AutomationsPage(props: {
               type="submit"
             >
               <Play size={15} />
-              Save automation
+              {t.automations.saveAutomation}
             </button>
           </form>
 
           <div className="min-w-0 rounded-lg border border-forge-line bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-forge-line px-4 py-3">
-              <div className="text-sm font-semibold">Scheduled chats</div>
-              <div className="text-xs text-slate-500">{automations.length} total</div>
+              <div className="text-sm font-semibold">{t.automations.scheduledChats}</div>
+              <div className="text-xs text-slate-500">{t.automations.total(automations.length)}</div>
             </div>
             <div className="divide-y divide-forge-line">
               {loading ? (
-                <div className="p-4 text-sm text-slate-500">Loading automations...</div>
+                <div className="p-4 text-sm text-slate-500">{t.automations.loading}</div>
               ) : automations.length === 0 ? (
                 <div className="p-6 text-sm text-slate-500">
-                  No automations yet.
+                  {t.automations.empty}
                 </div>
               ) : (
                 automations.map((automation) => (
@@ -398,6 +413,7 @@ export function AutomationsPage(props: {
                     automation={automation}
                     key={automation.id}
                     sessionTitle={getSessionTitle(automation, props.sessions)}
+                    text={t.automations}
                     onDelete={() => void deleteAutomation(automation)}
                     onRunNow={() => void runNow(automation)}
                     onStatusChange={(status) => void updateStatus(automation, status)}
@@ -415,6 +431,7 @@ export function AutomationsPage(props: {
 function AutomationRow(props: {
   automation: AutomationView;
   sessionTitle: string | undefined;
+  text: ReturnType<typeof useI18n>["automations"];
   onRunNow: () => void;
   onStatusChange: (status: AutomationView["status"]) => void;
   onDelete: () => void;
@@ -428,7 +445,7 @@ function AutomationRow(props: {
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold">{props.automation.name}</h3>
             <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-forge-ember">
-              {threadTimer ? "Session timer" : "New session"}
+              {threadTimer ? props.text.sessionTimer : props.text.newSession}
             </span>
             <span
               className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -445,41 +462,41 @@ function AutomationRow(props: {
           </div>
           {threadTimer ? (
             <div className="mt-1 text-xs text-slate-500">
-              Session: {props.sessionTitle ?? props.automation.sessionId ?? "missing"}
+              {props.text.session}: {props.sessionTitle ?? props.automation.sessionId ?? props.text.missing}
             </div>
           ) : null}
           <div className="mt-2 text-sm text-slate-700 line-clamp-2">
             {props.automation.prompt}
           </div>
           <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-            <span>Next: {formatMaybeDate(props.automation.nextRunAt)}</span>
-            <span>Last: {props.automation.lastRunStatus ?? "never"}</span>
+            <span>{props.text.next}: {formatMaybeDate(props.automation.nextRunAt, props.text.notScheduled)}</span>
+            <span>{props.text.last}: {props.automation.lastRunStatus ?? props.text.never}</span>
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
           <button
-            aria-label={`Run ${props.automation.name} now`}
+            aria-label={props.text.runNowLabel(props.automation.name)}
             className="rounded-md border border-forge-line p-2 text-slate-600 hover:bg-slate-50"
             onClick={props.onRunNow}
-            title="Run now"
+            title={props.text.runNow}
             type="button"
           >
             <Play size={15} />
           </button>
           <button
-            aria-label={`${isActive ? "Pause" : "Resume"} ${props.automation.name}`}
+            aria-label={props.text.pauseResumeLabel(isActive ? props.text.pause : props.text.resume, props.automation.name)}
             className="rounded-md border border-forge-line p-2 text-slate-600 hover:bg-slate-50"
             onClick={() => props.onStatusChange(isActive ? "paused" : "active")}
-            title={isActive ? "Pause" : "Resume"}
+            title={isActive ? props.text.pause : props.text.resume}
             type="button"
           >
             {isActive ? <Pause size={15} /> : <Play size={15} />}
           </button>
           <button
-            aria-label={`Delete ${props.automation.name}`}
+            aria-label={props.text.deleteLabel(props.automation.name)}
             className="rounded-md border border-forge-line p-2 text-slate-500 hover:bg-red-50 hover:text-red-600"
             onClick={props.onDelete}
-            title="Delete"
+            title={props.text.delete}
             type="button"
           >
             <Trash2 size={15} />
@@ -506,8 +523,8 @@ function getDefaultTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
-function formatMaybeDate(value: string | undefined): string {
-  return value ? formatDateTime(value) : "not scheduled";
+function formatMaybeDate(value: string | undefined, fallback: string): string {
+  return value ? formatDateTime(value) : fallback;
 }
 
 function formatDateTime(value: string): string {

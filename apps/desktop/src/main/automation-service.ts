@@ -3,6 +3,7 @@ import type {
   AutomationRunView,
   AutomationView,
   CreateAutomationInput,
+  ProviderId,
   ScheduleValidationResult,
   UpdateAutomationInput,
 } from "@story-forge/shared";
@@ -14,17 +15,21 @@ import {
   interpretSchedule,
   validateSchedule,
 } from "@story-forge/extensions";
+import type { ScheduleCronGenerator } from "./automation-schedule-generator";
 
 export class AutomationService {
   private readonly repository: AutomationRepository;
   private readonly now: () => Date;
+  private readonly generateCron: ScheduleCronGenerator | undefined;
 
   constructor(options: {
     repository: AutomationRepository;
     now?: () => Date;
+    generateCron?: ScheduleCronGenerator;
   }) {
     this.repository = options.repository;
     this.now = options.now ?? (() => new Date());
+    this.generateCron = options.generateCron;
   }
 
   list(): Promise<AutomationView[]> {
@@ -47,15 +52,43 @@ export class AutomationService {
     });
   }
 
-  interpretSchedule(input: {
+  async interpretSchedule(input: {
     scheduleText: string;
     timezone: string;
-  }): ScheduleValidationResult {
-    return interpretSchedule({
+    providerId: ProviderId;
+    model: string;
+  }): Promise<ScheduleValidationResult> {
+    const now = this.now();
+    if (!this.generateCron) {
+      return interpretSchedule({
+        scheduleText: input.scheduleText,
+        timezone: input.timezone,
+        now,
+      });
+    }
+
+    const cron = await this.generateCron({
       scheduleText: input.scheduleText,
       timezone: input.timezone,
-      now: this.now(),
+      providerId: input.providerId,
+      model: input.model,
+      now,
     });
+    const validation = validateSchedule({
+      cron,
+      timezone: input.timezone,
+      now,
+    });
+    if (!validation.ok) {
+      return {
+        ok: false,
+        error: `Generated cron expression is invalid: ${validation.error}`,
+      };
+    }
+    return {
+      ...validation,
+      summary: `${validation.summary} (${input.scheduleText.trim()})`,
+    };
   }
 
   async create(input: CreateAutomationInput): Promise<AutomationView> {

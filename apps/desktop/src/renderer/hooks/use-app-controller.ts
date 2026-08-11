@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AppLanguage,
   AutomationView,
   CommandExecutionMode,
   ExtensionUiRequestEvent,
@@ -85,6 +86,7 @@ export type AppController = {
   imageAttachments: ImageAttachmentView[];
   setImageAttachments: (attachments: ImageAttachmentView[]) => void;
   developerMode: boolean;
+  language: AppLanguage;
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
@@ -110,6 +112,7 @@ export type AppController = {
   stopTurn: () => Promise<void>;
   compactSelectedSession: () => Promise<void>;
   saveDeveloperMode: (next: boolean) => Promise<void>;
+  saveLanguage: (next: AppLanguage) => Promise<void>;
   saveCommandExecutionMode: (next: CommandExecutionMode) => Promise<void>;
   saveWebAccessEnabled: (next: boolean) => Promise<void>;
   saveWebSearchCoverage: (next: WebSearchCoverage) => Promise<void>;
@@ -146,6 +149,7 @@ export function useAppController(): AppController {
   const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
   const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
+  const [language, setLanguage] = useState<AppLanguage>("en");
   const [developerMode, setDeveloperMode] = useState(false);
   const [commandExecutionMode, setCommandExecutionMode] =
     useState<CommandExecutionMode>("sentinel");
@@ -172,6 +176,7 @@ export function useAppController(): AppController {
   const gitMountedRef = useRef(true);
   const gitRequestsRef = useRef(new Map<string, Promise<void>>());
   const persistedDeveloperModeRef = useRef(false);
+  const persistedLanguageRef = useRef<AppLanguage>("en");
   const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const persistedWebAccessEnabledRef = useRef(false);
   const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
@@ -370,9 +375,11 @@ export function useAppController(): AppController {
           return;
         }
         persistedDeveloperModeRef.current = nextSettings.developerMode;
+        persistedLanguageRef.current = nextSettings.language;
         persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
         persistedWebAccessEnabledRef.current = nextSettings.webAccessEnabled;
         persistedWebSearchCoverageRef.current = nextSettings.webSearchCoverage;
+        setLanguage(nextSettings.language);
         setDeveloperMode(nextSettings.developerMode);
         setCommandExecutionMode(nextSettings.commandExecutionMode);
         setWebAccessEnabled(nextSettings.webAccessEnabled);
@@ -685,6 +692,33 @@ export function useAppController(): AppController {
       setDeveloperMode(saved.developerMode);
     } catch (settingsError) {
       setDeveloperMode(previousDeveloperMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
+  async function saveLanguage(nextLanguage: AppLanguage): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextLanguage === persistedLanguageRef.current
+    ) {
+      return;
+    }
+    const previousLanguage = persistedLanguageRef.current;
+    settingsSaveInFlightRef.current = true;
+    setLanguage(nextLanguage);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({
+        language: nextLanguage,
+      });
+      persistedLanguageRef.current = saved.language;
+      setLanguage(saved.language);
+    } catch (settingsError) {
+      setLanguage(previousLanguage);
       setError(formatError(settingsError));
     } finally {
       settingsSaveInFlightRef.current = false;
@@ -1057,6 +1091,7 @@ export function useAppController(): AppController {
     setPrompt,
     imageAttachments,
     setImageAttachments,
+    language,
     developerMode,
     commandExecutionMode,
     webAccessEnabled,
@@ -1083,6 +1118,7 @@ export function useAppController(): AppController {
     stopTurn,
     compactSelectedSession,
     saveDeveloperMode,
+    saveLanguage,
     saveCommandExecutionMode,
     saveWebAccessEnabled,
     saveWebSearchCoverage,

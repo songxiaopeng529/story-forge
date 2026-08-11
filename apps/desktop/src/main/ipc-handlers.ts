@@ -23,7 +23,12 @@ type AutomationsIpcService = {
   list(): unknown;
   getRuns(automationId: string): unknown;
   validateSchedule(input: { cron: string; timezone: string }): unknown;
-  interpretSchedule(input: { scheduleText: string; timezone: string }): unknown;
+  interpretSchedule(input: {
+    scheduleText: string;
+    timezone: string;
+    providerId: ProviderId;
+    model: string;
+  }): unknown;
   create(input: z.infer<typeof automationCreateSchema>): unknown;
   update(input: z.infer<typeof automationUpdateSchema>): unknown;
   delete(automationId: string): unknown;
@@ -47,6 +52,7 @@ export type IpcHandlerOptions = {
 
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
+const languageSchema = z.enum(["en", "zh"]);
 const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<SessionId>(
   (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
@@ -65,6 +71,7 @@ const imageAttachmentSchema = z.object({
   size: z.number().int().nonnegative(),
 });
 const settingsSaveSchema = z.object({
+  language: languageSchema.optional(),
   developerMode: z.boolean().optional(),
   commandExecutionMode: commandExecutionModeSchema.optional(),
   webAccessEnabled: z.boolean().optional(),
@@ -142,6 +149,8 @@ const automationValidateScheduleSchema = z.object({
 const automationInterpretScheduleSchema = z.object({
   scheduleText: z.string().min(1),
   timezone: z.string().min(1),
+  providerId: providerIdSchema,
+  model: z.string().min(1),
 });
 
 export function registerIpcHandlers(options: IpcHandlerOptions): void {

@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentStopReason,
+  AppLanguage,
   AppSettingsView,
   AutomationRunView,
   AutomationView,
@@ -206,6 +207,7 @@ export type StoryForgeApi = {
   settings: {
     get(): Promise<AppSettingsView>;
     save(input: {
+      language?: AppLanguage;
       developerMode?: boolean;
       commandExecutionMode?: CommandExecutionMode;
       webAccessEnabled?: boolean;
@@ -274,6 +276,8 @@ export type StoryForgeApi = {
     interpretSchedule(input: {
       scheduleText: string;
       timezone: string;
+      providerId: ProviderId;
+      model: string;
     }): Promise<ScheduleValidationResult>;
     create(input: CreateAutomationInput): Promise<AutomationView>;
     update(input: UpdateAutomationInput): Promise<AutomationView>;

@@ -8,6 +8,7 @@ import { AppSettingsStore } from "../app-settings-store";
 
 const defaultSettings = {
   schemaVersion: 1,
+  language: "en",
   developerMode: false,
   commandExecutionMode: "sentinel",
   webAccessEnabled: false,
@@ -55,6 +56,16 @@ describe("AppSettingsStore", () => {
     await expect(store.save({ developerMode: true })).resolves.toEqual({
       ...defaultSettings,
       developerMode: true,
+    });
+  });
+
+  it("persists language without changing other settings", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
+    const store = new AppSettingsStore({ rootDir });
+
+    await expect(store.save({ language: "zh" })).resolves.toEqual({
+      ...defaultSettings,
+      language: "zh",
     });
   });
 

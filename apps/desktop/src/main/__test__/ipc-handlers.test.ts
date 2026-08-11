@@ -163,6 +163,7 @@ describe("registerIpcHandlers", () => {
 
     await expect(fixture.invoke(IPC_CHANNELS.settingsGet)).resolves.toEqual({
       schemaVersion: 1,
+      language: "en",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
@@ -172,6 +173,7 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
     ).resolves.toEqual({
       schemaVersion: 1,
+      language: "en",
       developerMode: true,
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
@@ -181,6 +183,7 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "cruise" }),
     ).resolves.toEqual({
       schemaVersion: 1,
+      language: "en",
       developerMode: false,
       commandExecutionMode: "cruise",
       webAccessEnabled: false,
@@ -193,13 +196,27 @@ describe("registerIpcHandlers", () => {
       }),
     ).resolves.toEqual({
       schemaVersion: 1,
+      language: "en",
       developerMode: false,
       commandExecutionMode: "sentinel",
       webAccessEnabled: true,
       webSearchCoverage: "wide",
     });
     await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { language: "zh" }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      language: "zh",
+      developerMode: false,
+      commandExecutionMode: "sentinel",
+      webAccessEnabled: false,
+      webSearchCoverage: "focused",
+    });
+    await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: "yes" }),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { language: "fr" }),
     ).rejects.toThrow("Invalid IPC payload");
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { responseMode: "smooth" }),
@@ -305,6 +322,8 @@ describe("registerIpcHandlers", () => {
     await expect(fixture.invoke(IPC_CHANNELS.automationsInterpretSchedule, {
       scheduleText: "每天上午 9 点",
       timezone: "Asia/Shanghai",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
     })).resolves.toMatchObject({ ok: true });
     await expect(fixture.invoke(IPC_CHANNELS.automationsCreate, {
       name: "Daily check",
@@ -458,6 +477,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
   const settings = {
     get: vi.fn(async () => ({
       schemaVersion: 1 as const,
+	      language: "en" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,
@@ -465,6 +485,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
+	      language: "en" as const,
       developerMode: false,
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,

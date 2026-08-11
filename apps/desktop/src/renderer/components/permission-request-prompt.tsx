@@ -1,4 +1,5 @@
 import type { PermissionRequestEvent } from "@story-forge/shared";
+import { useI18n } from "../i18n";
 
 export function PermissionRequestPrompt(props: {
   request: PermissionRequestEvent;
@@ -6,6 +7,7 @@ export function PermissionRequestPrompt(props: {
   onApprove: () => void;
   onDeny: () => void;
 }) {
+  const t = useI18n();
   const commandLine = [props.request.command.program, ...props.request.command.args].join(" ");
 
   return (
@@ -18,19 +20,19 @@ export function PermissionRequestPrompt(props: {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-base font-semibold" id="permission-request-title">
-              Allow command?
+              {t.dialogs.permissionTitle}
             </h2>
             <p className="mt-1 text-sm text-slate-500">{props.request.reason}</p>
           </div>
           <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-medium text-forge-ember">
-            {labelForRisk(props.request.risk)}
+            {labelForRisk(props.request.risk, t)}
           </span>
         </div>
 
         <div className="mt-4 space-y-3 text-sm">
           <div>
             <div className="text-xs font-semibold uppercase text-slate-500">
-              Command
+              {t.dialogs.command}
             </div>
             <pre className="mt-1 overflow-x-auto rounded-md bg-slate-950 px-3 py-2 text-xs text-white">
               {commandLine}
@@ -38,7 +40,7 @@ export function PermissionRequestPrompt(props: {
           </div>
           <div>
             <div className="text-xs font-semibold uppercase text-slate-500">
-              Working directory
+              {t.dialogs.workingDirectory}
             </div>
             <code className="mt-1 block overflow-x-auto rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-700">
               {props.request.command.cwd}
@@ -53,7 +55,7 @@ export function PermissionRequestPrompt(props: {
             onClick={props.onDeny}
             type="button"
           >
-            Deny
+            {t.dialogs.deny}
           </button>
           <button
             className="rounded-md bg-forge-ember px-4 py-2 text-sm font-semibold text-white hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-70"
@@ -61,7 +63,7 @@ export function PermissionRequestPrompt(props: {
             onClick={props.onApprove}
             type="button"
           >
-            Allow once
+            {t.dialogs.allowOnce}
           </button>
         </div>
       </section>
@@ -69,12 +71,12 @@ export function PermissionRequestPrompt(props: {
   );
 }
 
-function labelForRisk(risk: PermissionRequestEvent["risk"]): string {
+function labelForRisk(risk: PermissionRequestEvent["risk"], text: ReturnType<typeof useI18n>): string {
   if (risk === "destructive") {
-    return "Destructive";
+    return text.dialogs.destructive;
   }
   if (risk === "elevated") {
-    return "Elevated";
+    return text.dialogs.elevated;
   }
-  return "Unknown";
+  return text.dialogs.unknown;
 }

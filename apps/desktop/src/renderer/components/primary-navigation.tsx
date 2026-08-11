@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import appIcon from "../assets/icon.png";
+import { useI18n } from "../i18n";
 
 export type Page = "agent" | "models" | "automations" | "extensions" | "settings";
 
@@ -17,6 +18,8 @@ export function PrimaryNavigation(props: {
   collapsible: boolean;
   onCollapse: () => void;
 }) {
+  const t = useI18n();
+
   return (
     <aside className="flex flex-col items-center gap-3 bg-forge-nav py-4 text-white">
       <img
@@ -30,40 +33,40 @@ export function PrimaryNavigation(props: {
         <NavButton
           active={props.page === "agent"}
           icon={<MessagesSquare size={20} />}
-          label="Coding Agent"
+          label={t.nav.agent}
           onClick={() => props.onChange("agent")}
         />
         <NavButton
           active={props.page === "models"}
           icon={<BrainCircuit size={20} />}
-          label="Models"
+          label={t.nav.models}
           onClick={() => props.onChange("models")}
         />
         <NavButton
           active={props.page === "automations"}
           icon={<CalendarClock size={20} />}
-          label="Automations"
+          label={t.nav.automations}
           onClick={() => props.onChange("automations")}
         />
         <NavButton
           active={props.page === "extensions"}
           icon={<Blocks size={20} />}
-          label="MCP & Skills"
+          label={t.nav.extensions}
           onClick={() => props.onChange("extensions")}
         />
         <NavButton
           active={props.page === "settings"}
           icon={<Settings size={20} />}
-          label="Settings"
+          label={t.nav.settings}
           onClick={() => props.onChange("settings")}
         />
       </nav>
       {props.collapsible ? (
         <button
-          aria-label="Collapse navigation"
+          aria-label={t.nav.collapseNavigation}
           className="mt-auto flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-white/[0.08] text-white/70 hover:bg-white/[0.14]"
           onClick={props.onCollapse}
-          title="Collapse navigation"
+          title={t.nav.collapseNavigation}
           type="button"
         >
           <PanelLeftClose size={16} />
