@@ -141,15 +141,6 @@ function TaskListCard(props: {
           <div className="mt-3 space-y-2">
             {item.tasks.map((task) => (
               <div className="flex items-start gap-2" key={task.id}>
-                <span className={`mt-0.5 flex-none ${taskTone(task.status)}`}>
-                  {task.status === "completed" ? (
-                    <Check size={15} />
-                  ) : task.status === "blocked" ? (
-                    <OctagonAlert size={15} />
-                  ) : (
-                    <Clock3 size={15} />
-                  )}
-                </span>
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium text-forge-ink">{task.title}</div>
                   {task.activeForm || task.blockedReason ? (
@@ -365,16 +356,6 @@ function taskLabel(status: Extract<TimelineItem, { type: "task-list" }>["tasks"]
     return "In progress";
   }
   return status[0]?.toUpperCase() + status.slice(1);
-}
-
-function taskTone(status: Extract<TimelineItem, { type: "task-list" }>["tasks"][number]["status"]): string {
-  if (status === "completed") {
-    return "text-forge-success";
-  }
-  if (status === "blocked") {
-    return "text-forge-danger";
-  }
-  return "text-forge-info";
 }
 
 function taskBadge(status: Extract<TimelineItem, { type: "task-list" }>["tasks"][number]["status"]): string {
