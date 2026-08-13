@@ -11,6 +11,7 @@ export function ModelsPage(props: {
   providers: ProviderView[];
   selectedProvider: ProviderView | undefined;
   onProvidersChange: (providers: ProviderView[]) => void;
+  onDefaultModelChange: (providerId: ProviderId, model: string) => void;
   onSelect: (providerId: ProviderId) => void;
   onError: (message: string | undefined) => void;
   error: string | undefined;
@@ -127,7 +128,9 @@ export function ModelsPage(props: {
         providerId,
         model: modelId,
       });
-      props.onProvidersChange(await window.storyForge.providers.list());
+      const nextProviders = await window.storyForge.providers.list();
+      props.onProvidersChange(nextProviders);
+      props.onDefaultModelChange(providerId, modelId);
       if (props.selectedProvider?.providerId === providerId) {
         setModel(modelId);
       }

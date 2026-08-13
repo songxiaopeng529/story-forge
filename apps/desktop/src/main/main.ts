@@ -91,7 +91,10 @@ async function initializeApplication(): Promise<void> {
   });
   await sessionRepository.recoverInterruptedSessions();
   await automationService.recoverRunningRuns();
-  const providerService = new ProviderService({ piModels });
+  const providerService = new ProviderService({
+    piModels,
+    sessions: sessionRepository,
+  });
   const coordinator = new AgentCoordinator({
     sessionRepository,
     workspaceRepository,

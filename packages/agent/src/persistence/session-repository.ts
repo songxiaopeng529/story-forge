@@ -170,6 +170,7 @@ export class SessionRepository {
   private readonly sessionsDir: string;
   private readonly piAdapter: SessionPiAdapter | undefined;
   private readonly updateTails = new Map<SessionId, Promise<void>>();
+  private modelUpdateTail: Promise<void> = Promise.resolve();
 
   constructor(options: { rootDir: string; piAdapter?: SessionPiAdapter }) {
     this.sessionsDir = resolveStoryForgePaths({
@@ -244,14 +245,65 @@ export class SessionRepository {
     sessionId: SessionId,
     refs: PiSessionReferences,
   ): Promise<SessionRecord> {
+    // A PI transcript identifies persisted history; it must never override a
+    // newer model choice that was made while the transcript was being opened.
     return this.update(sessionId, (session) => ({
       ...session,
       piSessionId: refs.piSessionId,
       piSessionFile: refs.piSessionFile,
-      providerId: refs.providerId ?? session.providerId,
-      model: refs.model ?? session.model,
       migrationStatus: "ok",
     }));
+  }
+
+  async updateModel(
+    sessionId: SessionId,
+    input: { providerId: ProviderId; model: string },
+  ): Promise<SessionRecord> {
+    const selection = normalizeModelSelection(input);
+    return this.update(
+      sessionId,
+      (session) => ({ ...session, ...selection }),
+      { touchUpdatedAt: false },
+    );
+  }
+
+  updateModelForAllSessions(input: {
+    providerId: ProviderId;
+    model: string;
+  }): Promise<void> {
+    const { providerId, model } = normalizeModelSelection(input);
+    const operation = this.modelUpdateTail.then(() =>
+      this.applyModelToAllSessions({ providerId, model })
+    );
+    this.modelUpdateTail = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async applyModelToAllSessions(input: {
+    providerId: ProviderId;
+    model: string;
+  }): Promise<void> {
+    const sessions = await this.listMetadata();
+    const results = await Promise.allSettled(
+      sessions.map((session) =>
+        this.updateMetadata(
+          session.id,
+          (current) => ({
+            ...current,
+            providerId: input.providerId,
+            model: input.model,
+          }),
+          { touchUpdatedAt: false },
+        )
+      ),
+    );
+    const failures = results.filter((result) => result.status === "rejected");
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures.map((failure) => failure.reason),
+        `Failed to update the model for ${failures.length} session(s)`,
+      );
+    }
   }
 
   async listTasks(sessionId: SessionId): Promise<SessionTask[]> {
@@ -457,20 +509,22 @@ export class SessionRepository {
   private async update(
     sessionId: SessionId,
     updater: (session: SessionMetadataRecord) => SessionMetadataRecord,
+    options: { touchUpdatedAt?: boolean } = {},
   ): Promise<SessionRecord> {
-    return this.materialize(await this.updateMetadata(sessionId, updater));
+    return this.materialize(await this.updateMetadata(sessionId, updater, options));
   }
 
   private async updateMetadata(
     sessionId: SessionId,
     updater: (session: SessionMetadataRecord) => SessionMetadataRecord,
+    options: { touchUpdatedAt?: boolean } = {},
   ): Promise<SessionMetadataRecord> {
     return this.enqueueUpdate(sessionId, async () => {
       const current = await this.readMetadata(sessionId);
-      const updated = sessionMetadataSchema.parse({
-        ...updater(current),
-        updatedAt: new Date().toISOString(),
-      });
+      const next = updater(current);
+      const updated = sessionMetadataSchema.parse(options.touchUpdatedAt === false
+        ? next
+        : { ...next, updatedAt: new Date().toISOString() });
       await this.write(updated);
       return updated;
     });
@@ -502,6 +556,18 @@ export class SessionRepository {
     });
     return result;
   }
+}
+
+function normalizeModelSelection(input: {
+  providerId: ProviderId;
+  model: string;
+}): { providerId: ProviderId; model: string } {
+  const providerId = input.providerId.trim();
+  const model = input.model.trim();
+  if (!providerId || !model) {
+    throw new Error("Session provider and model must not be empty");
+  }
+  return { providerId, model };
 }
 
 function updateTaskRecord(task: SessionTask, input: UpdateTaskInput, now: string): SessionTask {

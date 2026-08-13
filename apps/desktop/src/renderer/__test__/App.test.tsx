@@ -194,7 +194,56 @@ describe("App", () => {
     }));
   });
 
-  it("shows the provider configured on the current session in the run context", async () => {
+  it("keeps an attached image when switching to a model without image input", async () => {
+    const fixture = installApi({
+      providers: [{
+        providerId: "volcano",
+        displayName: "Volcano Engine",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        model: "ep-vision",
+        recommendedModels: ["ep-vision", "ep-text"],
+        isDefault: true,
+        defaultModel: "ep-vision",
+        hasSecret: true,
+        lastTestStatus: "success",
+        supportsImageInput: true,
+      }],
+      modelImageSupport: {
+        "ep-vision": true,
+        "ep-text": false,
+      },
+      session: {
+        providerId: "volcano",
+        model: "ep-vision",
+      },
+    });
+    render(<App />);
+
+    const imageInput = await screen.findByLabelText("Choose image");
+    const file = new File([new Uint8Array([1, 2, 3])], "screen.png", { type: "image/png" });
+    fireEvent.change(imageInput, { target: { files: [file] } });
+    expect(await screen.findByText("screen.png")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: "ep-text" }));
+    await waitFor(() => expect(fixture.setDefaultProvider).toHaveBeenCalledWith({
+      providerId: "volcano",
+      model: "ep-text",
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "Coding Agent" }));
+
+    expect(await screen.findByText("screen.png")).toBeInTheDocument();
+    const promptInput = screen.getByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+    fireEvent.change(promptInput, { target: { value: "What is this?" } });
+    fireEvent.keyDown(promptInput, { key: "Enter" });
+
+    expect(fixture.start).not.toHaveBeenCalled();
+    expect(screen.getByText("screen.png")).toBeInTheDocument();
+  });
+
+  it("shows the current default provider for an existing session", async () => {
     installApi({
       providers: [
         {
@@ -228,8 +277,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Volcano Engine")).toBeInTheDocument();
-    expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument();
+    expect(await screen.findByText("DeepSeek")).toBeInTheDocument();
+    expect(screen.queryByText("Volcano Engine")).not.toBeInTheDocument();
   });
 
   it("offers enabled skills in the slash command menu and shows a command pill when selected", async () => {
@@ -857,6 +906,87 @@ describe("App", () => {
       .toBeInTheDocument();
     expect(screen.getAllByText("Default")).toHaveLength(1);
     expect(screen.getAllByLabelText("Default provider")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Coding Agent" }));
+    expect(await screen.findByText("project / ep-custom-endpoint / live response"))
+      .toBeInTheDocument();
+  });
+
+  it("does not let a stale session refresh restore the previous model", async () => {
+    let resolveSession: ((session: SessionView) => void) | undefined;
+    const staleSession = new Promise<SessionView>((resolve) => {
+      resolveSession = resolve;
+    });
+    const getSession = vi.fn(() => staleSession);
+    const fixture = installApi({
+      getSession,
+      providers: [
+        {
+          providerId: "deepseek",
+          displayName: "DeepSeek",
+          baseUrl: "https://api.deepseek.com",
+          model: "deepseek-v4-pro",
+          recommendedModels: ["deepseek-v4-pro"],
+          isDefault: true,
+          defaultModel: "deepseek-v4-pro",
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: false,
+        },
+        {
+          providerId: "volcano",
+          displayName: "Volcano Engine (火山引擎)",
+          baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+          model: "doubao-new",
+          recommendedModels: ["doubao-new"],
+          isDefault: false,
+          hasSecret: true,
+          lastTestStatus: "success",
+          supportsImageInput: false,
+        },
+      ],
+    });
+    render(<App />);
+    await screen.findByText("Previous answer");
+
+    await act(async () => {
+      fixture.emit({
+        type: "runtime.completed",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        stopReason: "completed",
+        steps: 1,
+      });
+    });
+    expect(getSession).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: /Volcano Engine/ }));
+    await waitFor(() => expect(fixture.setDefaultProvider).toHaveBeenCalledWith({
+      providerId: "volcano",
+      model: "doubao-new",
+    }));
+
+    await act(async () => {
+      resolveSession?.({
+        schemaVersion: 2,
+        id: "sf_session_existing",
+        workspaceId: "workspace-1",
+        title: "Project session",
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        status: "completed",
+        createdAt: "2026-06-07T00:00:00.000Z",
+        updatedAt: "2026-06-07T00:00:00.000Z",
+        messages: [],
+        tasks: [],
+      });
+      await staleSession;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Coding Agent" }));
+    expect(await screen.findByText("project / doubao-new / live response"))
+      .toBeInTheDocument();
   });
 
   it("manages installed skills from the MCP and Skills page", async () => {
@@ -1442,6 +1572,8 @@ function installApi(options: {
   compact?: StoryForgeApi["turns"]["compact"];
   repository?: GitRepositoryView;
   getRepository?: StoryForgeApi["git"]["get"];
+  getSession?: StoryForgeApi["sessions"]["get"];
+  modelImageSupport?: Record<string, boolean>;
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -1502,9 +1634,11 @@ function installApi(options: {
   const respondPermission = vi.fn(async () => undefined);
   const respondExtensionUi = vi.fn(async () => undefined);
   const respondHumanInput = vi.fn(async () => undefined);
-  const getSession = vi.fn(async (sessionId: string) =>
-    allSessions.find((candidate) => candidate.id === sessionId) ?? session
-  );
+  const getSession = options.getSession
+    ? vi.mocked(options.getSession)
+    : vi.fn(async (sessionId: string) =>
+      allSessions.find((candidate) => candidate.id === sessionId) ?? session
+    );
   const getRepository = options.getRepository
     ? vi.mocked(options.getRepository)
     : vi.fn(async (): Promise<GitRepositoryView> =>
@@ -1550,8 +1684,11 @@ function installApi(options: {
       if (candidate.providerId === input.providerId) {
         return {
           ...candidate,
+          model: input.model,
           isDefault: true,
           defaultModel: input.model,
+          supportsImageInput:
+            options.modelImageSupport?.[input.model] ?? candidate.supportsImageInput,
         };
       }
       const { defaultModel: _defaultModel, ...rest } = candidate;

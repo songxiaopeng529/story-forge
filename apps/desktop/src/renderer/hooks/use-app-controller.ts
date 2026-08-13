@@ -50,6 +50,7 @@ export type AppController = {
   setError: (error: string | undefined) => void;
   providers: ProviderView[];
   setProviders: (providers: ProviderView[]) => void;
+  updateSessionModels: (providerId: ProviderId, model: string) => void;
   workspaces: WorkspaceView[];
   sessions: SessionView[];
   automations: AutomationView[];
@@ -181,6 +182,10 @@ export function useAppController(): AppController {
   const persistedWebAccessEnabledRef = useRef(false);
   const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
   const settingsSaveInFlightRef = useRef(false);
+  const sessionModelSelectionRef = useRef<{
+    providerId: ProviderId;
+    model: string;
+  } | undefined>(undefined);
 
   selectedWorkspaceIdRef.current = selectedWorkspaceId;
 
@@ -386,16 +391,27 @@ export function useAppController(): AppController {
         setWebSearchCoverage(nextSettings.webSearchCoverage);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
-        setSessions(nextSessions);
         setAutomations(nextAutomations);
-        const defaultProvider = nextProviders.find((provider) => provider.isDefault)
-          ?? nextProviders[0];
-        if (defaultProvider) {
-          setSelectedProviderId(defaultProvider.providerId);
+        const defaultProvider = nextProviders.find((provider) => provider.isDefault);
+        const initiallySelectedProvider = defaultProvider ?? nextProviders[0];
+        const defaultModel = defaultProvider?.defaultModel ?? defaultProvider?.model;
+        if (initiallySelectedProvider) {
+          setSelectedProviderId(initiallySelectedProvider.providerId);
         }
+        if (defaultProvider && defaultModel) {
+          sessionModelSelectionRef.current = {
+            providerId: defaultProvider.providerId,
+            model: defaultModel,
+          };
+        }
+        const normalizedSessions = normalizeSessionModels(
+          nextSessions,
+          sessionModelSelectionRef.current,
+        );
+        setSessions(normalizedSessions);
         const initialWorkspace = nextWorkspaces[0];
         const initialSession = initialWorkspace
-          ? nextSessions.find((session) => session.workspaceId === initialWorkspace.id)
+          ? normalizedSessions.find((session) => session.workspaceId === initialWorkspace.id)
           : undefined;
         setSelectedWorkspaceId(initialWorkspace?.id);
         setSelectedSessionId(initialSession?.id);
@@ -468,7 +484,10 @@ export function useAppController(): AppController {
 
   async function refreshSession(sessionId: SessionId): Promise<void> {
     try {
-      const session = await window.storyForge.sessions.get(sessionId);
+      const session = normalizeSessionModel(
+        await window.storyForge.sessions.get(sessionId),
+        sessionModelSelectionRef.current,
+      );
       setSessions((current) => upsertSession(current, session));
     } catch (refreshError) {
       setError(formatError(refreshError));
@@ -544,7 +563,10 @@ export function useAppController(): AppController {
       }
       setWorkspaces((current) => upsertWorkspace(current, workspace));
       setSelectedWorkspaceId(workspace.id);
-      const workspaceSessions = await window.storyForge.sessions.list(workspace.id);
+      const workspaceSessions = normalizeSessionModels(
+        await window.storyForge.sessions.list(workspace.id),
+        sessionModelSelectionRef.current,
+      );
       setSessions((current) => [
         ...current.filter((session) => session.workspaceId !== workspace.id),
         ...workspaceSessions,
@@ -560,7 +582,10 @@ export function useAppController(): AppController {
       return undefined;
     }
     try {
-      const session = await window.storyForge.sessions.create({ workspaceId });
+      const session = normalizeSessionModel(
+        await window.storyForge.sessions.create({ workspaceId }),
+        sessionModelSelectionRef.current,
+      );
       setSessions((current) => upsertSession(current, session));
       setSelectedWorkspaceId(workspaceId);
       setSelectedSessionId(session.id);
@@ -585,7 +610,34 @@ export function useAppController(): AppController {
     if (!session || activeTurns[session.id]) {
       return;
     }
-    const targetSession = session;
+    let targetSession = session;
+    if (attachments.length > 0) {
+      try {
+        const latestProviders = await window.storyForge.providers.list();
+        setProviders(latestProviders);
+        const latestDefault = latestProviders.find((provider) => provider.isDefault);
+        const latestDefaultModel = latestDefault?.defaultModel ?? latestDefault?.model;
+        if (latestDefault && latestDefaultModel) {
+          const selection = {
+            providerId: latestDefault.providerId,
+            model: latestDefaultModel,
+          };
+          sessionModelSelectionRef.current = selection;
+          targetSession = normalizeSessionModel(targetSession, selection);
+          setSessions((current) => normalizeSessionModels(current, selection));
+        }
+        const targetProvider = latestProviders.find((provider) =>
+          provider.providerId === targetSession.providerId
+        );
+        if (!targetProvider?.supportsImageInput) {
+          setError(`Model ${targetSession.model} does not support image input.`);
+          return;
+        }
+      } catch (providerError) {
+        setError(formatError(providerError));
+        return;
+      }
+    }
 
     setPrompt("");
     setImageAttachments([]);
@@ -901,9 +953,12 @@ export function useAppController(): AppController {
       return;
     }
     try {
-      const renamed = await window.storyForge.sessions.rename(
-        selectedSession.id,
-        title.trim(),
+      const renamed = normalizeSessionModel(
+        await window.storyForge.sessions.rename(
+          selectedSession.id,
+          title.trim(),
+        ),
+        sessionModelSelectionRef.current,
       );
       setSessions((current) => upsertSession(current, renamed));
     } catch (renameError) {
@@ -1035,6 +1090,12 @@ export function useAppController(): AppController {
     setSelectedSessionId(sessionId);
   }
 
+  function updateSessionModels(providerId: ProviderId, model: string): void {
+    const selection = { providerId, model };
+    sessionModelSelectionRef.current = selection;
+    setSessions((current) => normalizeSessionModels(current, selection));
+  }
+
   return {
     // navigation
     page,
@@ -1056,6 +1117,7 @@ export function useAppController(): AppController {
     setError,
     providers,
     setProviders,
+    updateSessionModels,
     workspaces,
     sessions,
     automations,
@@ -1135,6 +1197,32 @@ export function useAppController(): AppController {
     selectWorkspace,
     selectSession,
     refreshGitRepository,
+  };
+}
+
+function normalizeSessionModels(
+  sessions: SessionView[],
+  selection: { providerId: ProviderId; model: string } | undefined,
+): SessionView[] {
+  return selection
+    ? sessions.map((session) => normalizeSessionModel(session, selection))
+    : sessions;
+}
+
+function normalizeSessionModel(
+  session: SessionView,
+  selection: { providerId: ProviderId; model: string } | undefined,
+): SessionView {
+  if (
+    !selection
+    || (session.providerId === selection.providerId && session.model === selection.model)
+  ) {
+    return session;
+  }
+  return {
+    ...session,
+    providerId: selection.providerId,
+    model: selection.model,
   };
 }
 
