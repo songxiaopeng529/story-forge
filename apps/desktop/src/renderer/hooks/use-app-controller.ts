@@ -70,6 +70,8 @@ export type AppController = {
   selectedSessionProvider: ProviderView | undefined;
   activeTurnId: TurnId | undefined;
   activeTurns: Record<string, TurnId>;
+  turnStarting: boolean;
+  commandModeLocked: boolean;
   selectedSessionTimerCount: number;
   currentPermissionRequest: PermissionRequestEvent | undefined;
   currentExtensionUiRequest: ExtensionUiRequestEvent | undefined;
@@ -147,6 +149,8 @@ export function useAppController(): AppController {
   const [modelRequests, setModelRequests] = useState<Record<string, ModelRequestEvent[]>>({});
   const [modelInspectorOpen, setModelInspectorOpen] = useState(false);
   const [activeTurns, setActiveTurns] = useState<Record<string, TurnId>>({});
+  const [turnStartingSessions, setTurnStartingSessions] =
+    useState<Record<string, true>>({});
   const [turnRuntimes, setTurnRuntimes] = useState<Record<string, TurnRuntimeState>>({});
   const [prompt, setPrompt] = useState("");
   const [imageAttachments, setImageAttachments] = useState<ImageAttachmentView[]>([]);
@@ -182,6 +186,7 @@ export function useAppController(): AppController {
   const persistedWebAccessEnabledRef = useRef(false);
   const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
   const settingsSaveInFlightRef = useRef(false);
+  const turnStartingSessionIdsRef = useRef(new Set<SessionId>());
   const sessionModelSelectionRef = useRef<{
     providerId: ProviderId;
     model: string;
@@ -200,6 +205,11 @@ export function useAppController(): AppController {
     ? providers.find((provider) => provider.providerId === selectedSession.providerId)
     : selectedProvider;
   const activeTurnId = selectedSessionId ? activeTurns[selectedSessionId] : undefined;
+  const turnStarting = selectedSessionId
+    ? Boolean(turnStartingSessions[selectedSessionId])
+    : false;
+  const commandModeLocked = Object.keys(activeTurns).length > 0
+    || Object.keys(turnStartingSessions).length > 0;
   const selectedSessionTimerCount = selectedSessionId
     ? automations.filter((automation) =>
       automation.kind === "thread_chat"
@@ -227,6 +237,7 @@ export function useAppController(): AppController {
   useEffect(() => {
     gitMountedRef.current = true;
     let disposed = false;
+    const terminalTurnIds = new Set<TurnId>();
     const unsubscribe = window.storyForge.turns.onEvent((event) => {
       if (disposed) {
         return;
@@ -315,6 +326,7 @@ export function useAppController(): AppController {
         setError(event.message);
       }
       if (event.type === "runtime.started") {
+        terminalTurnIds.delete(event.turnId);
         setActiveTurns((current) => ({ ...current, [event.sessionId]: event.turnId }));
         setTurnRuntimes((current) => ({
           ...current,
@@ -327,6 +339,7 @@ export function useAppController(): AppController {
         }));
       }
       if (event.type === "runtime.completed" || event.type === "runtime.error") {
+        terminalTurnIds.add(event.turnId);
         setActiveTurns((current) => {
           const next = { ...current };
           delete next[event.sessionId];
@@ -409,6 +422,22 @@ export function useAppController(): AppController {
           sessionModelSelectionRef.current,
         );
         setSessions(normalizedSessions);
+        setActiveTurns((current) => {
+          const restored = normalizedSessions.reduce<Record<string, TurnId>>(
+            (turns, session) => {
+              if (
+                session.status === "running"
+                && session.currentTurnId
+                && !terminalTurnIds.has(session.currentTurnId)
+              ) {
+                turns[session.id] = session.currentTurnId;
+              }
+              return turns;
+            },
+            {},
+          );
+          return { ...restored, ...current };
+        });
         const initialWorkspace = nextWorkspaces[0];
         const initialSession = initialWorkspace
           ? normalizedSessions.find((session) => session.workspaceId === initialWorkspace.id)
@@ -598,6 +627,12 @@ export function useAppController(): AppController {
   }
 
   async function sendPrompt(): Promise<void> {
+    // A turn snapshots command settings when it starts. Waiting for a pending
+    // mode save avoids showing one mode in the composer while the turn uses
+    // the previously persisted value.
+    if (settingsSaveInFlightRef.current) {
+      return;
+    }
     const content = prompt.trim();
     const attachments = imageAttachments;
     if (!content && attachments.length === 0) {
@@ -607,65 +642,79 @@ export function useAppController(): AppController {
     if (!session) {
       session = await createSession();
     }
-    if (!session || activeTurns[session.id]) {
+    if (
+      !session
+      || activeTurns[session.id]
+      || turnStartingSessionIdsRef.current.has(session.id)
+    ) {
       return;
     }
+    turnStartingSessionIdsRef.current.add(session.id);
+    setTurnStartingSessions((current) => ({ ...current, [session.id]: true }));
     let targetSession = session;
-    if (attachments.length > 0) {
-      try {
-        const latestProviders = await window.storyForge.providers.list();
-        setProviders(latestProviders);
-        const latestDefault = latestProviders.find((provider) => provider.isDefault);
-        const latestDefaultModel = latestDefault?.defaultModel ?? latestDefault?.model;
-        if (latestDefault && latestDefaultModel) {
-          const selection = {
-            providerId: latestDefault.providerId,
-            model: latestDefaultModel,
-          };
-          sessionModelSelectionRef.current = selection;
-          targetSession = normalizeSessionModel(targetSession, selection);
-          setSessions((current) => normalizeSessionModels(current, selection));
-        }
-        const targetProvider = latestProviders.find((provider) =>
-          provider.providerId === targetSession.providerId
-        );
-        if (!targetProvider?.supportsImageInput) {
-          setError(`Model ${targetSession.model} does not support image input.`);
+    try {
+      if (attachments.length > 0) {
+        try {
+          const latestProviders = await window.storyForge.providers.list();
+          setProviders(latestProviders);
+          const latestDefault = latestProviders.find((provider) => provider.isDefault);
+          const latestDefaultModel = latestDefault?.defaultModel ?? latestDefault?.model;
+          if (latestDefault && latestDefaultModel) {
+            const selection = {
+              providerId: latestDefault.providerId,
+              model: latestDefaultModel,
+            };
+            sessionModelSelectionRef.current = selection;
+            targetSession = normalizeSessionModel(targetSession, selection);
+            setSessions((current) => normalizeSessionModels(current, selection));
+          }
+          const targetProvider = latestProviders.find((provider) =>
+            provider.providerId === targetSession.providerId
+          );
+          if (!targetProvider?.supportsImageInput) {
+            setError(`Model ${targetSession.model} does not support image input.`);
+            return;
+          }
+        } catch (providerError) {
+          setError(formatError(providerError));
           return;
         }
-      } catch (providerError) {
-        setError(formatError(providerError));
-        return;
       }
-    }
 
-    setPrompt("");
-    setImageAttachments([]);
-    setError(undefined);
-    setActivities((current) => ({ ...current, [targetSession.id]: [] }));
-    setModelRequests((current) => ({ ...current, [targetSession.id]: [] }));
-    const optimisticMessage: PersistedMessageView = {
-      id: `pending-${Date.now()}`,
-      role: "user",
-      content,
-      ...(attachments.length ? { imageAttachments: attachments } : {}),
-      createdAt: new Date().toISOString(),
-    };
-    setSessions((current) => current.map((candidate) =>
-      candidate.id === targetSession.id
-        ? { ...candidate, messages: [...candidate.messages, optimisticMessage] }
-        : candidate
-    ));
-    try {
-      const { turnId } = await window.storyForge.turns.start({
-        sessionId: targetSession.id,
-        prompt: content,
+      setPrompt("");
+      setImageAttachments([]);
+      setError(undefined);
+      setActivities((current) => ({ ...current, [targetSession.id]: [] }));
+      setModelRequests((current) => ({ ...current, [targetSession.id]: [] }));
+      const optimisticMessage: PersistedMessageView = {
+        id: `pending-${Date.now()}`,
+        role: "user",
+        content,
         ...(attachments.length ? { imageAttachments: attachments } : {}),
+        createdAt: new Date().toISOString(),
+      };
+      setSessions((current) => current.map((candidate) =>
+        candidate.id === targetSession.id
+          ? { ...candidate, messages: [...candidate.messages, optimisticMessage] }
+          : candidate
+      ));
+      try {
+        const { turnId } = await window.storyForge.turns.start({
+          sessionId: targetSession.id,
+          prompt: content,
+          ...(attachments.length ? { imageAttachments: attachments } : {}),
+        });
+        setActiveTurns((current) => ({ ...current, [targetSession.id]: turnId }));
+      } catch (turnError) {
+        setError(formatError(turnError));
+        await refreshSession(targetSession.id);
+      }
+    } finally {
+      turnStartingSessionIdsRef.current.delete(session.id);
+      setTurnStartingSessions((current) => {
+        const { [session.id]: _finished, ...remaining } = current;
+        return remaining;
       });
-      setActiveTurns((current) => ({ ...current, [targetSession.id]: turnId }));
-    } catch (turnError) {
-      setError(formatError(turnError));
-      await refreshSession(targetSession.id);
     }
   }
 
@@ -783,6 +832,8 @@ export function useAppController(): AppController {
   ): Promise<void> {
     if (
       settingsSaveInFlightRef.current
+      || Object.keys(activeTurns).length > 0
+      || turnStartingSessionIdsRef.current.size > 0
       || nextCommandExecutionMode === persistedCommandExecutionModeRef.current
     ) {
       return;
@@ -1137,6 +1188,8 @@ export function useAppController(): AppController {
     selectedSessionProvider,
     activeTurnId,
     activeTurns,
+    turnStarting,
+    commandModeLocked,
     selectedSessionTimerCount,
     currentPermissionRequest,
     currentExtensionUiRequest,

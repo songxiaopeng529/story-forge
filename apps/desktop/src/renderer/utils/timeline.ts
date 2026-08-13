@@ -203,6 +203,13 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
       )
       .map((message) => message.toolCallId),
   );
+  const toolCallsById = new Map(
+    messages.flatMap((message) =>
+      message.role === "assistant"
+        ? (message.toolCalls ?? []).map((toolCall) => [toolCall.id, toolCall] as const)
+        : []
+    ),
+  );
   const items: TimelineItem[] = [];
 
   for (const message of messages) {
@@ -228,12 +235,14 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
         });
         continue;
       }
+      const toolCall = toolCallsById.get(message.toolCallId);
       items.push({
         type: "tool-step",
         id: message.id,
         callId: message.toolCallId,
         name: message.name,
         status: message.ok ? "completed" : "failed",
+        ...(toolCall ? { input: toolCall.input } : {}),
         output: message.content,
       });
       continue;

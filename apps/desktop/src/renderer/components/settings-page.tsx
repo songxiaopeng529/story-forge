@@ -9,6 +9,7 @@ export function SettingsPage(props: {
   language: AppLanguage;
   developerMode: boolean;
   commandExecutionMode: CommandExecutionMode;
+  commandModeLocked: boolean;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
   saving: boolean;
@@ -112,7 +113,7 @@ export function SettingsPage(props: {
                         ? "border-2 border-forge-ember text-forge-ember"
                         : "border-forge-line hover:bg-slate-50 disabled:hover:bg-white"
                     }`}
-                    disabled={props.saving}
+                    disabled={props.saving || props.commandModeLocked}
                     key={mode.value}
                     onClick={() => props.onCommandExecutionModeChange(mode.value)}
                     role="radio"
@@ -132,6 +133,11 @@ export function SettingsPage(props: {
             <p className="mt-3 text-xs leading-5 text-slate-500">
               {t.settings.commandExecutionNotice}
             </p>
+            {props.commandModeLocked ? (
+              <p className="mt-1 text-xs leading-5 text-forge-ember" role="status">
+                {t.agent.commandModeUnavailableWhileRunning}. {t.agent.commandModeAppliesToNewTurns}
+              </p>
+            ) : null}
           </div>
 
           <label className="mt-5 flex items-center justify-between gap-4 border-t border-forge-line pt-5">

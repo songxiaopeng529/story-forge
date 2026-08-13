@@ -15,6 +15,13 @@
   --primary: #1d1d1f;
   --primary-foreground: #ffffff;
   --radius: 0.625rem;
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 180ms;
+  --motion-duration-slow: 260ms;
+  --motion-duration-deliberate: 320ms;
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
 
 * {
@@ -53,4 +60,141 @@ button:disabled {
 
 .secondary-button {
   @apply rounded-md border border-forge-line bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50;
+}
+
+/* Reusable motion primitives for the conversation surface. */
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes stream-token-enter {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes streaming-caret-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.motion-message-enter {
+  animation: message-enter var(--motion-duration-slow) var(--motion-ease-enter) both;
+}
+
+.motion-content-enter {
+  animation: content-enter var(--motion-duration-base) var(--motion-ease-enter) both;
+}
+
+.motion-stream-token-enter {
+  animation: stream-token-enter var(--motion-duration-base) var(--motion-ease-enter) both;
+}
+
+.motion-streaming-caret {
+  animation: streaming-caret-pulse 1.1s var(--motion-ease-standard) infinite;
+}
+
+.motion-popover {
+  transform-origin: bottom center;
+  animation: popover-enter var(--motion-duration-base) var(--motion-ease-enter) both;
+}
+
+.motion-interactive {
+  transition-duration: var(--motion-duration-fast);
+  transition-property: background-color, border-color, box-shadow, color, opacity, transform;
+  transition-timing-function: var(--motion-ease-standard);
+}
+
+/* Pair with a child `.motion-collapsible-content` to animate unknown heights. */
+.motion-collapsible {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--motion-duration-slow) var(--motion-ease-standard),
+    opacity var(--motion-duration-base) var(--motion-ease-standard);
+}
+
+.motion-collapsible[data-state="closed"],
+.motion-collapsible[aria-hidden="true"] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.motion-collapsible-content {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 1ms;
+    --motion-duration-base: 1ms;
+    --motion-duration-slow: 1ms;
+    --motion-duration-deliberate: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+
+  .motion-streaming-caret {
+    animation: none;
+    opacity: 1;
+  }
+
+  .motion-popover {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }

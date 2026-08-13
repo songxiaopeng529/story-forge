@@ -148,6 +148,168 @@ describe("App", () => {
     await waitFor(() => expect(fixture.stop).toHaveBeenCalledWith("sf_turn_active"));
   });
 
+  it("grows the compact prompt bar with its content and caps it at 100px", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 96 });
+    fireEvent.change(input, { target: { value: "Line one\nLine two\nLine three" } });
+    expect(input).toHaveStyle({ height: "96px", overflowY: "hidden" });
+    expect(screen.getByTestId("prompt-bar")).toHaveAttribute("data-expanded", "true");
+
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 220 });
+    fireEvent.change(input, { target: { value: Array.from({ length: 12 }, () => "Line").join("\n") } });
+    expect(input).toHaveStyle({ height: "100px", overflowY: "auto" });
+
+    Object.defineProperty(input, "scrollHeight", { configurable: true, value: 28 });
+    fireEvent.change(input, { target: { value: "Short" } });
+    expect(screen.getByTestId("prompt-bar")).toHaveAttribute("data-expanded", "false");
+  });
+
+  it("selects and persists command mode from the prompt bar", async () => {
+    const fixture = installApi();
+    render(<App />);
+
+    const trigger = await screen.findByRole("button", { name: "Sentinel mode" });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Command mode" });
+    expect(within(menu).getByRole("menuitemradio", { name: "Sentinel mode" }))
+      .toHaveAttribute("aria-checked", "true");
+
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Cruise mode" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      commandExecutionMode: "cruise",
+    }));
+    expect(await screen.findByRole("button", { name: "Cruise mode" })).toBeEnabled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("keeps the command mode and slash command menus mutually exclusive", async () => {
+    installApi();
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sentinel mode" }));
+    expect(screen.getByRole("menu", { name: "Command mode" })).toBeInTheDocument();
+    changePrompt(input, "/");
+    expect(screen.queryByRole("menu", { name: "Command mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "Slash commands" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sentinel mode" }));
+    expect(screen.queryByRole("listbox", { name: "Slash commands" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "Command mode" })).toBeInTheDocument();
+  });
+
+  it("prevents sending until a command mode save finishes", async () => {
+    const pendingSave = createDeferred<AppSettingsView>();
+    const saveSettings = vi.fn(() => pendingSave.promise);
+    const fixture = installApi({ saveSettings });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+    fireEvent.change(input, { target: { value: "Run the checks" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Sentinel mode" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Cruise mode" }));
+
+    expect(await screen.findByRole("button", { name: "Cruise mode" }))
+      .toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(fixture.start).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pendingSave.resolve({
+        schemaVersion: 1,
+        language: "en",
+        developerMode: false,
+        commandExecutionMode: "cruise",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
+      });
+      await pendingSave.promise;
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fixture.start).toHaveBeenCalledTimes(1));
+  });
+
+  it("locks command mode immediately while a turn start request is pending", async () => {
+    const pendingStart = createDeferred<{ turnId: "sf_turn_pending" }>();
+    const start = vi.fn(() => pendingStart.promise);
+    const fixture = installApi({ start });
+    render(<App />);
+    const input = await screen.findByPlaceholderText(
+      "Ask StoryForge to inspect, explain, or change code...",
+    );
+    fireEvent.change(input, { target: { value: "Inspect the repository" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Starting" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sentinel mode" })).toBeDisabled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(start).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const commandModeGroup = await screen.findByRole("radiogroup", {
+      name: "Command execution",
+    });
+    expect(within(commandModeGroup).getByRole("radio", { name: "Cruise mode" }))
+      .toBeDisabled();
+    expect(screen.getByText(/Command mode is locked while a turn is running/))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Coding Agent" }));
+
+    await act(async () => {
+      pendingStart.resolve({ turnId: "sf_turn_pending" });
+      await pendingStart.promise;
+    });
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Sentinel mode" })).toBeDisabled();
+    expect(fixture.start).toBe(start);
+  });
+
+  it("restores command mode locking and Stop from a running session snapshot", async () => {
+    const fixture = installApi({
+      session: {
+        status: "running",
+        currentTurnId: "sf_turn_restored",
+      },
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Stop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Sentinel mode" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    await waitFor(() => expect(fixture.stop).toHaveBeenCalledWith("sf_turn_restored"));
+  });
+
+  it("rolls the prompt bar mode back when persistence fails", async () => {
+    const fixture = installApi({
+      saveSettings: vi.fn(async () => Promise.reject(new Error("Mode save failed"))),
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sentinel mode" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Unleashed mode" }));
+
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      commandExecutionMode: "unleashed",
+    }));
+    expect(await screen.findByRole("button", { name: "Sentinel mode" })).toBeEnabled();
+    expect(screen.getByText("Mode save failed")).toBeInTheDocument();
+  });
+
   it("attaches image files as base64 payloads when starting a turn", async () => {
     const fixture = installApi({
       providers: [{
@@ -347,6 +509,7 @@ describe("App", () => {
     const optionsAfter = screen.getAllByRole("option");
     expect(optionsAfter[0]).toHaveAttribute("aria-selected", "false");
     expect(optionsAfter[1]).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", optionsAfter[1]?.id);
   });
 
   it("sends a skill command pill without extra arguments", async () => {
@@ -473,7 +636,7 @@ describe("App", () => {
     });
 
     await waitFor(() => expect(fixture.getSession).toHaveBeenCalledWith("sf_session_existing"));
-    expect(screen.queryByText("Running workspace.readFile")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Read file.*Running/ })).not.toBeInTheDocument();
   });
 
   it("counts tool calls, not model requests, as turn steps", async () => {
@@ -565,8 +728,8 @@ describe("App", () => {
     });
 
     expect(screen.getByText("Reading")).toBeInTheDocument();
-    expect(screen.getByText("Completed workspace.readFile")).toBeInTheDocument();
-    expect(screen.queryByText("Running workspace.readFile")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Tool activity 1 tool 1 completed/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Tool activity.*running/ })).not.toBeInTheDocument();
   });
 
   it("renders failed tool steps before later assistant text in the active turn", async () => {
@@ -613,7 +776,7 @@ describe("App", () => {
       });
     });
 
-    const failedStep = screen.getByText("Failed workspace.runCommand");
+    const failedStep = screen.getByRole("button", { name: /Run command pnpm missing Failed/ });
     const answer = screen.getByText("I found the failure.");
     expect(
       failedStep.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -664,6 +827,36 @@ describe("App", () => {
     expect(screen.getByTestId("agent-workspace")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("agent-header")).not.toHaveClass("overflow-y-auto");
     expect(screen.getByTestId("agent-message-scroll")).toHaveClass("overflow-y-auto");
+  });
+
+  it("keeps the reader's position and surfaces new activity after they scroll up", async () => {
+    const fixture = installApi();
+    render(<App />);
+    await screen.findByText("Previous answer");
+    const messageScroll = screen.getByTestId("agent-message-scroll");
+    Object.defineProperties(messageScroll, {
+      clientHeight: { configurable: true, value: 400 },
+      scrollHeight: { configurable: true, value: 1_200 },
+      scrollTop: { configurable: true, value: 120, writable: true },
+    });
+    const scrollTo = vi.fn();
+    Object.defineProperty(messageScroll, "scrollTo", { configurable: true, value: scrollTo });
+    fireEvent.scroll(messageScroll);
+
+    await act(async () => {
+      fixture.emit({
+        type: "runtime.started",
+        sessionId: "sf_session_existing",
+        turnId: "sf_turn_active",
+        createdAt: "2026-08-13T00:00:00.000Z",
+      });
+    });
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    const latestButton = screen.getByRole("button", { name: "1 new update" });
+    fireEvent.click(latestButton);
+    expect(scrollTo).toHaveBeenCalledWith({ behavior: "smooth", top: 1_200 });
+    expect(screen.queryByRole("button", { name: /new update/ })).not.toBeInTheDocument();
   });
 
   it("shows the model request drawer only when developer mode is enabled", async () => {
@@ -1574,6 +1767,7 @@ function installApi(options: {
   getRepository?: StoryForgeApi["git"]["get"];
   getSession?: StoryForgeApi["sessions"]["get"];
   modelImageSupport?: Record<string, boolean>;
+  start?: StoryForgeApi["turns"]["start"];
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -1626,7 +1820,9 @@ function installApi(options: {
   };
   const allSessions = options.sessions ?? [session];
   let eventListener: ((event: AgentEvent) => void) | undefined;
-  const start = vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
+  const start = options.start
+    ? vi.mocked(options.start)
+    : vi.fn(async () => ({ turnId: "sf_turn_active" as const }));
   const stop = vi.fn(async () => undefined);
   const compact = options.compact
     ? vi.mocked(options.compact)
