@@ -188,6 +188,99 @@ describe("SessionRepository", () => {
     });
   });
 
+  it("updates the model for every session without changing any other session data", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const piMessages = new Map<string, PersistedMessage[]>();
+    const repository = new SessionRepository({
+      rootDir,
+      piAdapter: createFakePiAdapter(piMessages),
+    });
+    const first = await repository.create({
+      workspaceId: "sf_workspace_first",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      title: "First workspace session",
+    });
+    const second = await repository.create({
+      workspaceId: "sf_workspace_second",
+      providerId: "openai",
+      model: "gpt-old",
+      title: "Second workspace session",
+    });
+    await repository.createTask(first.id, {
+      title: "Preserve this task",
+      description: "The bulk model update must not rewrite task state.",
+    });
+    piMessages.set(first.id, [{
+      id: "message-first",
+      role: "user",
+      content: "Keep the first transcript",
+      createdAt: "2026-08-12T01:00:00.000Z",
+    }]);
+    piMessages.set(second.id, [{
+      id: "message-second",
+      role: "assistant",
+      content: "Keep the second transcript",
+      createdAt: "2026-08-12T02:00:00.000Z",
+    }]);
+    const beforeFirst = await repository.get(first.id);
+    const beforeSecond = await repository.get(second.id);
+
+    await repository.updateModelForAllSessions({
+      providerId: "anthropic",
+      model: "claude-sonnet-test",
+    });
+
+    await expect(repository.get(first.id)).resolves.toEqual({
+      ...beforeFirst,
+      providerId: "anthropic",
+      model: "claude-sonnet-test",
+    });
+    await expect(repository.get(second.id)).resolves.toEqual({
+      ...beforeSecond,
+      providerId: "anthropic",
+      model: "claude-sonnet-test",
+    });
+
+    await repository.attachPiSession(first.id, {
+      piSessionId: "pi_rebound",
+      piSessionFile: "/tmp/rebound.jsonl",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    await expect(repository.get(first.id)).resolves.toMatchObject({
+      providerId: "anthropic",
+      model: "claude-sonnet-test",
+      piSessionId: "pi_rebound",
+      piSessionFile: "/tmp/rebound.jsonl",
+    });
+  });
+
+  it("serializes consecutive model updates so the latest selection wins", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-b",
+    });
+
+    const first = repository.updateModelForAllSessions({
+      providerId: "anthropic",
+      model: "claude-a",
+    });
+    const second = repository.updateModelForAllSessions({
+      providerId: "openai",
+      model: "gpt-b",
+    });
+    await Promise.all([first, second]);
+
+    await expect(repository.get(session.id)).resolves.toMatchObject({
+      providerId: "openai",
+      model: "gpt-b",
+    });
+  });
+
   it("defaults missing tasks to an empty list", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
     const repository = new SessionRepository({ rootDir });

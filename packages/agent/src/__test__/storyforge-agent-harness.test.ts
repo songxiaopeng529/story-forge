@@ -4,7 +4,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { AgentEvent, HumanInputRequestPayload } from "@story-forge/shared";
 import { HUMAN_INPUT_TOOL_NAME, type HumanInputToolResponse } from "@story-forge/extensions";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   StoryForgeAgentHarness,
   toContextUsageEvent,
@@ -126,6 +126,136 @@ describe("StoryForgeAgentHarness context usage events", () => {
       windowTokens: 8_192,
       source: "estimate",
     });
+  });
+});
+
+describe("StoryForgeAgentHarness model selection", () => {
+  it("uses the latest default model for the next turn of an existing session", async () => {
+    const session = {
+      schemaVersion: 2,
+      id: sessionId,
+      workspaceId: "workspace-1",
+      title: "Existing session",
+      providerId: "deepseek",
+      model: "deepseek-old",
+      status: "idle",
+      createdAt: "2026-08-12T00:00:00.000Z",
+      updatedAt: "2026-08-12T00:00:00.000Z",
+      tasks: [],
+    } satisfies SessionMetadataRecord;
+    const resolvedModel = {
+      provider: "openai",
+      id: "gpt-new",
+    } as never;
+    const updatedSession = {
+      ...session,
+      providerId: "openai",
+      model: "gpt-new",
+    } satisfies SessionMetadataRecord;
+    const attachedSession = {
+      ...updatedSession,
+      providerId: "anthropic",
+      model: "claude-newer",
+      piSessionId: "pi-existing",
+      piSessionFile: "/tmp/pi-existing.jsonl",
+    } satisfies SessionMetadataRecord;
+    const emitted: AgentEvent[] = [];
+    const resolveModel = vi.fn(async () => resolvedModel);
+    const updateModel = vi.fn(async () => updatedSession);
+    const ensurePiSession = vi.fn(async () => ({
+      piSessionId: "pi-existing",
+      piSessionFile: "/tmp/pi-existing.jsonl",
+      providerId: updatedSession.providerId,
+      model: updatedSession.model,
+    }));
+    const attachPiSession = vi.fn(async () => attachedSession);
+    const createAgentSession = vi.fn(async (
+      _input: Parameters<typeof import("../pi/create-storyforge-session").createStoryForgeAgentSession>[0],
+    ) => ({} as AgentSession));
+    const harness = new StoryForgeAgentHarness({
+      sessionRepository: {
+        updateModel,
+        attachPiSession,
+      } as unknown as SessionRepository,
+      workspaceRepository: {
+        get: vi.fn(async () => ({ path: "/workspace/project" })),
+      } as unknown as StoryForgeWorkspaceStore,
+      piModels: {
+        resolveModel,
+        createSettingsManager: vi.fn(() => ({})),
+        getModelRuntime: vi.fn(async () => ({})),
+        getAgentDir: vi.fn(() => "/tmp/storyforge-agent"),
+      } as unknown as PiModelService,
+      piSessions: {
+        ensurePiSession,
+        openSessionManager: vi.fn(async () => ({})),
+      } as unknown as PiSessionAdapter,
+      createAgentSession,
+      emit: (event) => emitted.push(event),
+    });
+    const createPiSessionForTurn = (
+      harness as unknown as {
+        createPiSessionForTurn(input: {
+          session: SessionMetadataRecord;
+          turnId: typeof turnId;
+          settings: {
+            developerMode: boolean;
+            commandExecutionMode: "sentinel";
+            webAccessEnabled: boolean;
+            webSearchCoverage: "focused";
+          };
+          signal: AbortSignal;
+        }): Promise<AgentSession>;
+      }
+    ).createPiSessionForTurn.bind(harness);
+
+    await createPiSessionForTurn({
+      session,
+      turnId,
+      settings: {
+        developerMode: true,
+        commandExecutionMode: "sentinel",
+        webAccessEnabled: false,
+        webSearchCoverage: "focused",
+      },
+      signal: new AbortController().signal,
+    });
+
+    expect(resolveModel).toHaveBeenCalledWith(undefined, undefined);
+    expect(updateModel).toHaveBeenCalledWith(sessionId, {
+      providerId: "openai",
+      model: "gpt-new",
+    });
+    expect(ensurePiSession).toHaveBeenCalledWith(updatedSession);
+    expect(attachPiSession).toHaveBeenCalledOnce();
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
+      model: resolvedModel,
+    }));
+
+    const createInput = createAgentSession.mock.calls[0]?.[0] as unknown as {
+      extensionFactories: Array<{
+        factory(pi: {
+          on(name: string, handler: (event: unknown) => unknown): void;
+          registerTool(tool: unknown): void;
+        }): void;
+      }>;
+    };
+    const storyForgeExtension = createInput.extensionFactories.at(-1);
+    const handlers = new Map<string, (event: unknown) => unknown>();
+    storyForgeExtension?.factory({
+      on: (name, handler) => {
+        handlers.set(name, handler);
+      },
+      registerTool: () => undefined,
+    });
+    handlers.get("before_provider_request")?.({
+      payload: { messages: [], tools: [] },
+    });
+    expect(emitted).toContainEqual(expect.objectContaining({
+      type: "model.request",
+      providerId: "openai",
+      model: "gpt-new",
+    }));
   });
 });
 

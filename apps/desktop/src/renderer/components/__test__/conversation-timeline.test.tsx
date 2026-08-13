@@ -84,4 +84,27 @@ describe("ConversationTimeline assistant markdown", () => {
     expect(container.querySelector("h2")).toHaveTextContent("Runtime migration");
     expect(container.querySelectorAll("li")).toHaveLength(2);
   });
+
+  it("renders task rows without a redundant status icon", () => {
+    const items: TimelineItem[] = [{
+      type: "task-list",
+      id: "tasks-1",
+      tasks: [{
+        id: "sf_task_1",
+        title: "Wait for user direction",
+        status: "pending",
+        createdAt: "2026-08-12T00:00:00.000Z",
+        updatedAt: "2026-08-12T00:00:00.000Z",
+      }],
+      completedCount: 0,
+      totalCount: 1,
+      blockedCount: 0,
+    }];
+
+    const { container } = render(<ConversationTimeline items={items} />);
+
+    expect(screen.getByText("Wait for user direction")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(container.querySelectorAll("svg")).toHaveLength(1);
+  });
 });

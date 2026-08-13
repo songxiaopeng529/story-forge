@@ -48,6 +48,7 @@ export function App() {
           providers: c.providers,
           selectedProvider: c.selectedProvider,
           onProvidersChange: c.setProviders,
+          onDefaultModelChange: c.updateSessionModels,
           onSelect: c.setSelectedProviderId,
           onError: c.setError,
           error: c.error,

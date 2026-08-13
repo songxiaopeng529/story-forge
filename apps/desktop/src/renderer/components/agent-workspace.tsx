@@ -448,7 +448,8 @@ export function AgentWorkspace(props: {
   const canSend = Boolean(props.session)
     && (Boolean(props.prompt.trim())
       || props.imageAttachments.length > 0
-      || activeSlashCommand?.kind === "skill");
+      || activeSlashCommand?.kind === "skill")
+    && (props.imageAttachments.length === 0 || props.imageInputEnabled);
 
   return (
     <section

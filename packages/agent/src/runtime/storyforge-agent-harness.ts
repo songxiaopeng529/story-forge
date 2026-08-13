@@ -84,6 +84,7 @@ export type StoryForgeAgentHarnessOptions = {
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   getWebAccessEnabled?: () => Promise<boolean>;
   getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
+  createAgentSession?: typeof createStoryForgeAgentSession;
   now?: RuntimeClock;
   getTimezone?: RuntimeTimezoneResolver;
   emit: (event: AgentEvent) => void;
@@ -100,6 +101,12 @@ type ActiveTurn = {
   errorMessage: string | undefined;
   steps: number;
   metadataSync: Promise<void>;
+  modelSelection?: TurnModelSelection;
+};
+
+type TurnModelSelection = {
+  providerId: string;
+  model: string;
 };
 
 type TurnSettings = {
@@ -128,6 +135,7 @@ export class StoryForgeAgentHarness {
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly getWebAccessEnabled: () => Promise<boolean>;
   private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
+  private readonly createAgentSession: typeof createStoryForgeAgentSession;
   private readonly now: RuntimeClock;
   private readonly getTimezone: RuntimeTimezoneResolver;
   private readonly emitEvent: (event: AgentEvent) => void;
@@ -150,6 +158,7 @@ export class StoryForgeAgentHarness {
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
+    this.createAgentSession = options.createAgentSession ?? createStoryForgeAgentSession;
     this.now = options.now ?? (() => new Date());
     this.getTimezone = options.getTimezone ?? resolveSystemTimezone;
     this.emitEvent = options.emit;
@@ -161,6 +170,14 @@ export class StoryForgeAgentHarness {
     prompt: string;
     imageAttachments?: ImageAttachmentView[];
   }): Promise<{ turnId: TurnId }> {
+    return this.startTurn(input);
+  }
+
+  private async startTurn(input: {
+    sessionId: SessionId;
+    prompt: string;
+    imageAttachments?: ImageAttachmentView[];
+  }, modelSelection?: TurnModelSelection): Promise<{ turnId: TurnId }> {
     const imageAttachments = input.imageAttachments ?? [];
     if (!input.prompt.trim() && imageAttachments.length === 0) {
       throw new Error("Prompt or image attachment must not be empty");
@@ -190,6 +207,7 @@ export class StoryForgeAgentHarness {
         errorMessage: undefined,
         steps: 0,
         metadataSync: Promise.resolve(),
+        ...(modelSelection ? { modelSelection } : {}),
       };
       this.activeTurns.set(turnId, active);
       const promise = this.executeTurn({
@@ -231,10 +249,16 @@ export class StoryForgeAgentHarness {
       model: input.model,
       ...(input.title ? { title: input.title } : {}),
     });
-    const { turnId } = await this.start({
-      sessionId: session.id,
-      prompt: input.prompt,
-    });
+    const { turnId } = await this.startTurn(
+      {
+        sessionId: session.id,
+        prompt: input.prompt,
+      },
+      {
+        providerId: input.providerId,
+        model: input.model,
+      },
+    );
     return { sessionId: session.id, turnId };
   }
 
@@ -322,6 +346,7 @@ export class StoryForgeAgentHarness {
         turnId,
         settings,
         signal: active.controller.signal,
+        ...(active.modelSelection ? { modelSelection: active.modelSelection } : {}),
       });
       active.piSession = piSession;
       active.unsubscribe = piSession.subscribe((event) => {
@@ -372,16 +397,40 @@ export class StoryForgeAgentHarness {
     turnId: TurnId;
     settings: TurnSettings;
     signal: AbortSignal;
+    modelSelection?: TurnModelSelection;
   }): Promise<AgentSession> {
-    const refs = await this.piSessions.ensurePiSession(input.session);
     let session = input.session;
+    // Interactive turns follow the latest global selection. Standalone
+    // automation runs pass an explicit selection so their configured model wins.
+    const model = input.modelSelection
+      ? await this.piModels.resolveModel(
+        input.modelSelection.providerId,
+        input.modelSelection.model,
+      )
+      : await this.piModels.resolveModel(undefined, undefined)
+        ?? await this.piModels.resolveModel(session.providerId, session.model);
+    if (model && (model.provider !== session.providerId || model.id !== session.model)) {
+      session = await this.sessionRepository.updateModel(session.id, {
+        providerId: model.provider,
+        model: model.id,
+      });
+    }
+    const refs = await this.piSessions.ensurePiSession(session);
     if (refs.piSessionFile !== input.session.piSessionFile || refs.piSessionId !== input.session.piSessionId) {
       session = await this.sessionRepository.attachPiSession(input.session.id, refs);
+      if (model) {
+        // A concurrent default-model change may update persisted metadata while
+        // the transcript is opening. This in-flight turn keeps its chosen model.
+        session = {
+          ...session,
+          providerId: model.provider,
+          model: model.id,
+        };
+      }
     }
     const workspace = await this.workspaceRepository.get(session.workspaceId);
     const settingsManager = this.piModels.createSettingsManager(workspace.path);
     const modelRuntime = await this.piModels.getModelRuntime();
-    const model = await this.piModels.resolveModel(session.providerId, session.model);
     const [additionalSkillPaths, mcpServers] = await Promise.all([
       this.skillResolver?.listEnabledSkillPaths() ?? Promise.resolve([]),
       this.mcpServerSource?.listEnabledMcpServers() ?? Promise.resolve([]),
@@ -407,7 +456,7 @@ export class StoryForgeAgentHarness {
     });
 
     try {
-      const piSession = await createStoryForgeAgentSession({
+      const piSession = await this.createAgentSession({
         cwd: workspace.path,
         agentDir: this.piModels.getAgentDir(),
         modelRuntime,

@@ -1,4 +1,4 @@
-import type { PiModelService } from "@story-forge/agent";
+import type { PiModelService, SessionRepository } from "@story-forge/agent";
 import type { ProviderId, ProviderView } from "@story-forge/shared";
 
 export type SaveProviderInput = {
@@ -10,9 +10,15 @@ export type SaveProviderInput = {
 
 export class ProviderService {
   private readonly piModels: PiModelService;
+  private readonly sessions: Pick<SessionRepository, "updateModelForAllSessions">;
+  private setDefaultTail: Promise<void> = Promise.resolve();
 
-  constructor(options: { piModels: PiModelService }) {
+  constructor(options: {
+    piModels: PiModelService;
+    sessions: Pick<SessionRepository, "updateModelForAllSessions">;
+  }) {
     this.piModels = options.piModels;
+    this.sessions = options.sessions;
   }
 
   list(): Promise<ProviderView[]> {
@@ -29,7 +35,27 @@ export class ProviderService {
   }
 
   setDefault(input: { providerId: ProviderId; model: string }): Promise<void> {
-    return this.piModels.setDefault(input);
+    const selection = {
+      providerId: input.providerId,
+      model: input.model.trim(),
+    };
+    const operation = this.setDefaultTail.then(() => this.applyDefault(selection));
+    this.setDefaultTail = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async applyDefault(selection: {
+    providerId: ProviderId;
+    model: string;
+  }): Promise<void> {
+    await this.piModels.setDefault(selection);
+    try {
+      await this.sessions.updateModelForAllSessions(selection);
+    } catch (error) {
+      // The PI default remains the runtime source of truth. Existing session
+      // metadata is a denormalized cache and is reconciled again on its next turn.
+      console.warn("Failed to synchronize the default model to session metadata", error);
+    }
   }
 
   clearSecret(providerId: ProviderId): Promise<void> {
