@@ -47,11 +47,14 @@ export type AgentLayoutProps = {
   modelRequests: ModelRequestEvent[];
   runtime: TurnRuntimeState | undefined;
   activeTurnId: TurnId | undefined;
+  turnStarting: boolean;
+  commandModeLocked: boolean;
   loading: boolean;
   compacting: boolean;
   modelInspectorOpen: boolean;
   sessionTimerCount: number;
   commandExecutionMode: CommandExecutionMode;
+  settingsSaving: boolean;
   developerMode: boolean;
   imageInputEnabled: boolean;
   navCollapsed: boolean;
@@ -74,6 +77,7 @@ export type AgentLayoutProps = {
   onSelectSession: (sessionId: SessionId, workspaceId: string) => void;
   onPromptChange: (prompt: string) => void;
   onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
+  onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
@@ -113,11 +117,14 @@ export function AgentLayout(props: AgentLayoutProps) {
     modelRequests,
     runtime,
     activeTurnId,
+    turnStarting,
+    commandModeLocked,
     loading,
     compacting,
     modelInspectorOpen,
     sessionTimerCount,
     commandExecutionMode,
+    settingsSaving,
     developerMode,
     imageInputEnabled,
     navCollapsed,
@@ -173,10 +180,13 @@ export function AgentLayout(props: AgentLayoutProps) {
         modelRequests={modelRequests}
         developerMode={developerMode}
         commandExecutionMode={commandExecutionMode}
+        settingsSaving={settingsSaving}
         compacting={compacting}
         modelInspectorOpen={modelInspectorOpen}
         sessionTimerCount={sessionTimerCount}
         activeTurnId={activeTurnId}
+        turnStarting={turnStarting}
+        commandModeLocked={commandModeLocked}
         navCollapsed={navCollapsed}
         sidebarCollapsed={sidebarCollapsed}
         contextCollapsed={Boolean(selectedWorkspace) && contextCollapsed}
@@ -189,6 +199,7 @@ export function AgentLayout(props: AgentLayoutProps) {
         error={error}
         onPromptChange={props.onPromptChange}
         onImageAttachmentsChange={props.onImageAttachmentsChange}
+        onCommandExecutionModeChange={props.onCommandExecutionModeChange}
         onPromptKeyDown={props.onPromptKeyDown}
         onCompositionStart={props.onCompositionStart}
         onCompositionEnd={props.onCompositionEnd}

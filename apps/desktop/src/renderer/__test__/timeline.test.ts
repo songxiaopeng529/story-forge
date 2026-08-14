@@ -204,7 +204,13 @@ describe("buildTimeline", () => {
       "tool-step",
       "assistant-message",
     ]);
-    expect(items.filter((item) => item.type === "tool-step")).toHaveLength(1);
+    expect(items.filter((item) => item.type === "tool-step")).toEqual([
+      expect.objectContaining({
+        callId: "call_read",
+        input: { path: "README.md" },
+        output: "README",
+      }),
+    ]);
   });
 
   it("skips empty persisted assistant messages", () => {

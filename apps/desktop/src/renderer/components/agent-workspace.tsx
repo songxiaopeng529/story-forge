@@ -9,17 +9,18 @@ import type {
   TurnId,
 } from "@story-forge/shared";
 import {
+  ArrowDown,
+  ArrowUp,
   Braces,
   CalendarClock,
   CircleStop,
   FoldVertical,
   FolderOpen,
-  ImagePlus,
   KeyRound,
   Loader2,
   PanelLeftOpen,
   PanelRightOpen,
-  Play,
+  Plus,
   Puzzle,
   Settings,
   Trash2,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -40,10 +42,15 @@ import type {
   WorkspaceView,
 } from "../../shared/story-forge-api";
 import { useI18n } from "../i18n";
+import { useSmartScroll } from "../hooks/use-smart-scroll";
 import { buildTimeline, type AutomationProposalTimelineState } from "../utils/timeline";
+import { CommandModePicker } from "./command-mode-picker";
 import { ConversationTimeline } from "./conversation-timeline";
 import { ModelRequestDrawer } from "./model-request-drawer";
 import { SessionTimerDialog } from "./session-timer-dialog";
+
+const PROMPT_MIN_HEIGHT = 28;
+const PROMPT_MAX_HEIGHT = 100;
 
 export function AgentWorkspace(props: {
   loading: boolean;
@@ -60,6 +67,9 @@ export function AgentWorkspace(props: {
   modelInspectorOpen: boolean;
   sessionTimerCount: number;
   activeTurnId: TurnId | undefined;
+  turnStarting: boolean;
+  commandModeLocked: boolean;
+  settingsSaving: boolean;
   navCollapsed: boolean;
   sidebarCollapsed: boolean;
   contextCollapsed: boolean;
@@ -72,6 +82,7 @@ export function AgentWorkspace(props: {
   error: string | undefined;
   onPromptChange: (prompt: string) => void;
   onImageAttachmentsChange: (attachments: ImageAttachmentView[]) => void;
+  onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onCompositionStart: () => void;
   onCompositionEnd: () => void;
@@ -99,10 +110,14 @@ export function AgentWorkspace(props: {
   const [slashSkills, setSlashSkills] = useState<SkillView[]>([]);
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
   const [activeSlashCommand, setActiveSlashCommand] = useState<ActiveSlashCommand>();
+  const [promptExpanded, setPromptExpanded] = useState(false);
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const pendingSendRef = useRef(false);
-  const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const promptControlsRef = useRef<HTMLDivElement | null>(null);
+  const promptMeasureRef = useRef<HTMLSpanElement | null>(null);
+  const modeControlRef = useRef<HTMLDivElement | null>(null);
   const timelineItems = buildTimeline({
     session: props.session,
     activities: props.activities,
@@ -121,20 +136,42 @@ export function AgentWorkspace(props: {
     return item.id;
   }).join("|");
   const scrollFingerprint = `${timelineFingerprint}|${props.compacting ? "compacting" : "idle"}`;
+  const smartScroll = useSmartScroll({
+    itemCount: timelineItems.length + (props.compacting ? 1 : 0),
+    sessionKey: props.session?.id,
+    contentVersion: scrollFingerprint,
+  });
 
   useEffect(() => {
     setTitle(props.session?.title ?? "");
     setTimerDialogOpen(false);
     setSlashRange(undefined);
     setActiveSlashCommand(undefined);
+    setModeMenuOpen(false);
   }, [props.session?.id, props.session?.title]);
-  useEffect(() => {
-    const element = messageScrollRef.current;
-    if (!element) {
-      return;
+  useLayoutEffect(() => {
+    updatePromptLayout();
+  }, [
+    activeSlashCommand?.invocation,
+    props.commandExecutionMode,
+    props.prompt,
+    props.session?.id,
+  ]);
+  useLayoutEffect(() => {
+    const controls = promptControlsRef.current;
+    if (!controls || typeof ResizeObserver === "undefined") {
+      return undefined;
     }
-    element.scrollTop = element.scrollHeight;
-  }, [scrollFingerprint]);
+    const observer = new ResizeObserver(updatePromptLayout);
+    observer.observe(controls);
+    if (promptMeasureRef.current) {
+      observer.observe(promptMeasureRef.current);
+    }
+    if (modeControlRef.current) {
+      observer.observe(modeControlRef.current);
+    }
+    return () => observer.disconnect();
+  }, [props.session?.id]);
   useEffect(() => {
     if (!slashRange || !props.session) {
       return;
@@ -260,12 +297,22 @@ export function AgentWorkspace(props: {
     t,
   ]);
   const slashMenuOpen = Boolean(slashRange && props.session);
+  const activeSlashOptionId = slashMenuOpen && slashCommands[activeSlashIndex]
+    ? slashCommandOptionId(slashCommands[activeSlashIndex].id)
+    : undefined;
 
   useEffect(() => {
     setActiveSlashIndex((index) =>
       slashCommands.length === 0 ? 0 : Math.min(index, slashCommands.length - 1)
     );
   }, [slashCommands.length]);
+
+  useEffect(() => {
+    if (!activeSlashOptionId) {
+      return;
+    }
+    document.getElementById(activeSlashOptionId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeSlashOptionId]);
 
   if (props.loading) {
     return <div className="flex items-center justify-center text-sm text-slate-500">{t.agent.loading}</div>;
@@ -293,8 +340,37 @@ export function AgentWorkspace(props: {
 
   function handlePromptChange(event: ChangeEvent<HTMLTextAreaElement>): void {
     const value = event.currentTarget.value;
+    resizePromptInput(event.currentTarget);
     props.onPromptChange(value);
     updateSlashRange(value, event.currentTarget.selectionStart ?? value.length);
+  }
+
+  function updatePromptLayout(): void {
+    const controls = promptControlsRef.current;
+    const measure = promptMeasureRef.current;
+    const modeControl = modeControlRef.current;
+    let needsFullWidth = Boolean(promptInputRef.current?.value.includes("\n"));
+    if (!needsFullWidth && controls && measure && modeControl && controls.clientWidth > 0) {
+      const fixedControlsWidth = 28 + modeControl.offsetWidth + 28;
+      const inlineGaps = 4 * 3;
+      const inlineInputWidth = controls.clientWidth - fixedControlsWidth - inlineGaps;
+      needsFullWidth = measure.offsetWidth + 8 > inlineInputWidth;
+    }
+    setPromptExpanded((current) => current === needsFullWidth ? current : needsFullWidth);
+    resizePromptInput();
+  }
+
+  function resizePromptInput(element = promptInputRef.current): void {
+    if (!element) {
+      return;
+    }
+    element.style.height = "0px";
+    const contentHeight = element.scrollHeight;
+    element.style.height = `${Math.min(
+      Math.max(contentHeight, PROMPT_MIN_HEIGHT),
+      PROMPT_MAX_HEIGHT,
+    )}px`;
+    element.style.overflowY = contentHeight > PROMPT_MAX_HEIGHT ? "auto" : "hidden";
   }
 
   function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -344,6 +420,17 @@ export function AgentWorkspace(props: {
         return;
       }
     }
+    const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent;
+    if (
+      event.key === "Enter"
+      && !event.shiftKey
+      && !nativeEvent.isComposing
+      && nativeEvent.keyCode !== 229
+      && canSend
+      && !props.activeTurnId
+    ) {
+      smartScroll.scrollToLatest({ behavior: "auto" });
+    }
     props.onPromptKeyDown(event);
   }
 
@@ -366,7 +453,11 @@ export function AgentWorkspace(props: {
   }
 
   function updateSlashRange(value: string, cursor: number): void {
-    setSlashRange(findSlashRange(value, cursor));
+    const nextSlashRange = findSlashRange(value, cursor);
+    setSlashRange(nextSlashRange);
+    if (nextSlashRange) {
+      setModeMenuOpen(false);
+    }
     setActiveSlashIndex(0);
   }
 
@@ -406,6 +497,10 @@ export function AgentWorkspace(props: {
   }
 
   function handleSend(): void {
+    if (props.settingsSaving) {
+      return;
+    }
+    smartScroll.scrollToLatest({ behavior: "auto" });
     if (activeSlashCommand) {
       const merged = `${activeSlashCommand.invocation} ${props.prompt}`.trimEnd();
       pendingSendRef.current = true;
@@ -437,19 +532,24 @@ export function AgentWorkspace(props: {
     );
   }
 
-  const attachDisabled = !props.session || !props.imageInputEnabled || Boolean(props.activeTurnId);
+  const attachDisabled = !props.session
+    || !props.imageInputEnabled
+    || Boolean(props.activeTurnId)
+    || props.turnStarting;
   const attachTitle = !props.session
     ? t.agent.createSessionToAttachImages
     : !props.imageInputEnabled
       ? t.agent.modelNoImageInput
-      : props.activeTurnId
+      : props.activeTurnId || props.turnStarting
         ? t.agent.waitForTurn
         : t.agent.attachImage;
   const canSend = Boolean(props.session)
     && (Boolean(props.prompt.trim())
       || props.imageAttachments.length > 0
       || activeSlashCommand?.kind === "skill")
-    && (props.imageAttachments.length === 0 || props.imageInputEnabled);
+    && (props.imageAttachments.length === 0 || props.imageInputEnabled)
+    && !props.settingsSaving
+    && !props.turnStarting;
 
   return (
     <section
@@ -566,180 +666,193 @@ export function AgentWorkspace(props: {
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <div
-            className="min-h-0 flex-1 overflow-y-auto px-6 py-[22px]"
-            data-testid="agent-message-scroll"
-            ref={messageScrollRef}
-          >
-            {!props.session ? (
-              <div className="mx-auto max-w-xl rounded-[10px] border border-dashed border-forge-line p-8 text-center text-sm text-forge-muted">
-                {t.agent.createSessionHint}
-              </div>
-            ) : props.session.messages.length === 0 && timelineItems.length === 0 ? (
-              <div className="mx-auto max-w-[560px] rounded-[10px] border border-forge-line bg-white p-5 text-sm text-forge-muted">
-                {t.agent.emptySessionHint}
-              </div>
-            ) : (
-              <ConversationTimeline
-                items={timelineItems}
-                startedAt={props.session.createdAt}
-                onCancelAutomationProposal={props.onCancelAutomationProposal}
-                onCreateAutomationProposal={props.onCreateAutomationProposal}
-                onHumanInputRespond={props.onHumanInputRespond}
-              />
-            )}
-            {props.session && props.compacting ? (
-              <div className="mx-auto mt-3 flex max-w-[560px] justify-center">
-                <span
-                  aria-live="polite"
-                  className="inline-flex items-center gap-2 rounded-full border border-forge-line bg-white px-3 py-1.5 text-[12px] font-medium text-forge-muted shadow-sm"
-                  data-testid="compaction-indicator"
-                  role="status"
+          <div className="relative min-h-0 flex-1">
+            <div
+              className="h-full overflow-y-auto px-6 py-[22px]"
+              data-testid="agent-message-scroll"
+              onScroll={smartScroll.handleScroll}
+              ref={smartScroll.containerRef}
+            >
+              {!props.session ? (
+                <div className="mx-auto max-w-xl rounded-[10px] border border-dashed border-forge-line p-8 text-center text-sm text-forge-muted">
+                  {t.agent.createSessionHint}
+                </div>
+              ) : props.session.messages.length === 0 && timelineItems.length === 0 ? (
+                <div className="mx-auto max-w-[560px] rounded-[10px] border border-forge-line bg-white p-5 text-sm text-forge-muted">
+                  {t.agent.emptySessionHint}
+                </div>
+              ) : (
+                <ConversationTimeline
+                  items={timelineItems}
+                  startedAt={props.session.createdAt}
+                  onCancelAutomationProposal={props.onCancelAutomationProposal}
+                  onCreateAutomationProposal={props.onCreateAutomationProposal}
+                  onHumanInputRespond={props.onHumanInputRespond}
+                />
+              )}
+              {props.session && props.compacting ? (
+                <div className="mx-auto mt-3 flex max-w-[560px] justify-center">
+                  <span
+                    aria-live="polite"
+                    className="inline-flex items-center gap-2 rounded-full border border-forge-line bg-white px-3 py-1.5 text-[12px] font-medium text-forge-muted shadow-sm"
+                    data-testid="compaction-indicator"
+                    role="status"
+                  >
+                    <Loader2 className="animate-spin text-forge-ink" size={14} />
+                    {t.agent.compacting}
+                  </span>
+                </div>
+              ) : null}
+              <div aria-hidden="true" className="h-px" ref={smartScroll.sentinelRef} />
+            </div>
+            {!smartScroll.isPinned ? (
+              <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
+                <button
+                  aria-label={smartScroll.newItemsCount > 0
+                    ? t.agent.newUpdates(smartScroll.newItemsCount)
+                    : t.agent.backToLatest}
+                  className="motion-message-enter inline-flex items-center gap-2 rounded-full border border-forge-line bg-white px-3 py-2 text-xs font-medium text-forge-ink shadow-[0_8px_24px_rgba(15,23,42,0.14)] transition-[transform,box-shadow] duration-150 hover:shadow-[0_10px_30px_rgba(15,23,42,0.18)] active:translate-y-px"
+                  onClick={() => smartScroll.scrollToLatest()}
+                  type="button"
                 >
-                  <Loader2 className="animate-spin text-forge-ink" size={14} />
-                  {t.agent.compacting}
-                </span>
+                  <ArrowDown aria-hidden="true" size={14} />
+                  <span aria-live="polite">
+                    {smartScroll.newItemsCount > 0
+                      ? t.agent.newUpdates(smartScroll.newItemsCount)
+                      : t.agent.backToLatest}
+                  </span>
+                </button>
               </div>
             ) : null}
           </div>
 
-          <footer className="flex-none border-t border-forge-line bg-forge-canvas px-6 pb-5 pt-3">
+          <footer className="flex-none bg-forge-canvas px-6 pb-4 pt-3">
             <div className="mx-auto max-w-[560px]">
               {props.error ? (
                 <div className="mb-2 rounded-lg border border-forge-danger/30 bg-forge-danger-bg px-3 py-2 text-sm text-forge-danger">
                   {props.error}
                 </div>
               ) : null}
-              <div className="rounded-2xl border border-forge-line bg-white focus-within:border-forge-ink/40">
-                <div className="relative">
-                  {slashMenuOpen ? (
-                    <div className="absolute bottom-full left-3 right-3 z-30 mb-2 overflow-hidden rounded-xl border border-forge-line bg-white shadow-xl">
-                      <div className="border-b border-forge-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-forge-muted">
-                        {t.agent.slashCommands}
-                      </div>
+              <div className="relative">
+                {slashMenuOpen ? (
+                  <div className="motion-popover absolute inset-x-0 bottom-full z-30 mb-2 origin-bottom rounded-[10px] border border-forge-line bg-white p-1 shadow-[0_12px_36px_rgba(15,23,42,0.14)]">
+                    <div
+                      aria-label={t.agent.slashCommands}
+                      className="relative max-h-64 overflow-y-auto"
+                      id="slash-command-menu"
+                      role="listbox"
+                    >
                       {slashCommands.length > 0 ? (
-                        <div
-                          aria-label={t.agent.slashCommands}
-                          className="max-h-64 overflow-y-auto p-1"
-                          id="slash-command-menu"
-                          role="listbox"
-                        >
-                          {slashCommands.map((command, index) => (
-                            <div
-                              aria-label={`${command.invocation} ${command.title} ${command.description}`}
-                              aria-selected={index === activeSlashIndex}
-                              className={`flex cursor-default items-start gap-2 rounded-lg px-2.5 py-2 text-left ${
-                                index === activeSlashIndex
-                                  ? "bg-forge-canvas text-forge-ink"
-                                  : "text-forge-ink hover:bg-forge-canvas"
-                              }`}
-                              key={command.id}
-                              onClick={() => selectSlashCommand(command)}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onMouseEnter={() => setActiveSlashIndex(index)}
-                              role="option"
-                              tabIndex={-1}
-                            >
-                              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border border-forge-line bg-white text-forge-muted">
-                                {command.icon}
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <span className="flex items-center gap-2">
-                                  <span className="font-mono text-[12px] font-semibold text-forge-ink">
-                                    {command.invocation}
-                                  </span>
-                                  <span className="truncate text-[12px] font-medium text-forge-muted">
-                                    {command.title}
-                                  </span>
-                                </span>
-                                <span className="mt-0.5 block truncate text-[11px] text-forge-muted">
-                                  {command.description}
-                                </span>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-x-0 top-0 h-9 rounded-[6px] bg-forge-canvas"
+                          style={{
+                            transform: `translateY(${activeSlashIndex * 36}px)`,
+                            transition: "transform 220ms var(--motion-ease-enter)",
+                          }}
+                        />
+                      ) : null}
+                      {slashCommands.length > 0 ? (
+                        slashCommands.map((command, index) => (
+                          <div
+                            aria-label={`${command.invocation} ${command.title} ${command.description}`}
+                            aria-selected={index === activeSlashIndex}
+                            className="relative z-10 flex h-9 cursor-default items-center gap-2.5 rounded-[6px] px-2 text-left text-forge-ink"
+                            id={slashCommandOptionId(command.id)}
+                            key={command.id}
+                            onClick={() => selectSlashCommand(command)}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onMouseEnter={() => setActiveSlashIndex(index)}
+                            role="option"
+                            tabIndex={-1}
+                          >
+                            <span className="flex h-[22px] w-[22px] flex-none items-center justify-center text-forge-muted">
+                              {command.icon}
+                            </span>
+                            <span className="shrink-0 font-mono text-[12.5px] font-semibold text-forge-ink">
+                              {command.invocation}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[12px] text-forge-muted">
+                              {command.title} · {command.description}
+                            </span>
+                          </div>
+                        ))
                       ) : (
-                        <div className="px-3 py-4 text-sm text-forge-muted">
+                        <div className="flex h-9 items-center px-2 text-[12px] text-forge-muted">
                           {t.agent.noMatchingSlashCommands}
                         </div>
                       )}
                     </div>
-                  ) : null}
-                {activeSlashCommand ? (
-                  <div className="flex flex-wrap gap-1.5 px-3.5 pt-3">
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-md border border-forge-line bg-forge-canvas px-2 py-1 text-[12px] font-medium text-forge-ink"
-                      data-testid="active-slash-command"
-                    >
-                      <span className="flex h-4 w-4 items-center justify-center text-forge-muted">
-                        {activeSlashCommand.icon}
-                      </span>
-                      <span className="font-mono font-semibold">{activeSlashCommand.invocation}</span>
-                      <button
-                        aria-label={t.agent.removeCommand(activeSlashCommand.invocation)}
-                        className="ml-0.5 text-forge-muted hover:text-forge-ink"
-                        onClick={clearActiveSlashCommand}
-                        type="button"
-                      >
-                        <X size={12} />
-                      </button>
-                    </span>
+                    <div className="mt-1 border-t border-forge-line px-2 pb-1 pt-1.5 text-[11px] text-forge-muted">
+                      {t.agent.typeToSearchCommands}
+                    </div>
                   </div>
                 ) : null}
-                <textarea
-                  aria-autocomplete="list"
-                  aria-controls={slashMenuOpen ? "slash-command-menu" : undefined}
-                  aria-expanded={slashMenuOpen}
-                  className="h-24 w-full resize-none rounded-2xl border-0 bg-transparent p-3.5 text-[13px] text-forge-ink outline-none placeholder:text-forge-muted disabled:bg-transparent"
-                  disabled={!props.session}
-                  onChange={handlePromptChange}
-                  onCompositionEnd={props.onCompositionEnd}
-                  onCompositionStart={props.onCompositionStart}
-                  onClick={handlePromptSelection}
-                  onKeyDown={handlePromptKeyDown}
-                  onKeyUp={handlePromptKeyUp}
-                  placeholder={activeSlashCommand
-                    ? t.agent.activeCommandPlaceholder(activeSlashCommand.invocation)
-                    : t.agent.promptPlaceholder}
-                  ref={promptInputRef}
-                  value={props.prompt}
-                />
-                </div>
-                {props.imageAttachments.length > 0 ? (
-                  <div className="flex gap-2 overflow-x-auto border-t border-forge-line px-3 py-2">
-                    {props.imageAttachments.map((attachment) => (
-                      <div
-                        className="group relative flex w-28 flex-none items-center gap-2 rounded-lg border border-forge-line bg-forge-canvas p-1.5"
-                        key={attachment.id}
-                      >
-                        <img
-                          alt=""
-                          className="h-9 w-9 flex-none rounded-md object-cover"
-                          src={imageAttachmentSrc(attachment)}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[11px] font-medium text-forge-ink" title={attachment.name}>
-                            {attachment.name}
-                          </div>
-                          <div className="text-[10px] text-forge-muted">
-                            {formatFileSize(attachment.size)}
-                          </div>
-                        </div>
-                        <button
-                          aria-label={t.agent.removeImage(attachment.name)}
-                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-forge-line bg-white text-forge-muted shadow-sm hover:text-forge-ink"
-                          onClick={() => removeImageAttachment(attachment.id)}
-                          type="button"
+
+                <div
+                  className="relative flex flex-col gap-1.5 rounded-[14px] border border-forge-line bg-white p-1.5 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition-[border-color,box-shadow] duration-150 focus-within:border-forge-ink/35 focus-within:shadow-[0_5px_18px_rgba(15,23,42,0.09)]"
+                  data-expanded={promptExpanded ? "true" : "false"}
+                  data-testid="prompt-bar"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute invisible whitespace-pre text-[13px] leading-[18px]"
+                    ref={promptMeasureRef}
+                  >
+                    {props.prompt}
+                  </span>
+
+                  {activeSlashCommand || props.imageAttachments.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 px-0.5 pt-0.5">
+                      {activeSlashCommand ? (
+                        <span
+                          className="motion-content-enter flex h-[26px] items-center gap-1.5 rounded-[7px] bg-forge-canvas py-1 pl-1.5 pr-1 text-[11.5px] font-medium text-forge-ink shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]"
+                          data-testid="active-slash-command"
                         >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="flex items-center justify-between px-3 pb-3">
-                  <div className="flex items-center gap-2">
+                          <span className="flex h-4 w-4 items-center justify-center text-forge-muted">
+                            {activeSlashCommand.icon}
+                          </span>
+                          <span className="font-mono font-semibold">{activeSlashCommand.invocation}</span>
+                          <button
+                            aria-label={t.agent.removeCommand(activeSlashCommand.invocation)}
+                            className="flex h-4 w-4 items-center justify-center rounded-[4px] text-forge-muted transition-colors hover:bg-forge-line/70 hover:text-forge-ink"
+                            onClick={clearActiveSlashCommand}
+                            type="button"
+                          >
+                            <X size={10} strokeWidth={2.5} />
+                          </button>
+                        </span>
+                      ) : null}
+                      {props.imageAttachments.map((attachment) => (
+                        <span
+                          className="motion-content-enter flex h-[26px] max-w-48 items-center gap-1.5 rounded-[7px] bg-forge-canvas py-1 pl-1 pr-1 text-[11.5px] text-forge-ink shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]"
+                          key={attachment.id}
+                          title={`${attachment.name} · ${formatFileSize(attachment.size)}`}
+                        >
+                          <img
+                            alt=""
+                            className="h-[18px] w-[18px] flex-none rounded-[4px] object-cover"
+                            src={imageAttachmentSrc(attachment)}
+                          />
+                          <span className="min-w-0 truncate">{attachment.name}</span>
+                          <button
+                            aria-label={t.agent.removeImage(attachment.name)}
+                            className="flex h-4 w-4 flex-none items-center justify-center rounded-[4px] text-forge-muted transition-colors hover:bg-forge-line/70 hover:text-forge-ink"
+                            onClick={() => removeImageAttachment(attachment.id)}
+                            type="button"
+                          >
+                            <X size={10} strokeWidth={2.5} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div
+                    className="grid grid-cols-[28px_minmax(0,1fr)_auto_28px] items-end gap-x-1 gap-y-1.5"
+                    data-testid="prompt-bar-controls"
+                    ref={promptControlsRef}
+                  >
                     <input
                       accept="image/png,image/jpeg,image/webp,image/gif"
                       aria-label={t.agent.chooseImage}
@@ -752,41 +865,96 @@ export function AgentWorkspace(props: {
                     />
                     <button
                       aria-label={t.agent.attachImage}
-                      className="flex h-7 w-7 items-center justify-center rounded-md text-forge-muted hover:bg-forge-canvas hover:text-forge-ink disabled:cursor-not-allowed disabled:opacity-50"
+                      className={`flex h-7 w-7 items-center justify-center justify-self-start rounded-[8px] text-forge-muted transition-[background-color,color,transform] duration-150 hover:bg-forge-canvas hover:text-forge-ink active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-40 ${
+                        promptExpanded ? "col-start-1 row-start-2" : "col-start-1 row-start-1"
+                      }`}
                       disabled={attachDisabled}
                       onClick={() => imageInputRef.current?.click()}
                       title={attachTitle}
                       type="button"
                     >
-                      <ImagePlus size={16} />
+                      <Plus size={16} strokeWidth={2} />
                     </button>
-                    <span className="rounded-full border border-forge-line bg-white px-2.5 py-1 text-[11px] font-medium text-forge-danger">
-                      {t.commandMode[props.commandExecutionMode].chip}
-                    </span>
+
+                    <textarea
+                      aria-activedescendant={activeSlashOptionId}
+                      aria-autocomplete="list"
+                      aria-controls={slashMenuOpen ? "slash-command-menu" : undefined}
+                      aria-expanded={slashMenuOpen}
+                      className={`min-h-7 min-w-0 w-full resize-none bg-transparent px-1 py-[5px] text-[13px] leading-[18px] text-forge-ink outline-none [overflow-wrap:anywhere] placeholder:text-forge-muted disabled:bg-transparent ${
+                        promptExpanded
+                          ? "col-span-full col-start-1 row-start-1"
+                          : "col-start-2 row-start-1"
+                      }`}
+                      disabled={!props.session}
+                      onChange={handlePromptChange}
+                      onCompositionEnd={props.onCompositionEnd}
+                      onCompositionStart={props.onCompositionStart}
+                      onClick={handlePromptSelection}
+                      onKeyDown={handlePromptKeyDown}
+                      onKeyUp={handlePromptKeyUp}
+                      placeholder={activeSlashCommand
+                        ? t.agent.activeCommandPlaceholder(activeSlashCommand.invocation)
+                        : t.agent.promptPlaceholder}
+                      ref={promptInputRef}
+                      role="combobox"
+                      rows={1}
+                      value={props.prompt}
+                    />
+
+                    <div
+                      className={promptExpanded ? "col-start-3 row-start-2" : "col-start-3 row-start-1"}
+                      ref={modeControlRef}
+                    >
+                      <CommandModePicker
+                        busy={props.settingsSaving}
+                        disabled={!props.session || props.commandModeLocked}
+                        {...(props.commandModeLocked
+                          ? { disabledReason: t.agent.commandModeUnavailableWhileRunning }
+                          : props.settingsSaving
+                            ? { disabledReason: t.agent.savingCommandMode }
+                            : {})}
+                        onChange={props.onCommandExecutionModeChange}
+                        onOpenChange={(open) => {
+                          setModeMenuOpen(open);
+                          if (open) {
+                            setSlashRange(undefined);
+                          }
+                        }}
+                        open={modeMenuOpen}
+                        value={props.commandExecutionMode}
+                      />
+                    </div>
+
+                    <button
+                      aria-label={props.activeTurnId
+                        ? t.agent.stop
+                        : props.turnStarting
+                          ? t.agent.starting
+                          : t.agent.send}
+                      className={`flex h-7 w-7 items-center justify-center rounded-[8px] transition-[background-color,color,transform] duration-200 enabled:active:scale-[0.94] ${
+                        promptExpanded ? "col-start-4 row-start-2" : "col-start-4 row-start-1"
+                      } ${
+                        props.activeTurnId
+                          ? "bg-forge-ink text-white"
+                          : canSend
+                            ? "bg-forge-ink text-white"
+                            : "bg-forge-line text-forge-muted"
+                      }`}
+                      disabled={!props.activeTurnId && (props.turnStarting || !canSend)}
+                      onClick={props.activeTurnId ? props.onStop : handleSend}
+                      type="button"
+                    >
+                      {props.activeTurnId
+                        ? <CircleStop size={15} strokeWidth={2.2} />
+                        : props.turnStarting
+                          ? <Loader2 className="animate-spin" size={15} />
+                          : <ArrowUp size={16} strokeWidth={2.4} />}
+                    </button>
                   </div>
-                  {props.activeTurnId ? (
-                    <button
-                      className="inline-flex items-center gap-2 rounded-lg bg-forge-ink px-3.5 py-2 text-sm font-medium text-white"
-                      onClick={props.onStop}
-                      type="button"
-                    >
-                      <CircleStop size={15} />
-                      {t.agent.stop}
-                    </button>
-                  ) : (
-                    <button
-                      className="inline-flex items-center gap-2 rounded-lg bg-forge-ink px-3.5 py-2 text-sm font-medium text-white disabled:opacity-40"
-                      disabled={!canSend}
-                      onClick={handleSend}
-                      type="button"
-                    >
-                      <Play size={15} />
-                      {t.agent.send}
-                    </button>
-                  )}
                 </div>
               </div>
-              <div className="mt-2 text-[10px] leading-[14px] text-forge-muted">
+              <div className="mt-2 text-[11px] leading-[14px] text-forge-muted">
                 {t.agent.enterToSend}
               </div>
             </div>
@@ -836,6 +1004,10 @@ type ActiveSlashCommand = {
   icon: ReactNode;
   kind: "extension" | "skill";
 };
+
+function slashCommandOptionId(commandId: string): string {
+  return `slash-command-${commandId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
 
 function findSlashRange(value: string, cursor: number): SlashRange | undefined {
   const beforeCursor = value.slice(0, cursor);

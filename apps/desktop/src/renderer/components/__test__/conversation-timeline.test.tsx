@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationTimeline } from "../conversation-timeline";
 import type { TimelineItem } from "../../utils/timeline";
 
@@ -37,6 +37,139 @@ describe("ConversationTimeline assistant markdown", () => {
     expect(container.querySelector("table")).toBeInTheDocument();
     expect(container.querySelector("pre")).toBeInTheDocument();
     expect(container.textContent).not.toContain("**bold**");
+  });
+
+  it("renders the pending assistant placeholder as an accessible shimmer status row", () => {
+    const items: TimelineItem[] = [{
+      type: "assistant-message",
+      id: "pending-turn-1",
+      content: "Thinking...",
+      streaming: true,
+      delivery: "smooth",
+    }];
+
+    render(<ConversationTimeline items={items} />);
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Thinking...");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).not.toHaveClass("bg-white");
+    expect(screen.getByTestId("thinking-status").querySelector(".animate-pulse")).toBeInTheDocument();
+  });
+
+  it("uses an animated, accessible disclosure for completed reasoning", () => {
+    const items: TimelineItem[] = [{
+      type: "reasoning",
+      id: "reasoning-1",
+      content: "Inspect the timeline before changing it.",
+    }];
+
+    render(<ConversationTimeline items={items} />);
+
+    const collapsed = screen.getByRole("button", { name: /Thought Completed/ });
+    expect(collapsed).toHaveAttribute("aria-expanded", "false");
+    const panelId = collapsed.getAttribute("aria-controls");
+    expect(document.getElementById(panelId ?? "")).toHaveAttribute("aria-hidden", "true");
+
+    fireEvent.click(collapsed);
+
+    const expanded = screen.getByRole("button", { name: /Reasoning Completed/ });
+    expect(expanded).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(panelId ?? "")).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByText("Inspect the timeline before changing it.")).toBeInTheDocument();
+  });
+
+  it("groups consecutive tool steps into one compact, expandable activity section", () => {
+    const items: TimelineItem[] = [
+      {
+        type: "tool-step",
+        id: "tool-1",
+        callId: "call-1",
+        name: "workspace.readFile",
+        status: "completed",
+        input: { path: "README.md" },
+        output: "StoryForge",
+      },
+      {
+        type: "tool-step",
+        id: "tool-2",
+        callId: "call-2",
+        name: "bash",
+        status: "failed",
+        input: { command: "pnpm missing" },
+        output: "command failed",
+      },
+      {
+        type: "tool-step",
+        id: "tool-3",
+        callId: "call-3",
+        name: "web_search",
+        status: "running",
+        input: { query: "Beautiful UI" },
+      },
+    ];
+
+    render(<ConversationTimeline items={items} />);
+
+    expect(screen.getAllByTestId("tool-activity-group")).toHaveLength(1);
+    const group = screen.getByRole("button", { name: /Tool activity 3 tools/ });
+    expect(group).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("3 tools · 1 completed · 1 failed · 1 running")).toBeInTheDocument();
+    expect(screen.getByText("Read file")).toBeInTheDocument();
+    expect(screen.getByText("Run command")).toBeInTheDocument();
+    expect(screen.getByText("Search the web")).toBeInTheDocument();
+
+    const readFile = screen.getByRole("button", { name: /Read file README\.md Completed/ });
+    expect(readFile).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(readFile);
+    expect(readFile).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById(readFile.getAttribute("aria-controls") ?? ""))
+      .toHaveAttribute("aria-hidden", "false");
+  });
+
+  it("maps coding and MCP tools to human-readable activity labels", () => {
+    const tools: Array<[string, string]> = [
+      ["write", "Write file"],
+      ["edit", "Edit file"],
+      ["grep", "Search text"],
+      ["find", "Find files"],
+      ["ls", "List directory"],
+      ["web_fetch", "Fetch webpage"],
+      ["mcp__github__list_issues", "Github · List issues"],
+    ];
+    const items: TimelineItem[] = tools.map(([name], index) => ({
+      type: "tool-step",
+      id: `tool-${index}`,
+      callId: `call-${index}`,
+      name,
+      status: "completed",
+    }));
+
+    render(<ConversationTimeline items={items} />);
+    fireEvent.click(screen.getByRole("button", { name: /Tool activity 7 tools/ }));
+
+    for (const [, label] of tools) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("shows a copied confirmation after copying a completed assistant response", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    const items: TimelineItem[] = [{
+      type: "assistant-message",
+      id: "assistant-complete",
+      content: "The change is ready.",
+    }];
+
+    render(<ConversationTimeline items={items} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy assistant response" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("The change is ready."));
+    expect(screen.getByRole("button", { name: "Assistant response copied" })).toHaveTextContent("Copied");
   });
 
   it("renders a streaming message with an unterminated code fence without throwing", () => {
