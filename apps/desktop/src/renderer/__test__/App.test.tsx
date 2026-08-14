@@ -826,7 +826,10 @@ describe("App", () => {
     expect(screen.getByTestId("agent-layout")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("agent-workspace")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("agent-header")).not.toHaveClass("overflow-y-auto");
-    expect(screen.getByTestId("agent-message-scroll")).toHaveClass("overflow-y-auto");
+    expect(screen.getByTestId("agent-message-scroll")).toHaveClass(
+      "overflow-y-auto",
+      "scrollbar-hidden",
+    );
   });
 
   it("keeps the reader's position and surfaces new activity after they scroll up", async () => {
