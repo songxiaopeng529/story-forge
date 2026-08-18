@@ -4,6 +4,7 @@ import type {
 } from "@story-forge/shared";
 import {
   CalendarClock,
+  ChevronDown,
   Loader2,
   Pause,
   Play,
@@ -263,49 +264,55 @@ export function AutomationsPage(props: {
                 />
               </Field>
               <Field label={t.automations.workspace}>
-                <select
-                  aria-label={t.automations.workspace}
-                  className={inputClassName}
-                  onChange={(event) => setWorkspaceId(event.target.value)}
-                  value={workspaceId}
-                >
-                  {props.workspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.displayName}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t.automations.provider}>
+                <DropdownShell>
                   <select
-                    aria-label={t.automations.provider}
-                    className={inputClassName}
-                    onChange={(event) => {
-                      const nextProviderId = event.target.value as ProviderId;
-                      const nextProvider = props.providers.find((provider) =>
-                        provider.providerId === nextProviderId
-                      );
-                      setProviderId(nextProviderId);
-                      setModel(nextProvider?.model ?? "");
-                    }}
-                    value={providerId}
+                    aria-label={t.automations.workspace}
+                    className={dropdownClassName}
+                    onChange={(event) => setWorkspaceId(event.target.value)}
+                    value={workspaceId}
                   >
-                    {props.providers.map((provider) => (
-                      <option key={provider.providerId} value={provider.providerId}>
-                        {provider.displayName}
+                    {props.workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>
+                        {workspace.displayName}
                       </option>
                     ))}
                   </select>
+                </DropdownShell>
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label={t.automations.provider}>
+                  <DropdownShell>
+                    <select
+                      aria-label={t.automations.provider}
+                      className={dropdownClassName}
+                      onChange={(event) => {
+                        const nextProviderId = event.target.value as ProviderId;
+                        const nextProvider = props.providers.find((provider) =>
+                          provider.providerId === nextProviderId
+                        );
+                        setProviderId(nextProviderId);
+                        setModel(nextProvider?.model ?? "");
+                      }}
+                      value={providerId}
+                    >
+                      {props.providers.map((provider) => (
+                        <option key={provider.providerId} value={provider.providerId}>
+                          {provider.displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </DropdownShell>
                 </Field>
                 <Field label={t.automations.model}>
-                  <input
-                    aria-label={t.automations.model}
-                    className={inputClassName}
-                    list="automation-models"
-                    onChange={(event) => setModel(event.target.value)}
-                    value={model}
-                  />
+                  <DropdownShell>
+                    <input
+                      aria-label={t.automations.model}
+                      className={datalistInputClassName}
+                      list="automation-models"
+                      onChange={(event) => setModel(event.target.value)}
+                      value={model}
+                    />
+                  </DropdownShell>
                   <datalist id="automation-models">
                     {(selectedProvider?.recommendedModels ?? []).map((recommendedModel) => (
                       <option key={recommendedModel} value={recommendedModel} />
@@ -516,8 +523,31 @@ function Field(props: { label: string; children: ReactNode }) {
   );
 }
 
+function DropdownShell(props: { children: ReactNode }) {
+  return (
+    <div className="relative">
+      {props.children}
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-700"
+        size={16}
+        strokeWidth={2}
+      />
+    </div>
+  );
+}
+
+const inputBaseClassName =
+  "w-full rounded-md border border-forge-line bg-white py-2 text-sm outline-none focus:border-forge-ember focus:ring-2 focus:ring-orange-100";
+
 const inputClassName =
-  "w-full rounded-md border border-forge-line bg-white px-3 py-2 text-sm outline-none focus:border-forge-ember focus:ring-2 focus:ring-orange-100";
+  `${inputBaseClassName} px-3`;
+
+const dropdownClassName =
+  `${inputBaseClassName} appearance-none pl-3 pr-10`;
+
+const datalistInputClassName =
+  `${dropdownClassName} [&::-webkit-calendar-picker-indicator]:opacity-0`;
 
 function getDefaultTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
