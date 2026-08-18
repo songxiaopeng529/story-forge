@@ -124,6 +124,7 @@ export class PiModelService {
           ? runtime.getModel(provider.id, selectedModel)
           : undefined;
         const authStatus = runtime.getProviderAuthStatus(provider.id);
+        const secretLength = this.getStoredSecretLength(provider.id);
         return {
           providerId: provider.id,
           displayName: provider.name || provider.id,
@@ -136,6 +137,7 @@ export class PiModelService {
             ? { defaultModel }
             : {}),
           hasSecret: credentialProviders.has(provider.id) || authStatus.configured,
+          ...(secretLength !== undefined ? { secretLength } : {}),
           lastTestStatus: this.lastTestStatus.get(provider.id) ?? "untested",
         } satisfies ProviderView;
       })
@@ -327,6 +329,13 @@ export class PiModelService {
 
   private getAuthPath(): string {
     return join(this.agentDir, "auth.json");
+  }
+
+  private getStoredSecretLength(providerId: ProviderId): number | undefined {
+    const credential = readStoredCredential(providerId, this.getAuthPath());
+    return credential?.type === "api_key" && credential.key
+      ? credential.key.length
+      : undefined;
   }
 
   private getProviderOverridesPath(): string {

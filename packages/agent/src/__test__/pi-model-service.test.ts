@@ -42,6 +42,7 @@ describe("PiModelService", () => {
         providerId: "volcano",
         model: "ep-custom-endpoint",
         hasSecret: true,
+        secretLength: "ark-secret".length,
       });
       await expect(service.revealSecret("volcano")).resolves.toBe("ark-secret");
       const auth = JSON.parse(
@@ -100,6 +101,7 @@ describe("PiModelService", () => {
       const restartedProvider = (await restarted.list())
         .find((provider) => provider.providerId === "deepseek");
       expect(restartedProvider?.recommendedModels).toContain("deepseek-custom-coder");
+      expect(restartedProvider?.secretLength).toBe("deepseek-secret".length);
       await expect(restarted.resolveModel("deepseek", "deepseek-custom-coder"))
         .resolves.toMatchObject({
           provider: "deepseek",

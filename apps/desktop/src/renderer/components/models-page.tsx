@@ -1,11 +1,12 @@
-import { Check, Eye, EyeOff, Save } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, Save } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type { ProviderId, ProviderView } from "../../shared/story-forge-api";
 import { getProviderIconUrl } from "../utils/provider-icons";
 import { formatError } from "../utils/renderer-utils";
 import { useI18n } from "../i18n";
 
-const SAVED_API_KEY_MASK = "************";
+const DEFAULT_API_KEY_MASK_LENGTH = 12;
+const API_KEY_MASK_CHAR = "*";
 
 export function ModelsPage(props: {
   providers: ProviderView[];
@@ -25,16 +26,22 @@ export function ModelsPage(props: {
   const [models, setModels] = useState<string[]>([]);
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const savedApiKeyMask = getSavedApiKeyMask(props.selectedProvider);
 
   useEffect(() => {
     setBaseUrl(props.selectedProvider?.baseUrl ?? "");
     setModel(props.selectedProvider?.model ?? "");
-    setApiKey(props.selectedProvider?.hasSecret ? SAVED_API_KEY_MASK : "");
+    setApiKey(props.selectedProvider?.hasSecret ? savedApiKeyMask : "");
     setApiKeyDirty(false);
     setApiKeyVisible(false);
     setModels(props.selectedProvider?.recommendedModels ?? []);
     setNotice(undefined);
-  }, [props.selectedProvider?.providerId, props.selectedProvider?.hasSecret]);
+  }, [
+    props.selectedProvider?.providerId,
+    props.selectedProvider?.hasSecret,
+    props.selectedProvider?.secretLength,
+    savedApiKeyMask,
+  ]);
 
   async function save(): Promise<void> {
     if (!props.selectedProvider) {
@@ -53,7 +60,7 @@ export function ModelsPage(props: {
       props.onProvidersChange(await window.storyForge.providers.list());
       setBaseUrl(saved.baseUrl);
       setModels(saved.recommendedModels);
-      setApiKey(saved.hasSecret ? SAVED_API_KEY_MASK : "");
+      setApiKey(saved.hasSecret ? getSavedApiKeyMask(saved) : "");
       setApiKeyDirty(false);
       setApiKeyVisible(false);
       setNotice(t.models.providerSaved);
@@ -151,7 +158,7 @@ export function ModelsPage(props: {
     if (apiKeyVisible) {
       setApiKeyVisible(false);
       if (!apiKeyDirty && props.selectedProvider.hasSecret) {
-        setApiKey(SAVED_API_KEY_MASK);
+        setApiKey(savedApiKeyMask);
       }
       return;
     }
@@ -267,13 +274,15 @@ export function ModelsPage(props: {
                 />
               </Field>
               <Field label={t.models.modelId}>
-                <input
-                  aria-label={t.models.modelId}
-                  className="form-input"
-                  list="provider-models"
-                  onChange={(event) => setModel(event.target.value)}
-                  value={model}
-                />
+                <DropdownShell>
+                  <input
+                    aria-label={t.models.modelId}
+                    className={modelIdInputClassName}
+                    list="provider-models"
+                    onChange={(event) => setModel(event.target.value)}
+                    value={model}
+                  />
+                </DropdownShell>
                 <datalist id="provider-models">
                   {models.map((modelId) => <option key={modelId} value={modelId} />)}
                 </datalist>
@@ -300,7 +309,7 @@ export function ModelsPage(props: {
                     className="form-input pr-11"
                     onBlur={() => {
                       if (!apiKeyDirty && !apiKeyVisible && props.selectedProvider?.hasSecret) {
-                        setApiKey(SAVED_API_KEY_MASK);
+                        setApiKey(savedApiKeyMask);
                       }
                     }}
                     onChange={(event) => {
@@ -308,7 +317,7 @@ export function ModelsPage(props: {
                       setApiKeyDirty(true);
                     }}
                     onFocus={() => {
-                      if (!apiKeyDirty && apiKey === SAVED_API_KEY_MASK) {
+                      if (!apiKeyDirty && apiKey === savedApiKeyMask) {
                         setApiKey("");
                       }
                     }}
@@ -468,3 +477,27 @@ function Field(props: { label: string; children: ReactNode }) {
     </div>
   );
 }
+
+function DropdownShell(props: { children: ReactNode }) {
+  return (
+    <div className="relative">
+      {props.children}
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-700"
+        size={16}
+        strokeWidth={2}
+      />
+    </div>
+  );
+}
+
+function getSavedApiKeyMask(provider: ProviderView | undefined): string {
+  const length = provider?.secretLength && provider.secretLength > 0
+    ? provider.secretLength
+    : DEFAULT_API_KEY_MASK_LENGTH;
+  return API_KEY_MASK_CHAR.repeat(length);
+}
+
+const modelIdInputClassName =
+  "form-input appearance-none pr-10 [&::-webkit-calendar-picker-indicator]:opacity-0";

@@ -991,6 +991,8 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Models" }));
     const keyInput = await screen.findByLabelText("API key");
+    const savedKeyMask = "*".repeat("saved-local-secret".length);
+    const newKeyMask = "*".repeat("new-local-secret".length);
 
     expect(screen.getByTestId("models-page")).toHaveClass("min-h-0", "overflow-hidden");
     expect(screen.getByTestId("model-provider-list")).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
@@ -1004,18 +1006,18 @@ describe("App", () => {
       target: { value: "deepseek-v4-pro" },
     });
     expect(keyInput).toHaveAttribute("type", "password");
-    expect(keyInput).toHaveValue("************");
+    expect(keyInput).toHaveValue(savedKeyMask);
     fireEvent.click(screen.getByRole("button", { name: "Show API key" }));
     await waitFor(() => expect(fixture.revealSecret).toHaveBeenCalledWith("deepseek"));
     expect(keyInput).toHaveAttribute("type", "text");
     expect(keyInput).toHaveValue("saved-local-secret");
     fireEvent.click(screen.getByRole("button", { name: "Hide API key" }));
     expect(keyInput).toHaveAttribute("type", "password");
-    expect(keyInput).toHaveValue("************");
+    expect(keyInput).toHaveValue(savedKeyMask);
     fireEvent.focus(keyInput);
     expect(keyInput).toHaveValue("");
     fireEvent.blur(keyInput);
-    expect(keyInput).toHaveValue("************");
+    expect(keyInput).toHaveValue(savedKeyMask);
     fireEvent.focus(keyInput);
     fireEvent.change(keyInput, { target: { value: "new-local-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
@@ -1026,7 +1028,7 @@ describe("App", () => {
       model: "deepseek-v4-pro",
       apiKey: "new-local-secret",
     }));
-    await waitFor(() => expect(keyInput).toHaveValue("************"));
+    await waitFor(() => expect(keyInput).toHaveValue(newKeyMask));
     expect(screen.queryByDisplayValue("new-local-secret")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save provider" }));
@@ -1769,6 +1771,7 @@ function installApi(options: {
   modelImageSupport?: Record<string, boolean>;
   start?: StoryForgeApi["turns"]["start"];
 } = {}) {
+  const savedSecret = "saved-local-secret";
   const provider: ProviderView = {
     providerId: "deepseek",
     displayName: "DeepSeek",
@@ -1778,6 +1781,7 @@ function installApi(options: {
     isDefault: true,
     defaultModel: "deepseek-v4-pro",
     hasSecret: true,
+    secretLength: savedSecret.length,
     lastTestStatus: "success",
     supportsImageInput: false,
   };
@@ -1860,6 +1864,7 @@ function installApi(options: {
     const current = currentProviders.find((candidate) =>
       candidate.providerId === input.providerId
     ) ?? provider;
+    const secretLength = input.apiKey ? input.apiKey.length : current.secretLength;
     const saved: ProviderView = {
       ...current,
       baseUrl: input.baseUrl,
@@ -1869,6 +1874,7 @@ function installApi(options: {
         ...current.recommendedModels,
       ])),
       hasSecret: current.hasSecret || Boolean(input.apiKey),
+      ...(secretLength !== undefined ? { secretLength } : {}),
     };
     currentProviders = currentProviders.map((candidate) =>
       candidate.providerId === saved.providerId ? saved : candidate
@@ -1891,7 +1897,7 @@ function installApi(options: {
       return { ...rest, isDefault: false };
     });
   });
-  const revealSecret = vi.fn(async () => "saved-local-secret");
+  const revealSecret = vi.fn(async () => savedSecret);
   let currentSkills = options.skills ?? [];
   let currentMcpConfig = options.mcpConfig ?? {
     schemaVersion: 1 as const,

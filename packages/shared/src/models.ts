@@ -10,6 +10,7 @@ export type ProviderView = {
   isDefault: boolean;
   defaultModel?: string;
   hasSecret: boolean;
+  secretLength?: number;
   lastTestStatus: "untested" | "success" | "failed";
   lastTestedAt?: string;
 };
