@@ -668,7 +668,7 @@ export function AgentWorkspace(props: {
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             <div
-              className="h-full overflow-y-auto px-6 py-[22px]"
+              className="scrollbar-hidden h-full overflow-y-auto px-6 py-[22px]"
               data-testid="agent-message-scroll"
               onScroll={smartScroll.handleScroll}
               ref={smartScroll.containerRef}
