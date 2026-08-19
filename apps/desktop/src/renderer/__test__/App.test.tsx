@@ -1201,6 +1201,9 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "MCP & Skills" }));
 
+    expect(screen.getByRole("tablist")).toHaveClass("inline-grid", "grid-cols-2");
+    expect(screen.getByRole("tab", { name: "Skills" })).toHaveClass("w-36");
+    expect(screen.getByRole("tab", { name: "MCP Servers" })).toHaveClass("w-36");
     expect(await screen.findByText("/code-review")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "Enable Code Review" }));
     await waitFor(() => expect(fixture.setSkillEnabled).toHaveBeenCalledWith({

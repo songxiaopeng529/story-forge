@@ -151,7 +151,7 @@ export function McpSkillsPage(props: {
           ) : null}
         </div>
 
-        <div className="mt-6 inline-flex rounded-md border border-forge-line bg-white p-1" role="tablist">
+        <div className="mt-6 inline-grid grid-cols-2 rounded-md border border-forge-line bg-white p-1" role="tablist">
           <TabButton active={tab === "skills"} label={t.extensions.skillsTab} onClick={() => setTab("skills")} />
           <TabButton active={tab === "mcp"} label={t.extensions.mcpServersTab} onClick={() => setTab("mcp")} />
         </div>
@@ -302,7 +302,7 @@ function TabButton(props: { active: boolean; label: string; onClick: () => void 
   return (
     <button
       aria-selected={props.active}
-      className={`rounded px-3 py-1.5 text-sm font-medium ${
+      className={`w-36 whitespace-nowrap rounded px-3 py-1.5 text-center text-sm font-medium ${
         props.active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50"
       }`}
       onClick={props.onClick}
