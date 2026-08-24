@@ -10,6 +10,7 @@ import type {
   ModelRequestEvent,
   PermissionRequestEvent,
   SessionId,
+  SoulMode,
   TurnId,
   WebSearchCoverage,
 } from "@story-forge/shared";
@@ -93,6 +94,7 @@ export type AppController = {
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
+  soulMode: SoulMode;
   settingsSaving: boolean;
 
   // dialogs / overlays
@@ -119,6 +121,7 @@ export type AppController = {
   saveCommandExecutionMode: (next: CommandExecutionMode) => Promise<void>;
   saveWebAccessEnabled: (next: boolean) => Promise<void>;
   saveWebSearchCoverage: (next: WebSearchCoverage) => Promise<void>;
+  saveSoulMode: (next: SoulMode) => Promise<void>;
   respondToPermission: (approved: boolean) => Promise<void>;
   respondToExtensionUi: (response: Omit<ExtensionUiResponse, "requestId">) => Promise<void>;
   respondToHumanInput: (response: Omit<HumanInputResponse, "requestId">) => Promise<void>;
@@ -161,6 +164,7 @@ export function useAppController(): AppController {
   const [webAccessEnabled, setWebAccessEnabled] = useState(false);
   const [webSearchCoverage, setWebSearchCoverage] =
     useState<WebSearchCoverage>("focused");
+  const [soulMode, setSoulMode] = useState<SoulMode>("ask");
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequestEvent[]>([]);
   const [permissionResponding, setPermissionResponding] = useState(false);
   const [extensionUiRequests, setExtensionUiRequests] = useState<ExtensionUiRequestEvent[]>([]);
@@ -185,6 +189,7 @@ export function useAppController(): AppController {
   const persistedCommandExecutionModeRef = useRef<CommandExecutionMode>("sentinel");
   const persistedWebAccessEnabledRef = useRef(false);
   const persistedWebSearchCoverageRef = useRef<WebSearchCoverage>("focused");
+  const persistedSoulModeRef = useRef<SoulMode>("ask");
   const settingsSaveInFlightRef = useRef(false);
   const turnStartingSessionIdsRef = useRef(new Set<SessionId>());
   const sessionModelSelectionRef = useRef<{
@@ -397,11 +402,13 @@ export function useAppController(): AppController {
         persistedCommandExecutionModeRef.current = nextSettings.commandExecutionMode;
         persistedWebAccessEnabledRef.current = nextSettings.webAccessEnabled;
         persistedWebSearchCoverageRef.current = nextSettings.webSearchCoverage;
+        persistedSoulModeRef.current = nextSettings.soulMode;
         setLanguage(nextSettings.language);
         setDeveloperMode(nextSettings.developerMode);
         setCommandExecutionMode(nextSettings.commandExecutionMode);
         setWebAccessEnabled(nextSettings.webAccessEnabled);
         setWebSearchCoverage(nextSettings.webSearchCoverage);
+        setSoulMode(nextSettings.soulMode);
         setProviders(nextProviders);
         setWorkspaces(nextWorkspaces);
         setAutomations(nextAutomations);
@@ -914,6 +921,31 @@ export function useAppController(): AppController {
     }
   }
 
+  async function saveSoulMode(nextSoulMode: SoulMode): Promise<void> {
+    if (
+      settingsSaveInFlightRef.current
+      || nextSoulMode === persistedSoulModeRef.current
+    ) {
+      return;
+    }
+    const previousSoulMode = persistedSoulModeRef.current;
+    settingsSaveInFlightRef.current = true;
+    setSoulMode(nextSoulMode);
+    setSettingsSaving(true);
+    setError(undefined);
+    try {
+      const saved = await window.storyForge.settings.save({ soulMode: nextSoulMode });
+      persistedSoulModeRef.current = saved.soulMode;
+      setSoulMode(saved.soulMode);
+    } catch (settingsError) {
+      setSoulMode(previousSoulMode);
+      setError(formatError(settingsError));
+    } finally {
+      settingsSaveInFlightRef.current = false;
+      setSettingsSaving(false);
+    }
+  }
+
   async function respondToPermission(approved: boolean): Promise<void> {
     if (!currentPermissionRequest || permissionResponding) {
       return;
@@ -1211,6 +1243,7 @@ export function useAppController(): AppController {
     commandExecutionMode,
     webAccessEnabled,
     webSearchCoverage,
+    soulMode,
     settingsSaving,
 
     // dialogs
@@ -1237,6 +1270,7 @@ export function useAppController(): AppController {
     saveCommandExecutionMode,
     saveWebAccessEnabled,
     saveWebSearchCoverage,
+    saveSoulMode,
     respondToPermission,
     respondToExtensionUi,
     respondToHumanInput,

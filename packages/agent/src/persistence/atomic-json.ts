@@ -60,3 +60,17 @@ export async function writeJsonAtomic(
   });
   await rename(temporaryPath, filePath);
 }
+
+export async function writeTextAtomic(
+  filePath: string,
+  content: string,
+  options: { mode?: number } = {},
+): Promise<void> {
+  await mkdir(dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(temporaryPath, content, {
+    encoding: "utf8",
+    ...(options.mode === undefined ? {} : { mode: options.mode }),
+  });
+  await rename(temporaryPath, filePath);
+}

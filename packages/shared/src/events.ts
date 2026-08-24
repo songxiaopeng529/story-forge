@@ -237,6 +237,12 @@ export type RuntimeEnvironmentView = {
   timezone: string;
 };
 
+export type InspectableSoulContext = {
+  status: "active" | "empty";
+  filePath: string;
+  byteLength: number;
+};
+
 export type ModelRequestEvent = {
   type: "model.request";
   sessionId: SessionId;
@@ -247,6 +253,7 @@ export type ModelRequestEvent = {
   messages: InspectableModelMessage[];
   tools: InspectableModelTool[];
   environment?: RuntimeEnvironmentView;
+  soul?: InspectableSoulContext;
 };
 
 export type ContextUsageSource = "provider" | "estimate";

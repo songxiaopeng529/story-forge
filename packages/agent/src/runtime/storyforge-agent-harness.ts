@@ -3,6 +3,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type ContextUsage,
+  type ExtensionUIContext,
   type InlineExtension,
   type ToolDefinition as PiToolDefinition,
 } from "@earendil-works/pi-coding-agent";
@@ -23,6 +24,8 @@ import {
   type ImageAttachmentView,
   type RuntimeEnvironmentView,
   type SessionId,
+  type SoulDocumentView,
+  type SoulMode,
   type TurnId,
   type WebSearchCoverage,
 } from "@story-forge/shared";
@@ -32,6 +35,7 @@ import {
   createAutomationProposalTool,
   createCurrentTimeTool,
   createHumanInputTool,
+  createSoulUpdateTool,
   createWebTools,
   NodeMcpToolSession,
   parseShellCommandForPolicy,
@@ -56,6 +60,7 @@ import {
   toPiImageContent,
 } from "../pi/event-mapper";
 import { createRuntimeEnvironmentExtension } from "./runtime-environment";
+import { formatStoryForgeSoulContext } from "./soul-context";
 import type { PiModelService } from "../pi/pi-model-service";
 import type { PiSessionAdapter } from "../pi/pi-session-adapter";
 import {
@@ -66,6 +71,7 @@ import {
 import type {
   StoryForgeMcpSource,
   StoryForgeSkillSource,
+  StoryForgeSoulStore,
   StoryForgeWorkspaceStore,
 } from "../ports/host";
 import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
@@ -80,10 +86,12 @@ export type StoryForgeAgentHarnessOptions = {
   piSessions: PiSessionAdapter;
   skillResolver?: StoryForgeSkillSource;
   mcpServerSource?: StoryForgeMcpSource;
+  soulStore?: StoryForgeSoulStore;
   getDeveloperMode?: () => Promise<boolean>;
   getCommandExecutionMode?: () => Promise<CommandExecutionMode>;
   getWebAccessEnabled?: () => Promise<boolean>;
   getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
+  getSoulMode?: () => Promise<SoulMode>;
   createAgentSession?: typeof createStoryForgeAgentSession;
   now?: RuntimeClock;
   getTimezone?: RuntimeTimezoneResolver;
@@ -114,6 +122,7 @@ type TurnSettings = {
   commandExecutionMode: CommandExecutionMode;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
+  soulMode: SoulMode;
 };
 
 type PendingHumanInputRequest = {
@@ -131,10 +140,12 @@ export class StoryForgeAgentHarness {
   private readonly piSessions: PiSessionAdapter;
   private readonly skillResolver: StoryForgeSkillSource | undefined;
   private readonly mcpServerSource: StoryForgeMcpSource | undefined;
+  private readonly soulStore: StoryForgeSoulStore | undefined;
   private readonly getDeveloperMode: () => Promise<boolean>;
   private readonly getCommandExecutionMode: () => Promise<CommandExecutionMode>;
   private readonly getWebAccessEnabled: () => Promise<boolean>;
   private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
+  private readonly getSoulMode: () => Promise<SoulMode>;
   private readonly createAgentSession: typeof createStoryForgeAgentSession;
   private readonly now: RuntimeClock;
   private readonly getTimezone: RuntimeTimezoneResolver;
@@ -154,10 +165,12 @@ export class StoryForgeAgentHarness {
     this.piSessions = options.piSessions;
     this.skillResolver = options.skillResolver;
     this.mcpServerSource = options.mcpServerSource;
+    this.soulStore = options.soulStore;
     this.getDeveloperMode = options.getDeveloperMode ?? (async () => false);
     this.getCommandExecutionMode = options.getCommandExecutionMode ?? (async () => "sentinel");
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
+    this.getSoulMode = options.getSoulMode ?? (async () => "ask");
     this.createAgentSession = options.createAgentSession ?? createStoryForgeAgentSession;
     this.now = options.now ?? (() => new Date());
     this.getTimezone = options.getTimezone ?? resolveSystemTimezone;
@@ -431,15 +444,21 @@ export class StoryForgeAgentHarness {
     const workspace = await this.workspaceRepository.get(session.workspaceId);
     const settingsManager = this.piModels.createSettingsManager(workspace.path);
     const modelRuntime = await this.piModels.getModelRuntime();
-    const [additionalSkillPaths, mcpServers] = await Promise.all([
+    const [additionalSkillPaths, mcpServers, soulDocument] = await Promise.all([
       this.skillResolver?.listEnabledSkillPaths() ?? Promise.resolve([]),
       this.mcpServerSource?.listEnabledMcpServers() ?? Promise.resolve([]),
+      this.readSoulDocument(input.settings.soulMode),
     ]);
     const mcpToolSession = new NodeMcpToolSession();
     const mcpRuntime = await mcpToolSession.loadTools(mcpServers);
     for (const diagnostic of mcpRuntime.diagnostics) {
       console.warn(`MCP server ${diagnostic.serverName}: ${diagnostic.error}`);
     }
+    const extensionUiContext = this.extensionUi.createContext({
+      sessionId: session.id,
+      turnId: input.turnId,
+      signal: input.signal,
+    });
     const extensionTools = [
       ...this.createStoryForgeTools({
         session,
@@ -447,6 +466,8 @@ export class StoryForgeAgentHarness {
         workspacePath: workspace.path,
         settings: input.settings,
         signal: input.signal,
+        extensionUiContext,
+        soulDocument,
       }),
       ...mcpRuntime.tools.map(toPiToolDefinition),
     ];
@@ -454,6 +475,9 @@ export class StoryForgeAgentHarness {
       now: this.now,
       getTimezone: this.getTimezone,
     });
+    const soulContext = input.settings.soulMode === "off"
+      ? undefined
+      : formatStoryForgeSoulContext(soulDocument);
 
     try {
       const piSession = await this.createAgentSession({
@@ -464,11 +488,7 @@ export class StoryForgeAgentHarness {
         settingsManager,
         sessionManager: await this.piSessions.openSessionManager(session),
         additionalExtensionPaths: [PI_TODO_EXTENSION_PATH],
-        extensionUiContext: this.extensionUi.createContext({
-          sessionId: session.id,
-          turnId: input.turnId,
-          signal: input.signal,
-        }),
+        extensionUiContext,
         additionalSkillPaths,
         extensionToolNames: [
           ...extensionTools.map((tool) => tool.name),
@@ -482,11 +502,14 @@ export class StoryForgeAgentHarness {
             workspacePath: workspace.path,
             settings: input.settings,
             signal: input.signal,
+            soulDocument,
           }, extensionTools, runtimeEnvironment.getLatest),
         ],
         systemPrompt: createStoryForgeSystemPrompt({
           extensionTools,
+          soulUpdatesEnabled: input.settings.soulMode === "ask" && Boolean(this.soulStore),
         }),
+        ...(soulContext ? { appendSystemPrompt: soulContext } : {}),
         onExtensionError: (error) => {
           this.emitEvent({
             type: "runtime.error",
@@ -511,6 +534,7 @@ export class StoryForgeAgentHarness {
     workspacePath: string;
     settings: TurnSettings;
     signal: AbortSignal;
+    soulDocument: SoulDocumentView | undefined;
   }, tools: PiToolDefinition[], getRuntimeEnvironment: () => RuntimeEnvironmentView | undefined): InlineExtension {
     return {
       name: "storyforge-harness",
@@ -542,6 +566,15 @@ export class StoryForgeAgentHarness {
             providerId: input.session.providerId,
             model: input.session.model,
             ...(environment ? { environment } : {}),
+            ...(input.settings.soulMode !== "off" && input.soulDocument
+              ? {
+                  soul: {
+                    status: input.soulDocument.content.trim() ? "active" : "empty",
+                    filePath: input.soulDocument.filePath,
+                    byteLength: input.soulDocument.byteLength,
+                  } as const,
+                }
+              : {}),
             ...normalizeModelRequestPayload(event.payload),
           });
           return undefined;
@@ -559,6 +592,8 @@ export class StoryForgeAgentHarness {
     workspacePath: string;
     settings: TurnSettings;
     signal: AbortSignal;
+    extensionUiContext: ExtensionUIContext;
+    soulDocument: SoulDocumentView | undefined;
   }): PiToolDefinition[] {
     const environmentTools = [
       createCurrentTimeTool({
@@ -612,8 +647,57 @@ export class StoryForgeAgentHarness {
         }),
       }),
     ];
-    return [...environmentTools, ...webTools, ...automationTools, ...humanInputTools]
+    let currentSoulDocument = input.soulDocument;
+    const soulTools = input.settings.soulMode === "ask"
+      && currentSoulDocument
+      && this.soulStore
+      ? [
+          createSoulUpdateTool({
+            propose: async (proposal) => {
+              const approved = await input.extensionUiContext.confirm(
+                "Update Soul memory?",
+                formatSoulUpdateConfirmation(proposal.reason, proposal.content),
+              );
+              if (!approved) {
+                return {
+                  approved: false,
+                  message: "The user declined the soul.md update.",
+                };
+              }
+              const saved = await this.soulStore!.save({
+                content: proposal.content,
+                expectedRevision: currentSoulDocument!.revision,
+              });
+              currentSoulDocument = saved;
+              return {
+                approved: true,
+                document: saved,
+                message: "soul.md was updated. The new context applies from the next turn.",
+              };
+            },
+          }),
+        ]
+      : [];
+    return [
+      ...environmentTools,
+      ...webTools,
+      ...automationTools,
+      ...humanInputTools,
+      ...soulTools,
+    ]
       .map(toPiToolDefinition);
+  }
+
+  private async readSoulDocument(mode: SoulMode): Promise<SoulDocumentView | undefined> {
+    if (mode === "off" || !this.soulStore) {
+      return undefined;
+    }
+    try {
+      return await this.soulStore.get();
+    } catch (error) {
+      console.warn(`Unable to load soul.md: ${formatError(error)}`);
+      return undefined;
+    }
   }
 
   private async guardBashToolCall(
@@ -970,17 +1054,20 @@ export class StoryForgeAgentHarness {
       commandExecutionMode,
       webAccessEnabled,
       webSearchCoverage,
+      soulMode,
     ] = await Promise.all([
       this.getDeveloperMode(),
       this.getCommandExecutionMode(),
       this.getWebAccessEnabled(),
       this.getWebSearchCoverage(),
+      this.getSoulMode(),
     ]);
     return {
       developerMode,
       commandExecutionMode,
       webAccessEnabled,
       webSearchCoverage,
+      soulMode,
     };
   }
 
@@ -1034,6 +1121,18 @@ function statusForStopReason(stopReason: AgentStopReason): SessionStatus {
     return "error";
   }
   return "stopped";
+}
+
+function formatSoulUpdateConfirmation(reason: string, content: string): string {
+  return [
+    reason,
+    "",
+    "Proposed complete soul.md:",
+    "",
+    content.trim() || "(empty document)",
+    "",
+    "This personal context will be sent to the selected model starting with the next turn.",
+  ].join("\n");
 }
 
 function validateAutomationProposal(draft: AutomationProposalDraft) {

@@ -3,7 +3,16 @@ import type {
   InspectableModelTool,
   ModelRequestEvent,
 } from "@story-forge/shared";
-import { ChevronLeft, ChevronRight, Clock, Copy, Layers, Wrench, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Copy,
+  Layers,
+  UserRound,
+  Wrench,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -145,6 +154,23 @@ export function ModelRequestDrawer(props: {
                 <div className="text-[10px] font-semibold text-forge-ink">Runtime environment</div>
                 <div className="truncate text-[10px] text-forge-muted">
                   {selected.environment.currentDate} / {selected.environment.timezone}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {selected.soul ? (
+            <div
+              className="flex flex-none items-center gap-3 border-y border-forge-line px-1 py-2.5"
+              data-testid="soul-context-source"
+            >
+              <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-forge-ink/[0.06] text-forge-ink">
+                <UserRound size={14} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-semibold text-forge-ink">Soul context</div>
+                <div className="truncate text-[10px] text-forge-muted" title={selected.soul.filePath}>
+                  {selected.soul.status} / {selected.soul.byteLength.toLocaleString()} bytes / {selected.soul.filePath}
                 </div>
               </div>
             </div>
@@ -458,6 +484,7 @@ function rawPayloadJson(request: ModelRequestEvent): string {
     {
       model: request.model,
       ...(request.environment ? { environment: request.environment } : {}),
+      ...(request.soul ? { soul: request.soul } : {}),
       messages: request.messages,
       tools: request.tools,
     },

@@ -1,4 +1,5 @@
 import type { ParsedMcpServer } from "@story-forge/extensions";
+import type { SoulDocumentView } from "@story-forge/shared";
 
 export type StoryForgeWorkspace = {
   id?: string;
@@ -15,4 +16,9 @@ export type StoryForgeSkillSource = {
 
 export type StoryForgeMcpSource = {
   listEnabledMcpServers(): Promise<ParsedMcpServer[]>;
+};
+
+export type StoryForgeSoulStore = {
+  get(): Promise<SoulDocumentView>;
+  save(input: { content: string; expectedRevision: string }): Promise<SoulDocumentView>;
 };

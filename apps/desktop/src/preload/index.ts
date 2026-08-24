@@ -11,6 +11,10 @@ const api = {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     save: (input) => ipcRenderer.invoke(IPC_CHANNELS.settingsSave, input),
   },
+  soul: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.soulGet),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.soulSave, input),
+  },
   providers: {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.providersList),
     save: (input) => ipcRenderer.invoke(IPC_CHANNELS.providersSave, input),

@@ -22,6 +22,7 @@ export type StoryForgePaths = {
   rootDir: string;
   agentDir: string;
   appSettingsPath: string;
+  soulPath: string;
   workspacesPath: string;
   mcpConfigPath: string;
   automationsDir: string;
@@ -55,6 +56,7 @@ export function resolveStoryForgePaths(options: {
     rootDir,
     agentDir: join(rootDir, "agent"),
     appSettingsPath: join(rootDir, "settings.json"),
+    soulPath: join(rootDir, "soul.md"),
     workspacesPath: join(rootDir, "workspaces.json"),
     mcpConfigPath: join(rootDir, "mcp.json"),
     automationsDir,
@@ -103,6 +105,7 @@ export async function migrateLegacyStoryForgeHome(options: {
 function legacyMigrationEntries(legacyRootDir: string, paths: StoryForgePaths) {
   return [
     { source: join(legacyRootDir, "settings.json"), destination: paths.appSettingsPath },
+    { source: join(legacyRootDir, "soul.md"), destination: paths.soulPath },
     { source: join(legacyRootDir, "workspaces.json"), destination: paths.workspacesPath },
     { source: join(legacyRootDir, "mcp.json"), destination: paths.mcpConfigPath },
     { source: join(legacyRootDir, "providers.json"), destination: join(paths.rootDir, "providers.json") },

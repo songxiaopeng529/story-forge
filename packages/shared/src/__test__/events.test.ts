@@ -253,9 +253,11 @@ describe("settings types", () => {
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
       webSearchCoverage: "focused",
+      soulMode: "ask",
     } satisfies AppSettingsView;
 
     expect(settings.developerMode).toBe(false);
+    expect(settings.soulMode).toBe("ask");
   });
 
   it("accepts the three command execution modes", () => {

@@ -18,6 +18,8 @@ import type {
   SessionId,
   SessionTask,
   SkillView,
+  SoulDocumentView,
+  SoulMode,
   ToolCall,
   TurnId,
   UpdateAutomationInput,
@@ -29,6 +31,8 @@ export type { ProviderId, ProviderView, ToolCall, ImageAttachmentView } from "@s
 export const IPC_CHANNELS = {
   settingsGet: "story-forge:settings:get",
   settingsSave: "story-forge:settings:save",
+  soulGet: "story-forge:soul:get",
+  soulSave: "story-forge:soul:save",
   providersList: "story-forge:providers:list",
   providersSave: "story-forge:providers:save",
   providersTest: "story-forge:providers:test",
@@ -212,7 +216,15 @@ export type StoryForgeApi = {
       commandExecutionMode?: CommandExecutionMode;
       webAccessEnabled?: boolean;
       webSearchCoverage?: WebSearchCoverage;
+      soulMode?: SoulMode;
     }): Promise<AppSettingsView>;
+  };
+  soul: {
+    get(): Promise<SoulDocumentView>;
+    save(input: {
+      content: string;
+      expectedRevision: string;
+    }): Promise<SoulDocumentView>;
   };
   providers: {
     list(): Promise<ProviderView[]>;
