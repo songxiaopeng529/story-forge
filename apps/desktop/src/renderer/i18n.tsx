@@ -1,8 +1,19 @@
-import type { AppLanguage, CommandExecutionMode, WebSearchCoverage } from "@story-forge/shared";
+import type {
+  AppLanguage,
+  CommandExecutionMode,
+  SoulMode,
+  WebSearchCoverage,
+} from "@story-forge/shared";
 import { createContext, useContext, type ReactNode } from "react";
 
 export type LanguageOption = {
   value: AppLanguage;
+  label: string;
+  description: string;
+};
+
+export type SoulModeOption = {
+  value: SoulMode;
   label: string;
   description: string;
 };
@@ -44,6 +55,38 @@ const en = {
     webAccessDescription: "Allow StoryForge to use web search and public page extraction tools.",
     webSearchCoverageTitle: "Web Search Coverage",
     webSearchCoverageDescription: "Choose how broadly StoryForge searches when web access is enabled.",
+    soulTitle: "Personal context",
+    soulDescription: "Keep a transparent, user-owned summary that helps StoryForge remember stable preferences across conversations.",
+    soulModeTitle: "Soul memory mode",
+    soulModeOptions: [
+      {
+        value: "off",
+        label: "Off",
+        description: "Do not send soul.md to models or allow Agent updates.",
+      },
+      {
+        value: "manual",
+        label: "Manual",
+        description: "Use soul.md in new turns, but only edit it here.",
+      },
+      {
+        value: "ask",
+        label: "Ask before updates",
+        description: "Let StoryForge propose memories and save only after confirmation.",
+      },
+    ] satisfies SoulModeOption[],
+    soulEdit: "Edit",
+    soulPreview: "Preview",
+    soulEditorLabel: "Soul Markdown",
+    soulPlaceholder: "# Soul\n\n## Communication preferences\n\n- Prefers concise answers.",
+    soulEmpty: "No personal context has been recorded yet.",
+    soulLoading: "Loading soul.md...",
+    soulSave: "Save Soul",
+    soulSaving: "Saving...",
+    soulRevert: "Revert changes",
+    soulClear: "Clear draft",
+    soulSize: (bytes: number, maxBytes: number) => `${bytes.toLocaleString()} / ${maxBytes.toLocaleString()} bytes`,
+    soulPrivacyNotice: "The enabled Soul content is sent to the model provider on each new turn. Do not store passwords, API keys, or other secrets.",
   },
   commandMode: {
     sentinel: {
@@ -358,6 +401,38 @@ const zh: typeof en = {
     webAccessDescription: "允许 StoryForge 使用网页搜索和公开页面提取工具。",
     webSearchCoverageTitle: "网页搜索覆盖范围",
     webSearchCoverageDescription: "选择启用网页访问后 StoryForge 的搜索覆盖范围。",
+    soulTitle: "个人上下文",
+    soulDescription: "用一份透明、由你管理的摘要，让 StoryForge 在不同会话中记住稳定的个人偏好。",
+    soulModeTitle: "Soul 记忆模式",
+    soulModeOptions: [
+      {
+        value: "off",
+        label: "关闭",
+        description: "不向模型发送 soul.md，也不允许 Agent 更新。",
+      },
+      {
+        value: "manual",
+        label: "仅手动",
+        description: "在新回合中使用 soul.md，但只能在这里编辑。",
+      },
+      {
+        value: "ask",
+        label: "更新前询问",
+        description: "允许 StoryForge 提议记忆，确认后才保存。",
+      },
+    ],
+    soulEdit: "编辑",
+    soulPreview: "预览",
+    soulEditorLabel: "Soul Markdown",
+    soulPlaceholder: "# Soul\n\n## 沟通偏好\n\n- 更喜欢简洁的回答。",
+    soulEmpty: "尚未记录个人上下文。",
+    soulLoading: "正在加载 soul.md...",
+    soulSave: "保存 Soul",
+    soulSaving: "保存中...",
+    soulRevert: "撤销更改",
+    soulClear: "清空草稿",
+    soulSize: (bytes: number, maxBytes: number) => `${bytes.toLocaleString()} / ${maxBytes.toLocaleString()} 字节`,
+    soulPrivacyNotice: "启用后，Soul 内容会在每个新回合发送给当前模型供应商。请勿保存密码、API Key 或其他秘密。",
   },
   commandMode: {
     sentinel: {

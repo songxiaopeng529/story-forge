@@ -233,6 +233,7 @@ describe("App", () => {
         commandExecutionMode: "cruise",
         webAccessEnabled: false,
         webSearchCoverage: "focused",
+        soulMode: "ask",
       });
       await pendingSave.promise;
     });
@@ -1618,6 +1619,34 @@ describe("App", () => {
       .toHaveAttribute("aria-checked", "true");
   });
 
+  it("previews and saves soul.md and changes its memory mode", async () => {
+    const fixture = installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const editor = await screen.findByRole("textbox", { name: "Soul Markdown" });
+    expect(editor).toHaveValue("# Soul\n\n- Prefers concise answers.\n");
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Prefers concise answers.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Soul Markdown" }), {
+      target: { value: "# Soul\n\n- Prefers Chinese responses." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Soul" }));
+
+    await waitFor(() => expect(fixture.saveSoul).toHaveBeenCalledWith({
+      content: "# Soul\n\n- Prefers Chinese responses.",
+      expectedRevision: "soul-revision-1",
+    }));
+
+    const soulMode = screen.getByRole("radiogroup", { name: "Soul memory mode" });
+    fireEvent.click(within(soulMode).getByRole("radio", { name: "Manual" }));
+    await waitFor(() => expect(fixture.saveSettings).toHaveBeenCalledWith({
+      soulMode: "manual",
+    }));
+  });
+
   it("responds to command permission requests", async () => {
     const fixture = installApi();
     render(<App />);
@@ -1858,10 +1887,30 @@ function installApi(options: {
     webAccessEnabled: false,
     webSearchCoverage: "focused" as const,
     ...options.settings,
+    soulMode: options.settings?.soulMode ?? "ask",
   };
   const saveSettings = options.saveSettings
     ? vi.mocked(options.saveSettings)
     : vi.fn(async (input) => ({ ...settings, ...input }));
+  const soulDocument = {
+    content: "# Soul\n\n- Prefers concise answers.\n",
+    revision: "soul-revision-1",
+    exists: true,
+    byteLength: 35,
+    maxBytes: 16_384,
+    filePath: "/tmp/.story-forge/soul.md",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+  } as const;
+  const getSoul = vi.fn(async () => soulDocument);
+  const saveSoul = vi.fn(async (input: { content: string; expectedRevision: string }) => ({
+    content: input.content.trim() ? `${input.content.trim()}\n` : "",
+    revision: "soul-revision-2",
+    exists: true,
+    byteLength: input.content.length,
+    maxBytes: 16_384,
+    filePath: "/tmp/.story-forge/soul.md",
+    updatedAt: "2026-06-20T00:00:01.000Z",
+  }));
   const saveProvider = vi.fn(async (input) => {
     const current = currentProviders.find((candidate) =>
       candidate.providerId === input.providerId
@@ -2005,6 +2054,10 @@ function installApi(options: {
       get: vi.fn(async () => settings),
       save: saveSettings,
     },
+    soul: {
+      get: getSoul,
+      save: saveSoul,
+    },
     providers: {
       list: vi.fn(async () => currentProviders),
       save: saveProvider,
@@ -2085,6 +2138,8 @@ function installApi(options: {
     getSession,
     getRepository,
     saveSettings,
+    getSoul,
+    saveSoul,
     saveProvider,
     setDefaultProvider,
     revealSecret,

@@ -2,6 +2,7 @@ import type {
   AppLanguage,
   AppSettingsView,
   CommandExecutionMode,
+  SoulMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { readJson, writeJsonAtomic } from "@story-forge/agent";
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const languageSchema = z.enum(["en", "zh"]);
+const soulModeSchema = z.enum(["off", "manual", "ask"]);
 
 const appSettingsSchema = z.object({
   schemaVersion: z.literal(1),
@@ -19,6 +21,7 @@ const appSettingsSchema = z.object({
   commandExecutionMode: commandExecutionModeSchema.default("sentinel"),
   webAccessEnabled: z.boolean().default(false),
   webSearchCoverage: webSearchCoverageSchema.default("focused"),
+  soulMode: soulModeSchema.default("ask"),
 });
 
 export type SaveAppSettingsInput = {
@@ -27,6 +30,7 @@ export type SaveAppSettingsInput = {
   commandExecutionMode?: CommandExecutionMode | undefined;
   webAccessEnabled?: boolean | undefined;
   webSearchCoverage?: WebSearchCoverage | undefined;
+  soulMode?: SoulMode | undefined;
 };
 
 export class AppSettingsStore {
@@ -60,5 +64,6 @@ function createDefaultSettings(): AppSettingsView {
     commandExecutionMode: "sentinel",
     webAccessEnabled: false,
     webSearchCoverage: "focused",
+    soulMode: "ask",
   };
 }

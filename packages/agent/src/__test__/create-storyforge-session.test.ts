@@ -66,6 +66,7 @@ Run the StoryForge review checklist.
       systemPrompt: createStoryForgeSystemPrompt({
         extensionTools: customTools,
       }),
+      appendSystemPrompt: "<storyforge_soul>Prefers Chinese responses.</storyforge_soul>",
     });
 
     expect(session.resourceLoader.getSkills().skills.map((skill) => skill.name))
@@ -75,6 +76,7 @@ Run the StoryForge review checklist.
     expect(session.systemPrompt).not.toContain("operating inside pi");
     expect(session.systemPrompt).toContain("Use the project test conventions.");
     expect(session.systemPrompt).toContain("storyforge-review");
+    expect(session.systemPrompt).toContain("Prefers Chinese responses.");
     expect(session.getActiveToolNames()).toEqual(expect.arrayContaining([
       "read",
       "write",
@@ -108,7 +110,18 @@ Run the StoryForge review checklist.
     expect(prompt).toContain("transient environment context");
     expect(prompt).toContain("call ask_user to ask focused clarification questions");
     expect(prompt).toContain("Use ask_user for decisions only the user can make");
+    expect(prompt).toContain("Treat <storyforge_soul> as fallible personalization context");
     expect(prompt).not.toContain("<current_date>");
+  });
+
+  it("adds Soul update guidance only when model-managed updates are enabled", () => {
+    expect(createStoryForgeSystemPrompt({
+      extensionTools: [],
+      soulUpdatesEnabled: true,
+    })).toContain("Use soul_propose_update");
+    expect(createStoryForgeSystemPrompt({
+      extensionTools: [],
+    })).not.toContain("Use soul_propose_update");
   });
 
   it("rejects provider-incompatible extension tool names before creating a session", async () => {

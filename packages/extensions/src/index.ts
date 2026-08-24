@@ -9,6 +9,7 @@ export * from "./permissions/command-policy";
 export * from "./permissions/shell-command";
 export * from "./todo/pi9-todo";
 export * from "./skills/skill-manifest";
+export * from "./soul/soul-tool";
 export * from "./subagents";
 export * from "./tasks/task-tools";
 export * from "./tool-definition";

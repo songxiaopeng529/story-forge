@@ -17,6 +17,7 @@ describe("StoryForge home", () => {
     })).toMatchObject({
       rootDir: "/Users/storyforge/.story-forge",
       agentDir: "/Users/storyforge/.story-forge/agent",
+      soulPath: "/Users/storyforge/.story-forge/soul.md",
       sessionMetadataDir: "/Users/storyforge/.story-forge/sessions/metadata",
       sessionTranscriptsDir: "/Users/storyforge/.story-forge/sessions/transcripts",
     });

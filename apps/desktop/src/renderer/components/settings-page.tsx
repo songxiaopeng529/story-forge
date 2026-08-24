@@ -1,9 +1,11 @@
 import type {
   AppLanguage,
   CommandExecutionMode,
+  SoulMode,
   WebSearchCoverage,
 } from "@story-forge/shared";
 import { useI18n } from "../i18n";
+import { SoulSettingsSection } from "./soul-settings-section";
 
 export function SettingsPage(props: {
   language: AppLanguage;
@@ -12,6 +14,7 @@ export function SettingsPage(props: {
   commandModeLocked: boolean;
   webAccessEnabled: boolean;
   webSearchCoverage: WebSearchCoverage;
+  soulMode: SoulMode;
   saving: boolean;
   error: string | undefined;
   onLanguageChange: (language: AppLanguage) => void;
@@ -19,6 +22,7 @@ export function SettingsPage(props: {
   onCommandExecutionModeChange: (commandExecutionMode: CommandExecutionMode) => void;
   onWebAccessEnabledChange: (enabled: boolean) => void;
   onWebSearchCoverageChange: (coverage: WebSearchCoverage) => void;
+  onSoulModeChange: (mode: SoulMode) => void;
 }) {
   const t = useI18n();
   const commandExecutionModes = (["sentinel", "cruise", "unleashed"] as const)
@@ -232,6 +236,11 @@ export function SettingsPage(props: {
             </div>
           ) : null}
         </div>
+        <SoulSettingsSection
+          onSoulModeChange={props.onSoulModeChange}
+          settingsSaving={props.saving}
+          soulMode={props.soulMode}
+        />
       </div>
     </section>
   );

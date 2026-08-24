@@ -13,6 +13,7 @@ const defaultSettings = {
   commandExecutionMode: "sentinel",
   webAccessEnabled: false,
   webSearchCoverage: "focused",
+  soulMode: "ask",
 } as const;
 
 describe("AppSettingsStore", () => {
@@ -95,6 +96,16 @@ describe("AppSettingsStore", () => {
       ...defaultSettings,
       webAccessEnabled: true,
       webSearchCoverage: "wide",
+    });
+  });
+
+  it("defaults and persists Soul mode without changing other settings", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-settings-"));
+    const store = new AppSettingsStore({ rootDir });
+
+    await expect(store.save({ soulMode: "manual" })).resolves.toEqual({
+      ...defaultSettings,
+      soulMode: "manual",
     });
   });
 });

@@ -107,6 +107,25 @@ describe("ModelRequestDrawer", () => {
     expect(screen.getByTestId("runtime-environment")).toHaveTextContent("Asia/Shanghai");
     expect(screen.getByTestId("model-message-raw-json")).toHaveTextContent('"environment"');
   });
+
+  it("shows the Soul source used by the captured model request", () => {
+    render(
+      <ModelRequestDrawer
+        onClose={() => undefined}
+        requests={[createRequest({
+          soul: {
+            status: "active",
+            filePath: "/Users/storyforge/.story-forge/soul.md",
+            byteLength: 128,
+          },
+        })]}
+      />,
+    );
+
+    expect(screen.getByTestId("soul-context-source")).toHaveTextContent("active");
+    expect(screen.getByTestId("soul-context-source")).toHaveTextContent("128 bytes");
+    expect(screen.getByTestId("model-message-raw-json")).toHaveTextContent('"soul"');
+  });
 });
 
 function createRequest(

@@ -15,6 +15,7 @@ import {
   PiSessionAdapter,
   resolveStoryForgePaths,
   SessionRepository,
+  SoulRepository,
 } from "@story-forge/agent";
 import { AppSettingsStore } from "./app-settings-store";
 import { AutomationRepository } from "./automation-repository";
@@ -83,6 +84,7 @@ async function initializeApplication(): Promise<void> {
     piModels,
   });
   const sessionRepository = new SessionRepository({ rootDir, piAdapter: piSessions });
+  const soulRepository = new SoulRepository({ filePath: paths.soulPath });
   const skillService = new SkillService({ rootDir });
   const mcpConfigService = new McpConfigService({ rootDir });
   const automationService = new AutomationService({
@@ -102,10 +104,12 @@ async function initializeApplication(): Promise<void> {
     piSessions,
     skillResolver: skillService,
     mcpServerSource: mcpConfigService,
+    soulStore: soulRepository,
     getDeveloperMode: async () => (await settingsStore.get()).developerMode,
     getCommandExecutionMode: async () => (await settingsStore.get()).commandExecutionMode,
     getWebAccessEnabled: async () => (await settingsStore.get()).webAccessEnabled,
     getWebSearchCoverage: async () => (await settingsStore.get()).webSearchCoverage,
+    getSoulMode: async () => (await settingsStore.get()).soulMode,
     emit: (event) => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(IPC_CHANNELS.turnEvent, event);
@@ -128,6 +132,7 @@ async function initializeApplication(): Promise<void> {
     git: gitRepositoryService,
     sessions: sessionRepository,
     settings: settingsStore,
+    soul: soulRepository,
     coordinator,
     skills: skillService,
     mcp: mcpConfigService,

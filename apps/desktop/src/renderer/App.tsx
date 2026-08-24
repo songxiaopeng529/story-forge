@@ -37,6 +37,7 @@ export function App() {
           commandModeLocked: c.commandModeLocked,
           webAccessEnabled: c.webAccessEnabled,
           webSearchCoverage: c.webSearchCoverage,
+          soulMode: c.soulMode,
           saving: c.settingsSaving,
           error: c.error,
           onLanguageChange: (next) => void c.saveLanguage(next),
@@ -44,6 +45,7 @@ export function App() {
           onCommandExecutionModeChange: (next) => void c.saveCommandExecutionMode(next),
           onWebAccessEnabledChange: (next) => void c.saveWebAccessEnabled(next),
           onWebSearchCoverageChange: (next) => void c.saveWebSearchCoverage(next),
+          onSoulModeChange: (next) => void c.saveSoulMode(next),
         }}
         models={{
           providers: c.providers,

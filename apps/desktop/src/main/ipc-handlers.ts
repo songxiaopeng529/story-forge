@@ -2,7 +2,7 @@ import type { HumanInputResponse, SessionId, TurnId } from "@story-forge/shared"
 import type { ProviderId } from "../shared/story-forge-api";
 import { z } from "zod";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
-import type { AgentCoordinator, SessionRepository } from "@story-forge/agent";
+import type { AgentCoordinator, SessionRepository, SoulRepository } from "@story-forge/agent";
 import type { AppSettingsStore } from "./app-settings-store";
 import type { GitRepositoryService } from "./git-repository-service";
 import type { McpConfigService } from "./mcp-config-service";
@@ -42,6 +42,7 @@ export type IpcHandlerOptions = {
   git: Pick<GitRepositoryService, "get">;
   sessions: SessionRepository;
   settings: AppSettingsStore;
+  soul: Pick<SoulRepository, "get" | "save">;
   coordinator: AgentCoordinator;
   selectWorkspace: () => Promise<string | undefined>;
   skills: SkillsIpcService;
@@ -53,6 +54,7 @@ export type IpcHandlerOptions = {
 const commandExecutionModeSchema = z.enum(["sentinel", "cruise", "unleashed"]);
 const webSearchCoverageSchema = z.enum(["focused", "wide"]);
 const languageSchema = z.enum(["en", "zh"]);
+const soulModeSchema = z.enum(["off", "manual", "ask"]);
 const providerIdSchema = z.string().min(1);
 const sessionIdSchema = z.custom<SessionId>(
   (value) => typeof value === "string" && /^sf_session_[a-z0-9]+$/.test(value),
@@ -76,6 +78,11 @@ const settingsSaveSchema = z.object({
   commandExecutionMode: commandExecutionModeSchema.optional(),
   webAccessEnabled: z.boolean().optional(),
   webSearchCoverage: webSearchCoverageSchema.optional(),
+  soulMode: soulModeSchema.optional(),
+}).strict();
+const soulSaveSchema = z.object({
+  content: z.string(),
+  expectedRevision: z.string().min(1),
 }).strict();
 const permissionResponseSchema = z.object({
   requestId: z.string().min(1),
@@ -162,6 +169,12 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
     IPC_CHANNELS.settingsSave,
     settingsSaveSchema,
     (input) => options.settings.save(input),
+  );
+  handle(options.ipc, IPC_CHANNELS.soulGet, z.undefined(), () =>
+    options.soul.get()
+  );
+  handle(options.ipc, IPC_CHANNELS.soulSave, soulSaveSchema, (input) =>
+    options.soul.save(input)
   );
   handle(options.ipc, IPC_CHANNELS.providersList, z.undefined(), () =>
     options.providers.list()

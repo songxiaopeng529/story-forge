@@ -168,6 +168,7 @@ describe("registerIpcHandlers", () => {
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
       webSearchCoverage: "focused",
+      soulMode: "ask",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: true }),
@@ -178,6 +179,7 @@ describe("registerIpcHandlers", () => {
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
       webSearchCoverage: "focused",
+      soulMode: "ask",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { commandExecutionMode: "cruise" }),
@@ -188,6 +190,7 @@ describe("registerIpcHandlers", () => {
       commandExecutionMode: "cruise",
       webAccessEnabled: false,
       webSearchCoverage: "focused",
+      soulMode: "ask",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, {
@@ -201,6 +204,7 @@ describe("registerIpcHandlers", () => {
       commandExecutionMode: "sentinel",
       webAccessEnabled: true,
       webSearchCoverage: "wide",
+      soulMode: "ask",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { language: "zh" }),
@@ -211,6 +215,7 @@ describe("registerIpcHandlers", () => {
       commandExecutionMode: "sentinel",
       webAccessEnabled: false,
       webSearchCoverage: "focused",
+      soulMode: "ask",
     });
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { developerMode: "yes" }),
@@ -230,6 +235,29 @@ describe("registerIpcHandlers", () => {
     await expect(
       fixture.invoke(IPC_CHANNELS.settingsSave, { webSearchCoverage: "expensive" }),
     ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.settingsSave, { soulMode: "automatic" }),
+    ).rejects.toThrow("Invalid IPC payload");
+  });
+
+  it("registers Soul document APIs with revision validation", async () => {
+    const fixture = createFixture();
+    registerIpcHandlers(fixture.options);
+
+    await expect(fixture.invoke(IPC_CHANNELS.soulGet)).resolves.toMatchObject({
+      content: "# Soul\n",
+      revision: "revision-1",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.soulSave, {
+      content: "# Soul\n\n- Prefers Chinese.\n",
+      expectedRevision: "revision-1",
+    })).resolves.toMatchObject({
+      revision: "revision-2",
+    });
+    await expect(fixture.invoke(IPC_CHANNELS.soulSave, {
+      content: "# Soul",
+      expectedRevision: "",
+    })).rejects.toThrow("Invalid IPC payload");
   });
 
   it("registers permission response IPC", async () => {
@@ -482,6 +510,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,
       webSearchCoverage: "focused" as const,
+      soulMode: "ask" as const,
     })),
     save: vi.fn(async (input) => ({
       schemaVersion: 1 as const,
@@ -490,9 +519,28 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
       commandExecutionMode: "sentinel" as const,
       webAccessEnabled: false,
       webSearchCoverage: "focused" as const,
+      soulMode: "ask" as const,
       ...input,
     })),
   } as unknown as AppSettingsStore;
+  const soulDocument = {
+    content: "# Soul\n",
+    revision: "revision-1",
+    exists: true,
+    byteLength: 7,
+    maxBytes: 16_384,
+    filePath: "/tmp/.story-forge/soul.md",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+  };
+  const soul = {
+    get: vi.fn(async () => soulDocument),
+    save: vi.fn(async (input: { content: string; expectedRevision: string }) => ({
+      ...soulDocument,
+      content: input.content,
+      revision: "revision-2",
+      byteLength: input.content.length,
+    })),
+  };
   const skills = {
     list: vi.fn(async () => []),
     importZip: vi.fn(async () => ({
@@ -612,6 +660,7 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
       git,
       sessions,
       settings,
+      soul,
       coordinator,
       selectWorkspace: async () => undefined,
       skills,
