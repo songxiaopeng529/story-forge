@@ -132,6 +132,10 @@ function createRequest(
   overrides: Partial<ModelRequestEvent> = {},
 ): ModelRequestEvent {
   return {
+    eventId: "sf_agent_event_test",
+    sequence: 1,
+    occurredAt: "2026-08-28T08:00:00.000Z",
+    agentExecutionId: "sf_agent_execution_root",
     type: "model.request",
     sessionId: "sf_session_test",
     turnId: "sf_turn_test",

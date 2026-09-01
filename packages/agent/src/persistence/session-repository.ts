@@ -114,6 +114,7 @@ const sessionMetadataSchema = z.object({
   model: z.string(),
   status: sessionStatusSchema,
   currentTurnId: turnIdSchema.optional(),
+  lastTurnId: turnIdSchema.optional(),
   stopReason: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -166,17 +167,27 @@ export type SessionPiAdapter = {
   deletePiSession(session: SessionMetadataRecord): Promise<void>;
 };
 
+export type SessionAgentRunStore = {
+  deleteSessionRuns(sessionId: SessionId): Promise<void>;
+};
+
 export class SessionRepository {
   private readonly sessionsDir: string;
   private readonly piAdapter: SessionPiAdapter | undefined;
+  private readonly agentRunStore: SessionAgentRunStore | undefined;
   private readonly updateTails = new Map<SessionId, Promise<void>>();
   private modelUpdateTail: Promise<void> = Promise.resolve();
 
-  constructor(options: { rootDir: string; piAdapter?: SessionPiAdapter }) {
+  constructor(options: {
+    rootDir: string;
+    piAdapter?: SessionPiAdapter;
+    agentRunStore?: SessionAgentRunStore;
+  }) {
     this.sessionsDir = resolveStoryForgePaths({
       homeDir: options.rootDir,
     }).sessionMetadataDir;
     this.piAdapter = options.piAdapter;
+    this.agentRunStore = options.agentRunStore;
   }
 
   async create(input: {
@@ -382,7 +393,10 @@ export class SessionRepository {
       return {
         ...rest,
         status: input.status,
-        ...(input.turnId ? { currentTurnId: input.turnId } : {}),
+        ...(input.turnId ? { lastTurnId: input.turnId } : {}),
+        ...(input.status === "running" && input.turnId
+          ? { currentTurnId: input.turnId }
+          : {}),
         ...(input.stopReason ? { stopReason: input.stopReason } : {}),
       };
     });
@@ -408,6 +422,7 @@ export class SessionRepository {
 
   async delete(sessionId: SessionId): Promise<void> {
     const session = await this.readMetadata(sessionId);
+    await this.agentRunStore?.deleteSessionRuns(sessionId);
     await this.piAdapter?.deletePiSession(session);
     await this.enqueueUpdate(sessionId, () => rm(this.pathFor(sessionId), { force: true }));
   }
@@ -461,6 +476,7 @@ export class SessionRepository {
       model: legacy.model,
       status: legacy.status,
       ...(legacy.currentTurnId ? { currentTurnId: legacy.currentTurnId } : {}),
+      ...(legacy.currentTurnId ? { lastTurnId: legacy.currentTurnId } : {}),
       ...(legacy.stopReason ? { stopReason: legacy.stopReason } : {}),
       createdAt: legacy.createdAt,
       updatedAt: legacy.updatedAt,

@@ -1,10 +1,10 @@
-import type { AgentEvent } from "@story-forge/shared";
+import type { UnsequencedAgentEvent } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
 import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
 
 describe("PiExtensionUiBridge", () => {
   it("round-trips PI selection requests through StoryForge events", async () => {
-    const events: AgentEvent[] = [];
+    const events: UnsequencedAgentEvent[] = [];
     const bridge = new PiExtensionUiBridge((event) => events.push(event));
     const context = bridge.createContext({
       sessionId: "sf_session_plan",
@@ -30,7 +30,7 @@ describe("PiExtensionUiBridge", () => {
   });
 
   it("cancels pending PI dialogs when a turn is aborted", async () => {
-    const events: AgentEvent[] = [];
+    const events: UnsequencedAgentEvent[] = [];
     const controller = new AbortController();
     const bridge = new PiExtensionUiBridge((event) => events.push(event));
     const context = bridge.createContext({
@@ -46,7 +46,7 @@ describe("PiExtensionUiBridge", () => {
   });
 
   it("maps PI status and notification updates to StoryForge events", () => {
-    const events: AgentEvent[] = [];
+    const events: UnsequencedAgentEvent[] = [];
     const bridge = new PiExtensionUiBridge((event) => events.push(event));
     const context = bridge.createContext({
       sessionId: "sf_session_plan",

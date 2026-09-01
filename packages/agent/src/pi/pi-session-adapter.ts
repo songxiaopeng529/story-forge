@@ -3,7 +3,12 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProviderId, ToolCall } from "@story-forge/shared";
+import type {
+  AgentExecutionId,
+  ProviderId,
+  ToolCall,
+  TurnId,
+} from "@story-forge/shared";
 import { toRecord } from "@story-forge/shared";
 import type {
   LegacySessionRecord,
@@ -168,10 +173,38 @@ export class PiSessionAdapter implements SessionPiAdapter {
     });
   }
 
+  async createAgentExecutionSession(input: {
+    workspaceId: string;
+    turnId: TurnId;
+    executionId: AgentExecutionId;
+  }): Promise<{ sessionManager: SessionManager; transcriptFile: string }> {
+    const workspace = await this.workspaces.get(input.workspaceId);
+    const executionDir = this.agentExecutionDirFor(input.workspaceId, input.turnId);
+    await mkdir(executionDir, { recursive: true });
+    const sessionManager = SessionManager.create(
+      workspace.path,
+      executionDir,
+      { id: input.executionId },
+    );
+    const transcriptFile = sessionManager.getSessionFile();
+    if (!transcriptFile) {
+      throw new Error(`PI child transcript was not created: ${input.executionId}`);
+    }
+    return { sessionManager, transcriptFile };
+  }
+
   sessionDirFor(workspaceId: string): string {
     return join(
       resolveStoryForgePaths({ homeDir: this.rootDir }).sessionTranscriptsDir,
       sanitizePathPart(workspaceId),
+    );
+  }
+
+  agentExecutionDirFor(workspaceId: string, turnId: TurnId): string {
+    return join(
+      resolveStoryForgePaths({ homeDir: this.rootDir }).agentTranscriptsDir,
+      sanitizePathPart(workspaceId),
+      sanitizePathPart(turnId),
     );
   }
 

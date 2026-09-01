@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import type { AgentEvent, HumanInputRequestEvent } from "@story-forge/shared";
+import type { HumanInputRequestEvent, UnsequencedAgentEvent } from "@story-forge/shared";
 import { describe, expect, it } from "vitest";
 import type { PersistedMessageView, SessionView } from "../../shared/story-forge-api";
 import { buildTimeline } from "../utils/timeline";
@@ -57,7 +57,7 @@ describe("buildTimeline", () => {
   });
 
   it("keeps active tool steps before later assistant deltas", () => {
-    const activities: AgentEvent[] = [
+    const activities: UnsequencedAgentEvent[] = [
       {
         type: "tool.call",
         sessionId: "sf_session_test",
@@ -129,6 +129,102 @@ describe("buildTimeline", () => {
       input: { path: "README.md" },
       output: "README",
     });
+  });
+
+  it("collapses a live agent_delegate call and result into one summary card", () => {
+    const items = buildTimeline({
+      session: baseSession,
+      activeTurnId: "sf_turn_active",
+      activities: [
+        {
+          type: "tool.call",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call_delegate",
+          name: "agent_delegate",
+          input: {
+            tasks: [
+              { role: "explorer", objective: "Map the runtime" },
+              { role: "reviewer", objective: "Review cancellation" },
+            ],
+          },
+        },
+        {
+          type: "tool.result",
+          sessionId: "sf_session_test",
+          turnId: "sf_turn_active",
+          callId: "call_delegate",
+          name: "agent_delegate",
+          ok: true,
+          output: {
+            status: "partial",
+            results: [
+              { status: "completed" },
+              { status: "failed" },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(items.filter((item) => item.type === "delegate-summary")).toEqual([{
+      type: "delegate-summary",
+      id: "delegate-sf_turn_active-call_delegate",
+      callId: "call_delegate",
+      status: "completed",
+      taskCount: 2,
+      objectives: ["Map the runtime", "Review cancellation"],
+      resultStatus: "partial",
+      completedCount: 1,
+      failedCount: 1,
+      cancelledCount: 0,
+    }]);
+    expect(items.some((item) => item.type === "tool-step" && item.name === "agent_delegate"))
+      .toBe(false);
+  });
+
+  it("renders a persisted agent_delegate result as one summary card", () => {
+    const items = buildTimeline({
+      session: {
+        ...baseSession,
+        status: "completed",
+        messages: [
+          {
+            id: "assistant-delegate",
+            role: "assistant",
+            content: "",
+            toolCalls: [{
+              id: "call_delegate",
+              name: "agent_delegate",
+              input: { tasks: [{ role: "explorer", objective: "Inspect persistence" }] },
+            }],
+            createdAt: "2026-08-28T08:00:00.000Z",
+          },
+          {
+            id: "tool-delegate",
+            role: "tool",
+            content: JSON.stringify({
+              status: "completed",
+              results: [{ status: "completed" }],
+            }),
+            name: "agent_delegate",
+            toolCallId: "call_delegate",
+            ok: true,
+            createdAt: "2026-08-28T08:00:01.000Z",
+          },
+        ],
+      },
+      activities: [],
+      activeTurnId: undefined,
+    });
+
+    expect(items).toEqual([expect.objectContaining({
+      type: "delegate-summary",
+      taskCount: 1,
+      objectives: ["Inspect persistence"],
+      resultStatus: "completed",
+      completedCount: 1,
+    })]);
   });
 
   it("renders a result-only active tool step when the call event is missing", () => {
@@ -267,6 +363,10 @@ describe("buildTimeline", () => {
 
   it("renders a pending human input request as a timeline item", () => {
     const humanInputRequest = {
+      eventId: "sf_agent_event_human_input",
+      sequence: 1,
+      occurredAt: "2026-08-28T08:00:00.000Z",
+      agentExecutionId: "sf_agent_execution_root",
       type: "human.input.request",
       sessionId: "sf_session_test",
       turnId: "sf_turn_active",

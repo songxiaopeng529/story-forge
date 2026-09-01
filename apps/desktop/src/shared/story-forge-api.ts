@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentRunView,
   AgentStopReason,
   AppLanguage,
   AppSettingsView,
@@ -49,6 +50,7 @@ export const IPC_CHANNELS = {
   sessionsGet: "story-forge:sessions:get",
   sessionsRename: "story-forge:sessions:rename",
   sessionsDelete: "story-forge:sessions:delete",
+  agentRunsGet: "story-forge:agent-runs:get",
   turnsStart: "story-forge:turns:start",
   turnsStop: "story-forge:turns:stop",
   turnsCompact: "story-forge:turns:compact",
@@ -199,6 +201,7 @@ export type SessionView = {
   model: string;
   status: "idle" | "running" | "completed" | "interrupted" | "stopped" | "error";
   currentTurnId?: TurnId;
+  lastTurnId?: TurnId;
   stopReason?: string;
   createdAt: string;
   updatedAt: string;
@@ -268,6 +271,9 @@ export type StoryForgeApi = {
     stop(turnId: TurnId): Promise<void>;
     compact(sessionId: SessionId): Promise<void>;
     onEvent(listener: (event: AgentEvent) => void): () => void;
+  };
+  agentRuns: {
+    get(turnId: TurnId): Promise<AgentRunView | undefined>;
   };
   permissions: {
     respond(input: { requestId: string; approved: boolean }): Promise<void>;

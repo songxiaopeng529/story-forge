@@ -299,6 +299,9 @@ export function registerIpcHandlers(options: IpcHandlerOptions): void {
   handle(options.ipc, IPC_CHANNELS.turnsCompact, sessionIdSchema, (sessionId) =>
     options.coordinator.compactSession(sessionId)
   );
+  handle(options.ipc, IPC_CHANNELS.agentRunsGet, turnIdSchema, (turnId) =>
+    options.coordinator.getAgentRun(turnId)
+  );
   handle(
     options.ipc,
     IPC_CHANNELS.permissionRespond,

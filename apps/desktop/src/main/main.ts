@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { IPC_CHANNELS } from "../shared/story-forge-api";
 import {
   AgentCoordinator,
+  AgentRunRepository,
   migrateLegacyStoryForgeHome,
   PiModelService,
   PiSessionAdapter,
@@ -83,7 +84,12 @@ async function initializeApplication(): Promise<void> {
     workspaces: workspaceRepository,
     piModels,
   });
-  const sessionRepository = new SessionRepository({ rootDir, piAdapter: piSessions });
+  const agentRunRepository = new AgentRunRepository({ rootDir });
+  const sessionRepository = new SessionRepository({
+    rootDir,
+    piAdapter: piSessions,
+    agentRunStore: agentRunRepository,
+  });
   const soulRepository = new SoulRepository({ filePath: paths.soulPath });
   const skillService = new SkillService({ rootDir });
   const mcpConfigService = new McpConfigService({ rootDir });
@@ -92,6 +98,7 @@ async function initializeApplication(): Promise<void> {
     generateCron: createScheduleCronGenerator(piModels),
   });
   await sessionRepository.recoverInterruptedSessions();
+  await agentRunRepository.recoverInterruptedRuns();
   await automationService.recoverRunningRuns();
   const providerService = new ProviderService({
     piModels,
@@ -102,6 +109,7 @@ async function initializeApplication(): Promise<void> {
     workspaceRepository,
     piModels,
     piSessions,
+    agentRunRepository,
     skillResolver: skillService,
     mcpServerSource: mcpConfigService,
     soulStore: soulRepository,

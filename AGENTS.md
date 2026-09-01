@@ -16,8 +16,8 @@ lives in `packages/*`, and the shippable product is the Electron app in
 ## Environment
 
 - Package manager: **pnpm 10.11.0** (pinned via `packageManager`). Use `corepack` / `pnpm`, never `npm` or `yarn`.
-- Node: **>=22.12.0** (see `engines`). Multiple Node installs on a machine can cause
-  PATH conflicts and Corepack signature errors — verify `node -v` is >= 22.12 before running scripts.
+- Node: **>=22.19.0** (see `engines`). Multiple Node installs on a machine can cause
+  PATH conflicts and Corepack signature errors — verify `node -v` is >= 22.19 before running scripts.
 - ESM only (`"type": "module"`), TypeScript `strict` with `noUncheckedIndexedAccess`
   and `exactOptionalPropertyTypes` enabled (see `tsconfig.base.json`).
 

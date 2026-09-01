@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   createSessionId,
   createTurnId,
+  hasAgentEventEnvelope,
   isTerminalAgentEvent,
   type AgentEvent,
+  type AgentEventEnvelope,
   type HumanInputResponse,
   type SessionId,
   type TurnId,
@@ -17,64 +19,64 @@ import {
 
 const sessionId = "sf_session_test" satisfies SessionId;
 const turnId = "sf_turn_test" satisfies TurnId;
-
-const runtimeStartedEvent = {
-  type: "runtime.started",
+const rootEnvelope = {
+  eventId: "sf_agent_event_test",
+  sequence: 1,
+  occurredAt: "2026-06-05T00:00:00.000Z",
   sessionId,
   turnId,
+  agentExecutionId: "sf_agent_execution_root",
+} satisfies AgentEventEnvelope;
+
+const runtimeStartedEvent = {
+  ...rootEnvelope,
+  type: "runtime.started",
   createdAt: "2026-06-05T00:00:00.000Z",
 } satisfies AgentEvent;
 
 const runtimeCompletedEvent = {
+  ...rootEnvelope,
   type: "runtime.completed",
-  sessionId,
-  turnId,
 } satisfies AgentEvent;
 
 const runtimeErrorEvent = {
+  ...rootEnvelope,
   type: "runtime.error",
-  sessionId,
-  turnId,
   message: "The runtime stopped.",
 } satisfies AgentEvent;
 
 const messageDeltaEvent = {
+  ...rootEnvelope,
   type: "message.delta",
-  sessionId,
-  turnId,
   content: "hello",
 } satisfies AgentEvent;
 
 const liveMessageDeltaEvent = {
+  ...rootEnvelope,
   type: "message.delta",
-  sessionId,
-  turnId,
   content: "hello",
   delivery: "live",
 } satisfies AgentEvent;
 
 const responseFallbackEvent = {
+  ...rootEnvelope,
   type: "response.fallback",
-  sessionId,
-  turnId,
   from: "live",
   to: "smooth",
   reason: "stream unavailable",
 } satisfies AgentEvent;
 
 const toolCallEvent = {
+  ...rootEnvelope,
   type: "tool.call",
-  sessionId,
-  turnId,
   callId: "call_1",
   name: "read_file",
   input: { path: "README.md" },
 } satisfies AgentEvent;
 
 const toolResultEvent = {
+  ...rootEnvelope,
   type: "tool.result",
-  sessionId,
-  turnId,
   callId: "call_1",
   name: "read_file",
   ok: true,
@@ -82,9 +84,8 @@ const toolResultEvent = {
 } satisfies AgentEvent;
 
 const permissionRequestEvent = {
+  ...rootEnvelope,
   type: "permission.request",
-  sessionId,
-  turnId,
   requestId: "permission_1",
   reason: "This command can run arbitrary code, inspect secrets, or access remote systems.",
   command: {
@@ -97,9 +98,8 @@ const permissionRequestEvent = {
 } satisfies AgentEvent;
 
 const humanInputRequestEvent = {
+  ...rootEnvelope,
   type: "human.input.request",
-  sessionId,
-  turnId,
   requestId: "human-input-1",
   title: "Choose implementation scope",
   description: "StoryForge needs your preference before editing files.",
@@ -149,9 +149,8 @@ const humanInputResponse = {
 } satisfies HumanInputResponse;
 
 const modelRequestEvent = {
+  ...rootEnvelope,
   type: "model.request",
-  sessionId,
-  turnId,
   requestId: "model-request-1",
   providerId: "deepseek",
   model: "deepseek-v4-pro",
@@ -175,9 +174,8 @@ const modelRequestEvent = {
 } satisfies AgentEvent;
 
 const contextUsageEvent = {
+  ...rootEnvelope,
   type: "context.usage",
-  sessionId,
-  turnId,
   usedTokens: 24000,
   budgetTokens: 102400,
   windowTokens: 128000,
@@ -185,9 +183,8 @@ const contextUsageEvent = {
 } satisfies AgentEvent;
 
 const contextCompactedEvent = {
+  ...rootEnvelope,
   type: "context.compacted",
-  sessionId,
-  turnId,
   trigger: "manual",
   beforeTokens: 96000,
   afterTokens: 40000,
@@ -196,9 +193,8 @@ const contextCompactedEvent = {
 } satisfies AgentEvent;
 
 const automationProposalEvent = {
+  ...rootEnvelope,
   type: "automation.proposal",
-  sessionId,
-  turnId,
   proposalId: "automation-proposal-1",
   proposal: {
     kind: "scheduled_chat",
@@ -213,6 +209,81 @@ const automationProposalEvent = {
     nextRuns: ["2026-06-20T01:00:00.000Z"],
     prompt: "检查当前项目的依赖风险。",
   },
+} satisfies AgentEvent;
+
+const childRuntimeCompletedEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_runtime_completed",
+  sequence: 2,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "runtime.completed",
+} satisfies AgentEvent;
+
+const executionQueuedEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_queued",
+  sequence: 3,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "agent.execution.queued",
+  role: "explorer",
+  objective: "Inspect the event pipeline",
+} satisfies AgentEvent;
+
+const executionStartedEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_started",
+  sequence: 4,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "agent.execution.started",
+} satisfies AgentEvent;
+
+const executionCompletedEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_completed",
+  sequence: 5,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "agent.execution.completed",
+  usage: {
+    turns: 1,
+    toolCalls: 2,
+    inputTokens: 100,
+    outputTokens: 50,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0.01,
+  },
+  report: {
+    summary: "The event pipeline is attributed.",
+    findings: [],
+    evidence: [],
+    filesInspected: ["packages/shared/src/events.ts"],
+    unresolved: [],
+  },
+  truncated: false,
+} satisfies AgentEvent;
+
+const executionFailedEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_failed",
+  sequence: 6,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "agent.execution.failed",
+  usage: executionCompletedEvent.usage,
+  error: "Child failed",
+} satisfies AgentEvent;
+
+const executionCancelledEvent = {
+  ...rootEnvelope,
+  eventId: "sf_agent_event_child_cancelled",
+  sequence: 7,
+  agentExecutionId: "sf_agent_execution_child",
+  parentAgentExecutionId: rootEnvelope.agentExecutionId,
+  type: "agent.execution.cancelled",
 } satisfies AgentEvent;
 
 const agentEventFixtures = [
@@ -230,6 +301,11 @@ const agentEventFixtures = [
   contextUsageEvent,
   contextCompactedEvent,
   automationProposalEvent,
+  executionQueuedEvent,
+  executionStartedEvent,
+  executionCompletedEvent,
+  executionFailedEvent,
+  executionCancelledEvent,
 ] satisfies AgentEvent[];
 
 describe("createSessionId", () => {
@@ -338,6 +414,25 @@ describe("settings types", () => {
 });
 
 describe("AgentEvent", () => {
+  it("carries execution attribution on every event variant", () => {
+    for (const event of agentEventFixtures) {
+      expect(hasAgentEventEnvelope(event)).toBe(true);
+      expect(event.eventId).toMatch(/^sf_agent_event_/);
+      expect(event.sequence).toBeGreaterThan(0);
+      expect(event.occurredAt).toBe(rootEnvelope.occurredAt);
+      expect(event.agentExecutionId).toMatch(/^sf_agent_execution_/);
+    }
+  });
+
+  it("accepts the child execution lifecycle variants", () => {
+    expect(executionQueuedEvent.role).toBe("explorer");
+    expect(executionCompletedEvent.report.summary).toContain("attributed");
+    expect(executionFailedEvent.error).toBe("Child failed");
+    expect(executionCancelledEvent.parentAgentExecutionId).toBe(
+      rootEnvelope.agentExecutionId,
+    );
+  });
+
   it("allows delivery metadata and fallback notices without marking them terminal", () => {
     expect(liveMessageDeltaEvent.delivery).toBe("live");
     expect(responseFallbackEvent.to).toBe("smooth");
@@ -371,6 +466,12 @@ describe("isTerminalAgentEvent", () => {
 
   it("returns false for non-terminal agent events", () => {
     expect(isTerminalAgentEvent(messageDeltaEvent)).toBe(false);
+  });
+
+  it("does not treat child runtime or child lifecycle events as root terminal events", () => {
+    expect(isTerminalAgentEvent(childRuntimeCompletedEvent)).toBe(false);
+    expect(isTerminalAgentEvent(executionCompletedEvent)).toBe(false);
+    expect(isTerminalAgentEvent(executionFailedEvent)).toBe(false);
   });
 
   it("narrows terminal runtime events", () => {

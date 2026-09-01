@@ -30,6 +30,8 @@ export type StoryForgePaths = {
   skillsDir: string;
   sessionMetadataDir: string;
   sessionTranscriptsDir: string;
+  agentRunsDir: string;
+  agentTranscriptsDir: string;
   migrationsDir: string;
 };
 
@@ -64,6 +66,8 @@ export function resolveStoryForgePaths(options: {
     skillsDir: join(rootDir, "skills"),
     sessionMetadataDir: join(sessionsDir, "metadata"),
     sessionTranscriptsDir: join(sessionsDir, "transcripts"),
+    agentRunsDir: join(sessionsDir, "agent-runs"),
+    agentTranscriptsDir: join(sessionsDir, "agent-transcripts"),
     migrationsDir: join(rootDir, "migrations"),
   };
 }

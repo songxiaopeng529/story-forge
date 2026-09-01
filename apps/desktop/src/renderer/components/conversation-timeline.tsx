@@ -13,6 +13,7 @@ import {
   Globe,
   ListChecks,
   LoaderCircle,
+  Network,
   Plug,
   Search,
   Sparkles,
@@ -189,6 +190,9 @@ function TimelineItemView(props: {
   if (item.type === "tool-step") {
     return <ToolActivityGroup items={[item]} />;
   }
+  if (item.type === "delegate-summary") {
+    return <DelegateSummaryCard item={item} />;
+  }
   if (item.type === "automation-proposal") {
     return (
       <AutomationProposalCard
@@ -221,6 +225,75 @@ function TimelineItemView(props: {
     <div className="rounded-lg border border-forge-danger/30 bg-forge-danger-bg px-3 py-2 text-[13px] text-forge-danger">
       {item.message}
     </div>
+  );
+}
+
+function DelegateSummaryCard(props: {
+  item: Extract<TimelineItem, { type: "delegate-summary" }>;
+}) {
+  const { item } = props;
+  const running = item.status === "running";
+  const statusLabel = item.status === "failed"
+    ? "Failed"
+    : item.resultStatus === "partial"
+      ? "Partial"
+      : item.resultStatus === "cancelled"
+        ? "Cancelled"
+        : item.resultStatus === "failed"
+          ? "Failed"
+          : running
+            ? "Running"
+            : "Completed";
+  const resultParts = [
+    item.completedCount > 0 ? `${item.completedCount} completed` : undefined,
+    item.failedCount > 0 ? `${item.failedCount} failed` : undefined,
+    item.cancelledCount > 0 ? `${item.cancelledCount} cancelled` : undefined,
+  ].filter((part): part is string => Boolean(part));
+
+  return (
+    <article
+      aria-label={`Agent delegation ${statusLabel}`}
+      className="motion-message-enter rounded-[10px] border border-forge-line bg-white px-4 py-3 text-sm"
+      data-testid="delegate-summary-card"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md bg-forge-canvas text-forge-ink">
+          {running
+            ? <LoaderCircle aria-hidden="true" className="animate-spin motion-reduce:animate-none" size={16} />
+            : <Network aria-hidden="true" size={16} />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="font-semibold text-forge-ink">Delegated research</div>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              item.status === "failed" || item.resultStatus === "failed"
+                ? "bg-forge-danger-bg text-forge-danger"
+                : item.resultStatus === "partial" || item.resultStatus === "cancelled"
+                  ? "bg-forge-info-bg text-forge-info"
+                  : running
+                    ? "bg-forge-info-bg text-forge-info"
+                    : "bg-[#ecfdf3] text-forge-success"
+            }`}>
+              {statusLabel}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-forge-muted">
+            {item.taskCount} {item.taskCount === 1 ? "child agent" : "child agents"}
+            {resultParts.length > 0 ? ` · ${resultParts.join(" · ")}` : ""}
+          </div>
+          {item.objectives.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-[11px] leading-4 text-forge-ink">
+              {item.objectives.map((objective, index) => (
+                <li className="flex items-start gap-1.5" key={`${item.callId}-${index}`}>
+                  <span aria-hidden="true" className="mt-[7px] h-1 w-1 flex-none rounded-full bg-forge-muted" />
+                  <span>{objective}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+    </article>
   );
 }
 

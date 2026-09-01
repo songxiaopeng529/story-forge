@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { AgentEvent } from "@story-forge/shared";
+import type { UnsequencedAgentEvent } from "@story-forge/shared";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -153,7 +153,7 @@ describe("RunContextPanel repository context", () => {
   });
 
   it("shows dirty summaries and attributes only successful direct edits in Git changes", () => {
-    const activities: AgentEvent[] = [
+    const activities: UnsequencedAgentEvent[] = [
       {
         type: "tool.call",
         sessionId: "sf_session_1",
@@ -243,7 +243,7 @@ describe("RunContextPanel repository context", () => {
   });
 
   it("does not attribute edits from an earlier turn", () => {
-    const activities: AgentEvent[] = [
+    const activities: UnsequencedAgentEvent[] = [
       {
         type: "tool.call",
         sessionId: "sf_session_1",
@@ -300,7 +300,7 @@ describe("RunContextPanel repository context", () => {
         }],
       },
     };
-    const activities: AgentEvent[] = [
+    const activities: UnsequencedAgentEvent[] = [
       {
         type: "tool.call",
         sessionId: "sf_session_1",
@@ -371,7 +371,7 @@ describe("RunContextPanel repository context", () => {
 describe("RunContextPanel run and model context", () => {
   it("keeps the compact run, context, model, and inspector controls", () => {
     const onOpenInspector = vi.fn();
-    const activities: AgentEvent[] = [
+    const activities: UnsequencedAgentEvent[] = [
       {
         type: "context.usage",
         sessionId: "sf_session_1",
@@ -513,6 +513,8 @@ function panel(overrides: Partial<ComponentProps<typeof RunContextPanel>> = {}) 
     provider,
     runtime: undefined,
     activities: [],
+    agentRun: undefined,
+    childAgentActivities: {},
     developerMode: false,
     workspacePath: "/workspace/project",
     repository: undefined,

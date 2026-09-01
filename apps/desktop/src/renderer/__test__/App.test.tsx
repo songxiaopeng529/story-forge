@@ -10,10 +10,12 @@ import {
 } from "@testing-library/react";
 import type {
   AgentEvent,
+  AgentRunView,
   AppSettingsView,
   AutomationView,
   McpConfigView,
   SkillView,
+  UnsequencedAgentEvent,
 } from "@story-forge/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -39,6 +41,64 @@ describe("App", () => {
     expect(await screen.findByText("Previous question")).toBeInTheDocument();
     expect(screen.getByText("Previous answer")).toBeInTheDocument();
     expect(screen.getByText("Project session")).toBeInTheDocument();
+  });
+
+  it("hydrates the last Agent run and keeps child activity out of the root timeline", async () => {
+    const run = sampleAgentRun();
+    const fixture = installApi({
+      session: {
+        status: "running",
+        currentTurnId: run.turnId,
+        lastTurnId: run.turnId,
+      },
+      agentRun: run,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: "Agent run tree" })).toBeInTheDocument();
+    expect(fixture.getAgentRun).toHaveBeenCalledWith(run.turnId);
+    expect(screen.getByRole("article", { name: "Explorer agent: Map persisted runtime state" }))
+      .toBeInTheDocument();
+
+    act(() => fixture.emit({
+      type: "message.delta",
+      eventId: "sf_agent_event_private",
+      sequence: 2,
+      occurredAt: "2026-08-28T08:00:02.000Z",
+      sessionId: run.sessionId,
+      turnId: run.turnId,
+      agentExecutionId: "sf_agent_execution_explorer",
+      parentAgentExecutionId: run.rootExecutionId,
+      content: "CHILD PRIVATE STREAM",
+      delivery: "live",
+    }));
+    act(() => fixture.emit({
+      type: "tool.call",
+      eventId: "sf_agent_event_child_tool",
+      sequence: 3,
+      occurredAt: "2026-08-28T08:00:03.000Z",
+      sessionId: run.sessionId,
+      turnId: run.turnId,
+      agentExecutionId: "sf_agent_execution_explorer",
+      parentAgentExecutionId: run.rootExecutionId,
+      callId: "child-read",
+      name: "read",
+      input: { path: "README.md" },
+    }));
+
+    expect(screen.queryByText("CHILD PRIVATE STREAM")).not.toBeInTheDocument();
+    expect(await screen.findByText("1 tool")).toBeInTheDocument();
+    expect(screen.queryByTestId("tool-activity-group")).not.toBeInTheDocument();
+
+    act(() => fixture.emit({
+      type: "message.delta",
+      sessionId: run.sessionId,
+      turnId: run.turnId,
+      content: "ROOT VISIBLE STREAM",
+      delivery: "live",
+    }));
+    expect(await screen.findByText("ROOT VISIBLE STREAM")).toBeInTheDocument();
   });
 
   it("loads repository context for the selected workspace", async () => {
@@ -1803,6 +1863,8 @@ function installApi(options: {
   getSession?: StoryForgeApi["sessions"]["get"];
   modelImageSupport?: Record<string, boolean>;
   start?: StoryForgeApi["turns"]["start"];
+  agentRun?: AgentRunView;
+  getAgentRun?: StoryForgeApi["agentRuns"]["get"];
 } = {}) {
   const provider: ProviderView = {
     providerId: "deepseek",
@@ -1879,6 +1941,9 @@ function installApi(options: {
         checkedAt: 1_786_086_000,
       }
     );
+  const getAgentRun = options.getAgentRun
+    ? vi.mocked(options.getAgentRun)
+    : vi.fn(async (turnId) => options.agentRun?.turnId === turnId ? options.agentRun : undefined);
   const settings: AppSettingsView = {
     schemaVersion: 1 as const,
     language: "en",
@@ -2093,6 +2158,9 @@ function installApi(options: {
         };
       }),
     },
+    agentRuns: {
+      get: getAgentRun,
+    },
     permissions: {
       respond: respondPermission,
     },
@@ -2137,6 +2205,7 @@ function installApi(options: {
     respondHumanInput,
     getSession,
     getRepository,
+    getAgentRun,
     saveSettings,
     getSoul,
     saveSoul,
@@ -2153,7 +2222,65 @@ function installApi(options: {
     updateAutomation,
     deleteAutomation,
     runAutomationNow,
-    emit: (event: AgentEvent) => eventListener?.(event),
+    emit: (event: AgentEvent | UnsequencedAgentEvent) => eventListener?.(
+      "eventId" in event
+        ? event
+        : {
+            ...event,
+            eventId: "sf_agent_event_test",
+            sequence: 1,
+            occurredAt: "2026-08-28T08:00:00.000Z",
+            agentExecutionId: "sf_agent_execution_root",
+          } as AgentEvent,
+    ),
+  };
+}
+
+function sampleAgentRun(): AgentRunView {
+  const usage = {
+    turns: 0,
+    toolCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0,
+  };
+  return {
+    schemaVersion: 1,
+    sessionId: "sf_session_existing",
+    turnId: "sf_turn_team",
+    rootExecutionId: "sf_agent_execution_root",
+    sequence: 1,
+    createdAt: "2026-08-28T08:00:00.000Z",
+    updatedAt: "2026-08-28T08:00:01.000Z",
+    executions: [
+      {
+        id: "sf_agent_execution_root",
+        role: "root",
+        objective: "Answer the user",
+        status: "running",
+        attempt: 1,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        createdAt: "2026-08-28T08:00:00.000Z",
+        startedAt: "2026-08-28T08:00:00.000Z",
+        usage,
+      },
+      {
+        id: "sf_agent_execution_explorer",
+        parentExecutionId: "sf_agent_execution_root",
+        role: "explorer",
+        objective: "Map persisted runtime state",
+        status: "running",
+        attempt: 1,
+        providerId: "deepseek",
+        model: "deepseek-v4-pro",
+        createdAt: "2026-08-28T08:00:00.000Z",
+        startedAt: "2026-08-28T08:00:01.000Z",
+        usage,
+      },
+    ],
   };
 }
 

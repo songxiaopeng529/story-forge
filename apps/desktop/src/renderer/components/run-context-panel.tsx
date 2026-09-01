@@ -1,7 +1,8 @@
 import type {
   AgentEvent,
-  ContextUsageEvent,
+  AgentRunView,
   TurnId,
+  UnsequencedAgentEvent,
 } from "@story-forge/shared";
 import {
   Braces,
@@ -18,6 +19,7 @@ import type {
   ProviderView,
   SessionView,
 } from "../../shared/story-forge-api";
+import { AgentRunTree, type ChildAgentActivities } from "./agent-run-tree";
 
 export type RunStatus = "running" | "completed" | "failed" | "waiting-approval";
 
@@ -32,6 +34,10 @@ export type TurnRuntime = {
 type ReadyRepository = Extract<GitRepositoryView, { status: "ready" }>;
 type GitChangedFile = ReadyRepository["changes"]["files"][number];
 type ChangeScope = "working-tree" | "last-turn";
+type PanelAgentEvent = AgentEvent | UnsequencedAgentEvent;
+type PanelToolCallEvent = Extract<PanelAgentEvent, { type: "tool.call" }>;
+type PanelModelRequestEvent = Extract<PanelAgentEvent, { type: "model.request" }>;
+type PanelContextUsageEvent = Extract<PanelAgentEvent, { type: "context.usage" }>;
 
 const STATUS_LABEL: Record<RunStatus, string> = {
   running: "Turn is running",
@@ -48,7 +54,9 @@ export function RunContextPanel(props: {
   session: SessionView | undefined;
   provider: ProviderView | undefined;
   runtime: TurnRuntime | undefined;
-  activities: AgentEvent[];
+  activities: PanelAgentEvent[];
+  agentRun: AgentRunView | undefined;
+  childAgentActivities: ChildAgentActivities;
   developerMode: boolean;
   workspacePath: string | undefined;
   repository: GitRepositoryView | undefined;
@@ -126,6 +134,13 @@ export function RunContextPanel(props: {
             repository={props.repository}
           />
         </Card>
+
+        {props.agentRun ? (
+          <AgentRunTree
+            childActivities={props.childAgentActivities}
+            run={props.agentRun}
+          />
+        ) : null}
 
         <Card>
           <CardHeader
@@ -483,7 +498,7 @@ function Row(props: { label: string; value: string; tone?: "danger" }) {
   );
 }
 
-function ContextRow(props: { usage: ContextUsageEvent | undefined }) {
+function ContextRow(props: { usage: PanelContextUsageEvent | undefined }) {
   const { usage } = props;
   if (!usage || usage.budgetTokens <= 0) {
     return <Row label="Context" value="—" />;
@@ -552,7 +567,7 @@ function useElapsed(runtime: TurnRuntime | undefined): string {
 }
 
 function collectSuccessfulDirectEditFiles(
-  activities: AgentEvent[],
+  activities: PanelAgentEvent[],
   gitFiles: GitChangedFile[],
   repositoryRoot: string,
   workspacePath: string | undefined,
@@ -561,7 +576,7 @@ function collectSuccessfulDirectEditFiles(
   if (!turnId) {
     return [];
   }
-  const calls = new Map<string, Extract<AgentEvent, { type: "tool.call" }>>();
+  const calls = new Map<string, PanelToolCallEvent>();
   for (const event of activities) {
     if (
       event.turnId === turnId
@@ -690,9 +705,9 @@ function shortCommit(commit: string | null): string {
 }
 
 function lastModelRequest(
-  activities: AgentEvent[],
+  activities: PanelAgentEvent[],
   turnId: TurnId | undefined,
-): Extract<AgentEvent, { type: "model.request" }> | undefined {
+): PanelModelRequestEvent | undefined {
   if (!turnId) {
     return undefined;
   }
@@ -706,9 +721,9 @@ function lastModelRequest(
 }
 
 function latestContextUsage(
-  activities: AgentEvent[],
+  activities: PanelAgentEvent[],
   turnId: TurnId | undefined,
-): ContextUsageEvent | undefined {
+): PanelContextUsageEvent | undefined {
   if (!turnId) {
     return undefined;
   }

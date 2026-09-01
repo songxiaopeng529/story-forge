@@ -76,6 +76,8 @@ export function App() {
           repositoryLoading: c.gitRepositoryLoading,
           activeTurns: c.activeTurns,
           activities: c.activities,
+          agentRun: c.agentRun,
+          childAgentActivities: c.childAgentActivities,
           automationProposals: c.automationProposals,
           currentHumanInputRequest: c.currentHumanInputRequest,
           humanInputResponding: c.humanInputResponding,
