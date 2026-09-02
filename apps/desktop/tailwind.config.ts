@@ -10,6 +10,21 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Streamdown emits shadcn-style semantic utilities such as
+        // `bg-background` and `border-border`. Keep these as concrete colors
+        // so Tailwind v3 can also generate opacity variants like
+        // `bg-background/95`.
+        background: "#ffffff",
+        foreground: "#1d1d1f",
+        card: "#ffffff",
+        "card-foreground": "#1d1d1f",
+        muted: "#f5f5f7",
+        "muted-foreground": "#6e6e73",
+        border: "#d2d2d7",
+        input: "#d2d2d7",
+        primary: "#1d1d1f",
+        "primary-foreground": "#ffffff",
+        sidebar: "#fbfbfd",
         forge: {
           // Apple-minimal neutral palette (Figma "Minimal Coding Agent")
           canvas: "#f5f5f7",

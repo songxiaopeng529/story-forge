@@ -161,6 +161,39 @@ button:disabled {
   transition-timing-function: var(--motion-ease-standard);
 }
 
+/* Streamdown portals tables directly under `body`. Give the fullscreen table
+   a real modal surface instead of letting its content float over the app. */
+[data-streamdown="table-fullscreen"] {
+  z-index: 70;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(15 23 42 / 28%);
+  backdrop-filter: blur(3px);
+}
+
+[data-streamdown="table-fullscreen"] > div {
+  width: min(1120px, 100%);
+  height: 100%;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+  box-shadow: 0 24px 70px rgb(15 23 42 / 24%);
+}
+
+@media (max-width: 720px) {
+  [data-streamdown="table-fullscreen"] {
+    padding: 12px;
+  }
+
+  [data-streamdown="table-fullscreen"] > div {
+    max-height: calc(100vh - 24px);
+    border-radius: 10px;
+  }
+}
+
 /* Pair with a child `.motion-collapsible-content` to animate unknown heights. */
 .motion-collapsible {
   display: grid;

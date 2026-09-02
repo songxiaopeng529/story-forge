@@ -39,6 +39,39 @@ describe("ConversationTimeline assistant markdown", () => {
     expect(container.textContent).not.toContain("**bold**");
   });
 
+  it("opens table actions on opaque semantic surfaces and closes fullscreen with Escape", () => {
+    const items: TimelineItem[] = [{
+      type: "assistant-message",
+      id: "assistant-table-actions",
+      content: [
+        "| Name | Value |",
+        "| --- | --- |",
+        "| Alpha | 100 |",
+      ].join("\n"),
+    }];
+
+    render(<ConversationTimeline items={items} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Download table" }));
+    const csvAction = screen.getByRole("button", { name: "CSV" });
+    const downloadMenu = csvAction.parentElement;
+    expect(downloadMenu).toHaveClass("bg-background", "border-border", "shadow-lg");
+    expect(csvAction).toHaveAttribute("title", "Download table as CSV");
+    expect(screen.getByRole("button", { name: "Markdown" }))
+      .toHaveAttribute("title", "Download table as Markdown");
+    expect(screen.getByRole("button", { name: "Markdown" }))
+      .toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View fullscreen" }));
+    const fullscreen = screen.getByRole("dialog", { name: "View fullscreen" });
+    expect(fullscreen).toHaveAttribute("data-streamdown", "table-fullscreen");
+    expect(fullscreen).toHaveClass("fixed", "inset-0", "bg-background");
+
+    fireEvent.keyDown(fullscreen, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "View fullscreen" }))
+      .not.toBeInTheDocument();
+  });
+
   it("renders the pending assistant placeholder as an accessible shimmer status row", () => {
     const items: TimelineItem[] = [{
       type: "assistant-message",
