@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentRunView,
   AutomationView,
   CommandExecutionMode,
   HumanInputRequestEvent,
@@ -18,6 +19,7 @@ import type {
 } from "../../shared/story-forge-api";
 import type { AutomationProposalTimelineState } from "../utils/timeline";
 import { AgentWorkspace } from "./agent-workspace";
+import type { ChildAgentActivities } from "./agent-run-tree";
 import { RunContextPanel, type RunStatus } from "./run-context-panel";
 import { SessionSidebar } from "./session-sidebar";
 
@@ -41,6 +43,8 @@ export type AgentLayoutProps = {
   repositoryLoading: boolean;
   activeTurns: Record<string, TurnId>;
   activities: AgentEvent[];
+  agentRun: AgentRunView | undefined;
+  childAgentActivities: ChildAgentActivities;
   automationProposals: AutomationProposalTimelineState[];
   currentHumanInputRequest: HumanInputRequestEvent | undefined;
   humanInputResponding: boolean;
@@ -111,6 +115,8 @@ export function AgentLayout(props: AgentLayoutProps) {
     repositoryLoading,
     activeTurns,
     activities,
+    agentRun,
+    childAgentActivities,
     automationProposals,
     currentHumanInputRequest,
     humanInputResponding,
@@ -226,6 +232,8 @@ export function AgentLayout(props: AgentLayoutProps) {
           provider={selectedSessionProvider}
           runtime={runtime}
           activities={activities}
+          agentRun={agentRun}
+          childAgentActivities={childAgentActivities}
           developerMode={developerMode}
           workspacePath={selectedWorkspace?.path}
           repository={repository}

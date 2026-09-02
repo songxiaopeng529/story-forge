@@ -1,5 +1,4 @@
 import {
-  defineTool,
   type AgentSession,
   type AgentSessionEvent,
   type ContextUsage,
@@ -14,8 +13,9 @@ import {
   readOptionalStringField,
   readStringField,
   toRecord,
-  type AgentEvent,
   type AgentStopReason,
+  type AgentDelegateInput,
+  type DelegateResult,
   type CommandExecutionMode,
   type ContextUsageEvent,
   type ExtensionUiResponse,
@@ -27,12 +27,14 @@ import {
   type SoulDocumentView,
   type SoulMode,
   type TurnId,
+  type UnsequencedAgentEvent,
   type WebSearchCoverage,
 } from "@story-forge/shared";
 import {
   classifyCommand,
   checkWorkspaceToolCall,
   createAutomationProposalTool,
+  createAgentDelegateTool,
   createCurrentTimeTool,
   createHumanInputTool,
   createSoulUpdateTool,
@@ -46,7 +48,6 @@ import {
   type RuntimeTimezoneResolver,
   type AutomationProposalDraft,
   type HumanInputToolResponse,
-  type ToolDefinition as StoryForgeToolDefinition,
   validateSchedule,
 } from "@story-forge/extensions";
 import {
@@ -66,7 +67,6 @@ import type { PiSessionAdapter } from "../pi/pi-session-adapter";
 import {
   type SessionMetadataRecord,
   type SessionRepository,
-  type SessionStatus,
 } from "../persistence/session-repository";
 import type {
   StoryForgeMcpSource,
@@ -76,6 +76,8 @@ import type {
 } from "../ports/host";
 import { PiExtensionUiBridge } from "../pi/pi-extension-ui";
 import { toSessionTasksFromPiTodoResult } from "../pi/pi-todo-adapter";
+import { toPiToolDefinition } from "../pi/storyforge-tool-adapter";
+import type { TurnOutcome } from "./turn-outcome";
 
 export type SkillInvocationResolver = StoryForgeSkillSource;
 
@@ -92,10 +94,30 @@ export type StoryForgeAgentHarnessOptions = {
   getWebAccessEnabled?: () => Promise<boolean>;
   getWebSearchCoverage?: () => Promise<WebSearchCoverage>;
   getSoulMode?: () => Promise<SoulMode>;
+  delegate?: (input: RootDelegateRequest) => Promise<DelegateResult>;
+  onTurnModelResolved?: (input: TurnModelResolved) => void;
   createAgentSession?: typeof createStoryForgeAgentSession;
   now?: RuntimeClock;
   getTimezone?: RuntimeTimezoneResolver;
-  emit: (event: AgentEvent) => void;
+  emit: (event: UnsequencedAgentEvent) => void;
+};
+
+export type RootDelegateRequest = {
+  sessionId: SessionId;
+  turnId: TurnId;
+  workspaceId: string;
+  providerId: string;
+  model: string;
+  input: AgentDelegateInput;
+  signal: AbortSignal;
+};
+
+export type TurnModelResolved = {
+  sessionId: SessionId;
+  turnId: TurnId;
+  workspaceId: string;
+  providerId: string;
+  model: string;
 };
 
 type ActiveTurn = {
@@ -146,16 +168,18 @@ export class StoryForgeAgentHarness {
   private readonly getWebAccessEnabled: () => Promise<boolean>;
   private readonly getWebSearchCoverage: () => Promise<WebSearchCoverage>;
   private readonly getSoulMode: () => Promise<SoulMode>;
+  private readonly delegate: ((input: RootDelegateRequest) => Promise<DelegateResult>) | undefined;
+  private readonly onTurnModelResolved: ((input: TurnModelResolved) => void) | undefined;
   private readonly createAgentSession: typeof createStoryForgeAgentSession;
   private readonly now: RuntimeClock;
   private readonly getTimezone: RuntimeTimezoneResolver;
-  private readonly emitEvent: (event: AgentEvent) => void;
+  private readonly emitEvent: (event: UnsequencedAgentEvent) => void;
   private readonly extensionUi: PiExtensionUiBridge;
   private readonly activeTurns = new Map<TurnId, ActiveTurn>();
   private readonly pendingPermissions = new Map<string, (approved: boolean) => void>();
   private readonly pendingHumanInputs = new Map<string, PendingHumanInputRequest>();
   private readonly reservedSessions = new Set<SessionId>();
-  private readonly turnPromises = new Map<TurnId, Promise<void>>();
+  private readonly turnPromises = new Map<TurnId, Promise<TurnOutcome>>();
   private readonly piSessionCleanups = new WeakMap<AgentSession, () => void>();
 
   constructor(options: StoryForgeAgentHarnessOptions) {
@@ -171,6 +195,8 @@ export class StoryForgeAgentHarness {
     this.getWebAccessEnabled = options.getWebAccessEnabled ?? (async () => false);
     this.getWebSearchCoverage = options.getWebSearchCoverage ?? (async () => "focused");
     this.getSoulMode = options.getSoulMode ?? (async () => "ask");
+    this.delegate = options.delegate;
+    this.onTurnModelResolved = options.onTurnModelResolved;
     this.createAgentSession = options.createAgentSession ?? createStoryForgeAgentSession;
     this.now = options.now ?? (() => new Date());
     this.getTimezone = options.getTimezone ?? resolveSystemTimezone;
@@ -283,7 +309,7 @@ export class StoryForgeAgentHarness {
     await active?.piSession?.abort();
   }
 
-  async compactSession(sessionId: SessionId): Promise<void> {
+  async compactSession(sessionId: SessionId): Promise<{ turnId: TurnId }> {
     if (this.reservedSessions.has(sessionId)) {
       throw new Error(`Session already has an active turn: ${sessionId}`);
     }
@@ -300,25 +326,30 @@ export class StoryForgeAgentHarness {
         signal: controller.signal,
       });
       await piSession.compact();
+      await this.sessionRepository.markStatus(sessionId, {
+        status: session.status,
+        turnId,
+      });
       this.emitEvent({
         type: "context.compacted",
         sessionId,
         turnId,
         trigger: "manual",
       });
+      return { turnId };
     } finally {
       this.disposePiSession(piSession);
       this.reservedSessions.delete(sessionId);
     }
   }
 
-  async waitForTurn(turnId: TurnId): Promise<void> {
+  async waitForTurn(turnId: TurnId): Promise<TurnOutcome> {
     const promise = this.turnPromises.get(turnId);
     if (!promise) {
-      return;
+      throw new Error(`Turn is not active or retained: ${turnId}`);
     }
     try {
-      await promise;
+      return await promise;
     } finally {
       this.turnPromises.delete(turnId);
     }
@@ -350,8 +381,9 @@ export class StoryForgeAgentHarness {
     turnId: TurnId;
     prompt: string;
     imageAttachments: ImageAttachmentView[];
-  }): Promise<void> {
+  }): Promise<TurnOutcome> {
     const { active, turnId } = input;
+    let executionError: unknown;
     try {
       const settings = await this.readTurnSettings();
       const piSession = await this.createPiSessionForTurn({
@@ -371,38 +403,44 @@ export class StoryForgeAgentHarness {
       });
       if (active.controller.signal.aborted) {
         await piSession.abort();
-        return;
+      } else {
+        const onAbort = () => {
+          void piSession.abort();
+        };
+        active.controller.signal.addEventListener("abort", onAbort, { once: true });
+        try {
+          await piSession.prompt(input.prompt, {
+            images: input.imageAttachments.map(toPiImageContent),
+            source: "interactive",
+          });
+          await piSession.waitForIdle();
+        } finally {
+          active.controller.signal.removeEventListener("abort", onAbort);
+        }
       }
-      const onAbort = () => {
-        void piSession.abort();
-      };
-      active.controller.signal.addEventListener("abort", onAbort, { once: true });
-      try {
-        await piSession.prompt(input.prompt, {
-          images: input.imageAttachments.map(toPiImageContent),
-          source: "interactive",
-        });
-        await piSession.waitForIdle();
-      } finally {
-        active.controller.signal.removeEventListener("abort", onAbort);
-      }
-      await active.metadataSync;
-      this.emitTerminalForStopReason(active, turnId);
-      await this.sessionRepository.markStatus(active.sessionId, {
-        status: statusForStopReason(active.stopReason),
-        stopReason: active.stopReason,
-      });
     } catch (error) {
-      const stopReason: AgentStopReason = active.controller.signal.aborted
+      executionError = error;
+      active.stopReason = active.controller.signal.aborted
         ? "user-stopped"
         : "unrecoverable-error";
-      active.stopReason = stopReason;
-      this.emitTerminalIfNeeded(active, turnId, "runtime.error", formatError(error), stopReason);
-      await this.sessionRepository.markStatus(active.sessionId, {
-        status: stopReason === "user-stopped" ? "stopped" : "error",
-        stopReason,
-      });
+      active.errorMessage = formatError(error);
     }
+
+    if (active.controller.signal.aborted) {
+      active.stopReason = "user-stopped";
+    }
+    await active.metadataSync;
+    const outcome = toTurnOutcome(active, executionError);
+    await this.sessionRepository.markStatus(active.sessionId, {
+      status: outcome.status === "completed"
+        ? "completed"
+        : outcome.status === "stopped"
+          ? "stopped"
+          : "error",
+      stopReason: outcome.stopReason,
+    });
+    this.emitTerminalForStopReason(active, turnId);
+    return outcome;
   }
 
   private async createPiSessionForTurn(input: {
@@ -428,6 +466,13 @@ export class StoryForgeAgentHarness {
         model: model.id,
       });
     }
+    this.onTurnModelResolved?.({
+      sessionId: session.id,
+      turnId: input.turnId,
+      workspaceId: session.workspaceId,
+      providerId: model?.provider ?? session.providerId,
+      model: model?.id ?? session.model,
+    });
     const refs = await this.piSessions.ensurePiSession(session);
     if (refs.piSessionFile !== input.session.piSessionFile || refs.piSessionId !== input.session.piSessionId) {
       session = await this.sessionRepository.attachPiSession(input.session.id, refs);
@@ -541,7 +586,11 @@ export class StoryForgeAgentHarness {
       hidden: true,
       factory: (pi) => {
         pi.on("tool_call", async (event) => {
-          const workspaceBlock = checkWorkspaceToolCall(input.workspacePath, event.toolName, event.input);
+          const workspaceBlock = await checkWorkspaceToolCall(
+            input.workspacePath,
+            event.toolName,
+            event.input,
+          );
           if (workspaceBlock) {
             return workspaceBlock;
           }
@@ -678,12 +727,28 @@ export class StoryForgeAgentHarness {
           }),
         ]
       : [];
+    const delegateTools = this.delegate
+      ? [
+          createAgentDelegateTool({
+            delegate: (delegateInput, context) => this.delegate!({
+              sessionId: input.session.id,
+              turnId: input.turnId,
+              workspaceId: input.session.workspaceId,
+              providerId: input.session.providerId,
+              model: input.session.model,
+              input: delegateInput,
+              signal: context.signal ?? input.signal,
+            }),
+          }),
+        ]
+      : [];
     return [
       ...environmentTools,
       ...webTools,
       ...automationTools,
       ...humanInputTools,
       ...soulTools,
+      ...delegateTools,
     ]
       .map(toPiToolDefinition);
   }
@@ -889,7 +954,7 @@ export class StoryForgeAgentHarness {
         type: "runtime.started",
         sessionId: active.sessionId,
         turnId,
-        createdAt: new Date().toISOString(),
+        createdAt: this.now().toISOString(),
       });
       this.emitContextUsage(active, turnId);
       return;
@@ -1084,43 +1149,12 @@ export class StoryForgeAgentHarness {
   }
 }
 
-function toPiToolDefinition(tool: StoryForgeToolDefinition): PiToolDefinition {
-  return defineTool({
-    name: tool.name,
-    label: tool.name,
-    description: tool.description,
-    promptSnippet: tool.description,
-    parameters: tool.parameters as never,
-    executionMode: "sequential",
-    async execute(_toolCallId, params, signal) {
-      const output = await tool.execute(
-        params as Record<string, unknown>,
-        signal ? { signal } : {},
-      );
-      return {
-        content: [{ type: "text", text: formatToolOutput(output) }],
-        details: output,
-      };
-    },
-  });
-}
-
 function toHumanInputToolResponse(response: HumanInputResponse): HumanInputToolResponse {
   return {
     ...(response.cancelled !== undefined ? { cancelled: response.cancelled } : {}),
     ...(response.answers ? { answers: response.answers } : {}),
     ...(response.remark !== undefined ? { remark: response.remark } : {}),
   };
-}
-
-function statusForStopReason(stopReason: AgentStopReason): SessionStatus {
-  if (stopReason === "completed") {
-    return "completed";
-  }
-  if (stopReason === "unrecoverable-error") {
-    return "error";
-  }
-  return "stopped";
 }
 
 function formatSoulUpdateConfirmation(reason: string, content: string): string {
@@ -1152,10 +1186,6 @@ function validateAutomationProposal(draft: AutomationProposalDraft) {
   };
 }
 
-function formatToolOutput(output: unknown): string {
-  return typeof output === "string" ? output : JSON.stringify(output, null, 2);
-}
-
 function deriveTitle(content: string): string {
   const firstLine = content.trim().split(/\r?\n/, 1)[0] ?? "";
   return firstLine.slice(0, 50) || "New session";
@@ -1169,7 +1199,7 @@ export function toContextUsageEvent(input: {
   sessionId: SessionId;
   turnId: TurnId;
   usage: ContextUsage | undefined;
-}): ContextUsageEvent | undefined {
+}): Omit<ContextUsageEvent, "eventId" | "sequence" | "occurredAt" | "agentExecutionId" | "parentAgentExecutionId"> | undefined {
   const { usage } = input;
   if (
     usage?.tokens === null
@@ -1188,5 +1218,28 @@ export function toContextUsageEvent(input: {
     budgetTokens: Math.round(usage.contextWindow),
     windowTokens: Math.round(usage.contextWindow),
     source: "estimate",
+  };
+}
+
+function toTurnOutcome(active: ActiveTurn, executionError: unknown): TurnOutcome {
+  if (active.stopReason === "completed") {
+    return {
+      status: "completed",
+      stopReason: active.stopReason,
+      steps: active.steps,
+    };
+  }
+  if (active.stopReason === "unrecoverable-error") {
+    return {
+      status: "error",
+      stopReason: active.stopReason,
+      steps: active.steps,
+      error: active.errorMessage ?? formatError(executionError ?? "PI model request failed"),
+    };
+  }
+  return {
+    status: "stopped",
+    stopReason: active.stopReason,
+    steps: active.steps,
   };
 }

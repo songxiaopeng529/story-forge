@@ -3,12 +3,60 @@
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionMetadataRecord } from "../persistence/session-repository";
 import { PiSessionAdapter } from "../pi/pi-session-adapter";
 
 describe("PiSessionAdapter", () => {
+  it("creates a distinct child transcript for each execution", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-pi-child-adapter-"));
+    const workspacePath = join(rootDir, "workspace");
+    await mkdir(workspacePath, { recursive: true });
+    const adapter = new PiSessionAdapter({
+      rootDir,
+      workspaces: {
+        get: vi.fn(async () => ({
+          id: "sf_workspace_project",
+          name: "Project",
+          path: workspacePath,
+          trusted: true,
+          createdAt: "2026-08-31T00:00:00.000Z",
+          updatedAt: "2026-08-31T00:00:00.000Z",
+        })),
+      },
+      piModels: {} as never,
+    });
+    const rootSessionDir = adapter.sessionDirFor("sf_workspace_project");
+    await mkdir(rootSessionDir, { recursive: true });
+    const rootManager = SessionManager.create(workspacePath, rootSessionDir, {
+      id: "sf_session_root",
+    });
+
+    const first = await adapter.createAgentExecutionSession({
+      workspaceId: "sf_workspace_project",
+      turnId: "sf_turn_parent",
+      executionId: "sf_agent_execution_first",
+    });
+    const second = await adapter.createAgentExecutionSession({
+      workspaceId: "sf_workspace_project",
+      turnId: "sf_turn_parent",
+      executionId: "sf_agent_execution_second",
+    });
+
+    const executionDir = adapter.agentExecutionDirFor(
+      "sf_workspace_project",
+      "sf_turn_parent",
+    );
+    expect(first.sessionManager.getSessionId()).toBe("sf_agent_execution_first");
+    expect(second.sessionManager.getSessionId()).toBe("sf_agent_execution_second");
+    expect(first.transcriptFile).not.toBe(second.transcriptFile);
+    expect(first.transcriptFile).not.toBe(rootManager.getSessionFile());
+    expect(second.transcriptFile).not.toBe(rootManager.getSessionFile());
+    expect(relative(executionDir, dirname(first.transcriptFile))).not.toMatch(/^\.\./);
+    expect(relative(executionDir, dirname(second.transcriptFile))).not.toMatch(/^\.\./);
+  });
+
   it("loads transcript messages without requiring a registered workspace", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "story-forge-pi-adapter-"));
     const sessionDir = join(rootDir, "sessions", "transcripts", "sf_workspace_removed");

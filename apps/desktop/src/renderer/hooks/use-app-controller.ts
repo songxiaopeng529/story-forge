@@ -1,5 +1,7 @@
 import type {
   AgentEvent,
+  AgentExecutionId,
+  AgentRunView,
   AppLanguage,
   AutomationView,
   CommandExecutionMode,
@@ -25,6 +27,7 @@ import type {
   WorkspaceView,
 } from "../../shared/story-forge-api";
 import type { TurnRuntimeState } from "../components/agent-layout";
+import type { ChildAgentActivities } from "../components/agent-run-tree";
 import { formatError, upsertSession, upsertWorkspace } from "../utils/renderer-utils";
 import type { AutomationProposalTimelineState } from "../utils/timeline";
 
@@ -80,6 +83,8 @@ export type AppController = {
 
   // per-session runtime state
   activities: AgentEvent[];
+  agentRun: AgentRunView | undefined;
+  childAgentActivities: ChildAgentActivities;
   modelRequests: ModelRequestEvent[];
   automationProposals: AutomationProposalTimelineState[];
   turnRuntime: TurnRuntimeState | undefined;
@@ -146,6 +151,8 @@ export function useAppController(): AppController {
   const [selectedSessionId, setSelectedSessionId] = useState<SessionId>();
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>("deepseek");
   const [activities, setActivities] = useState<Record<string, AgentEvent[]>>({});
+  const [agentRuns, setAgentRuns] = useState<Partial<Record<TurnId, AgentRunView>>>({});
+  const [childAgentActivities, setChildAgentActivities] = useState<ChildAgentActivities>({});
   const [automations, setAutomations] = useState<AutomationView[]>([]);
   const [automationProposals, setAutomationProposals] =
     useState<Record<string, AutomationProposalTimelineState[]>>({});
@@ -238,6 +245,10 @@ export function useAppController(): AppController {
     ? automationProposals[selectedSessionId] ?? []
     : [];
   const sessionTurnRuntime = selectedSessionId ? turnRuntimes[selectedSessionId] : undefined;
+  const selectedAgentRunTurnId = activeTurnId ?? selectedSession?.lastTurnId;
+  const selectedAgentRun = selectedAgentRunTurnId
+    ? agentRuns[selectedAgentRunTurnId]
+    : undefined;
 
   useEffect(() => {
     gitMountedRef.current = true;
@@ -245,6 +256,27 @@ export function useAppController(): AppController {
     const terminalTurnIds = new Set<TurnId>();
     const unsubscribe = window.storyForge.turns.onEvent((event) => {
       if (disposed) {
+        return;
+      }
+      if (isChildAgentEvent(event)) {
+        setChildAgentActivities((current) => ({
+          ...current,
+          [event.agentExecutionId]: appendUniqueEvent(
+            current[event.agentExecutionId] ?? [],
+            event,
+          ),
+        }));
+        if (isChildLifecycleEvent(event)) {
+          setAgentRuns((current) => {
+            const run = current[event.turnId];
+            if (!run) {
+              return current;
+            }
+            const updated = applyChildLifecycleEvent(run, event);
+            return updated === run ? current : { ...current, [event.turnId]: updated };
+          });
+          void refreshAgentRun(event.turnId);
+        }
         return;
       }
       setActivities((current) => ({
@@ -342,6 +374,7 @@ export function useAppController(): AppController {
             steps: 0,
           },
         }));
+        void refreshAgentRun(event.turnId);
       }
       if (event.type === "runtime.completed" || event.type === "runtime.error") {
         terminalTurnIds.add(event.turnId);
@@ -375,6 +408,7 @@ export function useAppController(): AppController {
           };
         });
         void refreshSession(event.sessionId);
+        void refreshAgentRun(event.turnId);
         void refreshGitRepository(selectedWorkspaceIdRef.current);
       }
     });
@@ -469,6 +503,16 @@ export function useAppController(): AppController {
   }, []);
 
   useEffect(() => {
+    if (!selectedSession?.lastTurnId) {
+      return;
+    }
+    void refreshAgentRun(selectedSession.lastTurnId);
+  // A Session selection is an explicit hydration boundary, even if two
+  // Sessions happen to point at an already cached Turn snapshot.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSession?.id, selectedSession?.lastTurnId]);
+
+  useEffect(() => {
     setImageAttachments([]);
   }, [selectedSessionId]);
 
@@ -527,6 +571,29 @@ export function useAppController(): AppController {
       setSessions((current) => upsertSession(current, session));
     } catch (refreshError) {
       setError(formatError(refreshError));
+    }
+  }
+
+  async function refreshAgentRun(turnId: TurnId): Promise<void> {
+    try {
+      const run = await window.storyForge.agentRuns.get(turnId);
+      setAgentRuns((current) => {
+        if (!run) {
+          if (!current[turnId]) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[turnId];
+          return next;
+        }
+        const existing = current[turnId];
+        if (existing && existing.sequence > run.sequence) {
+          return current;
+        }
+        return { ...current, [turnId]: run };
+      });
+    } catch (runError) {
+      setError(formatError(runError));
     }
   }
 
@@ -712,6 +779,7 @@ export function useAppController(): AppController {
           ...(attachments.length ? { imageAttachments: attachments } : {}),
         });
         setActiveTurns((current) => ({ ...current, [targetSession.id]: turnId }));
+        void refreshAgentRun(turnId);
       } catch (turnError) {
         setError(formatError(turnError));
         await refreshSession(targetSession.id);
@@ -1229,6 +1297,8 @@ export function useAppController(): AppController {
 
     // per-session runtime
     activities: sessionActivities,
+    agentRun: selectedAgentRun,
+    childAgentActivities,
     modelRequests: sessionModelRequests,
     automationProposals: sessionAutomationProposals,
     turnRuntime: sessionTurnRuntime,
@@ -1284,6 +1354,80 @@ export function useAppController(): AppController {
     selectWorkspace,
     selectSession,
     refreshGitRepository,
+  };
+}
+
+type ChildLifecycleEvent = Extract<AgentEvent, {
+  type:
+    | "agent.execution.queued"
+    | "agent.execution.started"
+    | "agent.execution.completed"
+    | "agent.execution.failed"
+    | "agent.execution.cancelled";
+}> & { agentExecutionId: AgentExecutionId };
+
+function isChildAgentEvent(
+  event: AgentEvent,
+): event is AgentEvent & { agentExecutionId: AgentExecutionId; parentAgentExecutionId: AgentExecutionId } {
+  return event.agentExecutionId !== undefined && event.parentAgentExecutionId !== undefined;
+}
+
+function isChildLifecycleEvent(
+  event: AgentEvent & { agentExecutionId: AgentExecutionId },
+): event is ChildLifecycleEvent {
+  return event.type === "agent.execution.queued"
+    || event.type === "agent.execution.started"
+    || event.type === "agent.execution.completed"
+    || event.type === "agent.execution.failed"
+    || event.type === "agent.execution.cancelled";
+}
+
+function appendUniqueEvent(events: AgentEvent[], event: AgentEvent): AgentEvent[] {
+  if (event.eventId && events.some((candidate) => candidate.eventId === event.eventId)) {
+    return events;
+  }
+  return [...events, event];
+}
+
+function applyChildLifecycleEvent(run: AgentRunView, event: ChildLifecycleEvent): AgentRunView {
+  if (event.sequence !== undefined && event.sequence <= run.sequence) {
+    return run;
+  }
+  const index = run.executions.findIndex((execution) => execution.id === event.agentExecutionId);
+  if (index < 0) {
+    return run;
+  }
+  const occurredAt = event.occurredAt ?? run.updatedAt;
+  const current = run.executions[index]!;
+  const execution = event.type === "agent.execution.queued"
+    ? { ...current, role: event.role, objective: event.objective, status: "queued" as const }
+    : event.type === "agent.execution.started"
+      ? { ...current, status: "running" as const, startedAt: occurredAt }
+      : event.type === "agent.execution.completed"
+        ? {
+            ...current,
+            status: "completed" as const,
+            endedAt: occurredAt,
+            usage: event.usage,
+            report: event.report,
+            truncated: event.truncated,
+          }
+        : event.type === "agent.execution.failed"
+          ? {
+              ...current,
+              status: "failed" as const,
+              endedAt: occurredAt,
+              usage: event.usage,
+              error: event.error,
+            }
+          : { ...current, status: "cancelled" as const, endedAt: occurredAt };
+  const executions = [...run.executions];
+  executions[index] = execution;
+  return {
+    ...run,
+    sequence: Math.max(run.sequence, event.sequence ?? run.sequence),
+    updatedAt: occurredAt,
+    executions,
   };
 }
 

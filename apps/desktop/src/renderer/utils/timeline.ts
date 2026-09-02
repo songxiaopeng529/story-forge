@@ -6,12 +6,15 @@ import type {
   MessageDeliveryMode,
   SessionTask,
   TurnId,
+  UnsequencedAgentEvent,
 } from "@story-forge/shared";
 import type {
   ImageAttachmentView,
   PersistedMessageView,
   SessionView,
 } from "../../shared/story-forge-api";
+
+type TimelineAgentEvent = AgentEvent | UnsequencedAgentEvent;
 
 export type AutomationProposalTimelineState = {
   proposalId: string;
@@ -20,6 +23,7 @@ export type AutomationProposalTimelineState = {
 };
 
 const HUMAN_INPUT_TOOL_NAME = "ask_user";
+const AGENT_DELEGATE_TOOL_NAME = "agent_delegate";
 
 export type TimelineItem =
   | {
@@ -48,6 +52,18 @@ export type TimelineItem =
       output?: unknown;
     }
   | {
+      type: "delegate-summary";
+      id: string;
+      callId: string;
+      status: "running" | "completed" | "failed";
+      taskCount: number;
+      objectives: string[];
+      resultStatus?: "completed" | "partial" | "failed" | "cancelled";
+      completedCount: number;
+      failedCount: number;
+      cancelledCount: number;
+    }
+  | {
       type: "automation-proposal";
       id: string;
       proposalId: string;
@@ -74,7 +90,7 @@ export type TimelineItem =
 
 export function buildTimeline(input: {
   session: SessionView | undefined;
-  activities: AgentEvent[];
+  activities: TimelineAgentEvent[];
   activeTurnId: TurnId | undefined;
   automationProposals?: AutomationProposalTimelineState[];
   humanInputRequest?: HumanInputRequestEvent;
@@ -151,7 +167,7 @@ export function buildTimeline(input: {
   return items;
 }
 
-function formatCompactionNotice(event: ContextCompactedEvent): string {
+function formatCompactionNotice(event: ContextCompactedEvent | Extract<UnsequencedAgentEvent, { type: "context.compacted" }>): string {
   if (
     event.budgetTokens === undefined
     || event.beforeTokens === undefined
@@ -180,7 +196,7 @@ function createTaskListItem(sessionId: string, tasks: SessionTask[]): TimelineIt
 
 function resolveTaskSnapshot(input: {
   persistedTasks: SessionTask[];
-  activities: AgentEvent[];
+  activities: TimelineAgentEvent[];
   activeTurnId: TurnId | undefined;
 }): SessionTask[] {
   if (!input.activeTurnId) {
@@ -236,6 +252,16 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
         continue;
       }
       const toolCall = toolCallsById.get(message.toolCallId);
+      if (message.name === AGENT_DELEGATE_TOOL_NAME) {
+        items.push(createDelegateSummaryItem({
+          id: message.id,
+          callId: message.toolCallId,
+          status: message.ok ? "completed" : "failed",
+          input: toolCall?.input,
+          output: message.content,
+        }));
+        continue;
+      }
       items.push({
         type: "tool-step",
         id: message.id,
@@ -273,6 +299,15 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
       if (toolResultIds.has(toolCall.id)) {
         continue;
       }
+      if (toolCall.name === AGENT_DELEGATE_TOOL_NAME) {
+        items.push(createDelegateSummaryItem({
+          id: `${message.id}-delegate-${toolCall.id}`,
+          callId: toolCall.id,
+          status: "running",
+          input: toolCall.input,
+        }));
+        continue;
+      }
       items.push({
         type: "tool-step",
         id: `${message.id}-tool-${toolCall.id}`,
@@ -303,10 +338,11 @@ function buildPersistedItems(messages: PersistedMessageView[]): TimelineItem[] {
 
 function appendActiveTurnItems(
   items: TimelineItem[],
-  activities: AgentEvent[],
+  activities: TimelineAgentEvent[],
   activeTurnId: TurnId,
 ): void {
   const toolIndexes = new Map<string, number>();
+  const delegateIndexes = new Map<string, number>();
   let streamIndex: number | undefined;
   let streamCount = 0;
 
@@ -346,6 +382,17 @@ function appendActiveTurnItems(
       if (event.name === "plan_mode_complete" || event.name === HUMAN_INPUT_TOOL_NAME) {
         continue;
       }
+      if (event.name === AGENT_DELEGATE_TOOL_NAME) {
+        const index = items.length;
+        items.push(createDelegateSummaryItem({
+          id: `delegate-${activeTurnId}-${event.callId}`,
+          callId: event.callId,
+          status: "running",
+          input: event.input,
+        }));
+        delegateIndexes.set(event.callId, index);
+        continue;
+      }
       const index = items.length;
       items.push({
         type: "tool-step",
@@ -361,6 +408,31 @@ function appendActiveTurnItems(
 
     if (event.type === "tool.result") {
       if (event.name === "plan_mode_complete" || event.name === HUMAN_INPUT_TOOL_NAME) {
+        continue;
+      }
+      if (event.name === AGENT_DELEGATE_TOOL_NAME) {
+        const index = delegateIndexes.get(event.callId);
+        const existing = index === undefined ? undefined : items[index];
+        const summary = createDelegateSummaryItem({
+          id: existing?.id ?? `delegate-${activeTurnId}-${event.callId}`,
+          callId: event.callId,
+          status: event.ok ? "completed" : "failed",
+          input: existing?.type === "delegate-summary"
+            ? { tasks: existing.objectives.map((objective) => ({ objective })) }
+            : undefined,
+          output: event.output,
+        });
+        if (index !== undefined && existing?.type === "delegate-summary") {
+          items[index] = {
+            ...summary,
+            taskCount: existing.taskCount || summary.taskCount,
+            objectives: existing.objectives.length > 0
+              ? existing.objectives
+              : summary.objectives,
+          };
+        } else {
+          items.push(summary);
+        }
         continue;
       }
       const index = toolIndexes.get(event.callId);
@@ -411,6 +483,63 @@ function appendActiveTurnItems(
       });
     }
   }
+}
+
+function createDelegateSummaryItem(input: {
+  id: string;
+  callId: string;
+  status: "running" | "completed" | "failed";
+  input?: unknown;
+  output?: unknown;
+}): Extract<TimelineItem, { type: "delegate-summary" }> {
+  const taskInput = asRecord(input.input);
+  const tasks = Array.isArray(taskInput?.tasks) ? taskInput.tasks : [];
+  const objectives = tasks.flatMap((task) => {
+    const objective = asRecord(task)?.objective;
+    return typeof objective === "string" && objective.trim() ? [objective.trim()] : [];
+  });
+  const result = asRecord(parseJsonObject(input.output));
+  const results = Array.isArray(result?.results) ? result.results : [];
+  const statuses = results.map((entry) => asRecord(entry)?.status);
+  const resultStatus = isDelegateResultStatus(result?.status) ? result.status : undefined;
+  return {
+    type: "delegate-summary",
+    id: input.id,
+    callId: input.callId,
+    status: input.status,
+    taskCount: Math.max(tasks.length, results.length),
+    objectives,
+    ...(resultStatus ? { resultStatus } : {}),
+    completedCount: statuses.filter((status) => status === "completed").length,
+    failedCount: statuses.filter((status) => status === "failed").length,
+    cancelledCount: statuses.filter((status) => status === "cancelled").length,
+  };
+}
+
+function parseJsonObject(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function isDelegateResultStatus(
+  value: unknown,
+): value is "completed" | "partial" | "failed" | "cancelled" {
+  return value === "completed"
+    || value === "partial"
+    || value === "failed"
+    || value === "cancelled";
 }
 
 function normalizePersistedPlan(content: string): string {

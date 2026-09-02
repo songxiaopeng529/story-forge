@@ -3,11 +3,10 @@ import type {
   ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
 import type {
-  AgentEvent,
-  ExtensionUiRequestEvent,
   ExtensionUiResponse,
   SessionId,
   TurnId,
+  UnsequencedAgentEvent,
 } from "@story-forge/shared";
 
 type PendingRequest = {
@@ -25,7 +24,7 @@ type RequestInput =
 export class PiExtensionUiBridge {
   private readonly pending = new Map<string, PendingRequest>();
 
-  constructor(private readonly emit: (event: AgentEvent) => void) {}
+  constructor(private readonly emit: (event: UnsequencedAgentEvent) => void) {}
 
   createContext(input: {
     sessionId: SessionId;
@@ -187,7 +186,7 @@ export class PiExtensionUiBridge {
         turnId: context.turnId,
         requestId,
         ...input,
-      } as ExtensionUiRequestEvent);
+      } as Extract<UnsequencedAgentEvent, { type: "extension.ui.request" }>);
     });
   }
 }

@@ -1,6 +1,13 @@
 import type { CommandExecutionMode, MessageDeliveryMode } from "./settings";
 import type { AutomationProposalView } from "./extensions";
 import type { SessionTask, TaskId } from "./tasks";
+import type {
+  AgentEventId,
+  AgentExecutionId,
+  AgentExecutionUsage,
+  AgentReport,
+  ChildAgentRole,
+} from "./agent-runs";
 
 export type SessionId = `sf_session_${string}`;
 export type TurnId = `sf_turn_${string}`;
@@ -14,61 +21,58 @@ export type AgentStopReason =
   | "unfinished-tasks"
   | "unrecoverable-error";
 
-export type RuntimeStartedEvent = {
-  type: "runtime.started";
+export type AgentEventEnvelope = {
+  eventId: AgentEventId;
+  /** Monotonic within one StoryForge Turn. */
+  sequence: number;
+  occurredAt: string;
   sessionId: SessionId;
   turnId: TurnId;
+  agentExecutionId: AgentExecutionId;
+  parentAgentExecutionId?: AgentExecutionId;
+};
+
+export type RuntimeStartedEvent = AgentEventEnvelope & {
+  type: "runtime.started";
   createdAt: string;
 };
 
-export type RuntimeCompletedEvent = {
+export type RuntimeCompletedEvent = AgentEventEnvelope & {
   type: "runtime.completed";
-  sessionId: SessionId;
-  turnId: TurnId;
   stopReason?: AgentStopReason;
   steps?: number;
 };
 
-export type RuntimeErrorEvent = {
+export type RuntimeErrorEvent = AgentEventEnvelope & {
   type: "runtime.error";
-  sessionId: SessionId;
-  turnId: TurnId;
   message: string;
   stopReason?: AgentStopReason;
   steps?: number;
 };
 
-export type MessageDeltaEvent = {
+export type MessageDeltaEvent = AgentEventEnvelope & {
   type: "message.delta";
-  sessionId: SessionId;
-  turnId: TurnId;
   content: string;
   delivery?: MessageDeliveryMode;
 };
 
-export type ToolCallEvent = {
+export type ToolCallEvent = AgentEventEnvelope & {
   type: "tool.call";
-  sessionId: SessionId;
-  turnId: TurnId;
   callId: string;
   name: string;
   input: unknown;
 };
 
-export type ToolResultEvent = {
+export type ToolResultEvent = AgentEventEnvelope & {
   type: "tool.result";
-  sessionId: SessionId;
-  turnId: TurnId;
   callId: string;
   name: string;
   ok: boolean;
   output: unknown;
 };
 
-export type PermissionRequestEvent = {
+export type PermissionRequestEvent = AgentEventEnvelope & {
   type: "permission.request";
-  sessionId: SessionId;
-  turnId: TurnId;
   requestId: string;
   reason: string;
   command: {
@@ -80,9 +84,7 @@ export type PermissionRequestEvent = {
   risk: "unknown" | "high" | "destructive" | "elevated";
 };
 
-type ExtensionUiEventBase = {
-  sessionId: SessionId;
-  turnId: TurnId;
+type ExtensionUiEventBase = AgentEventEnvelope & {
   requestId: string;
 };
 
@@ -120,26 +122,20 @@ export type ExtensionUiResponse = {
   confirmed?: boolean;
 };
 
-export type ExtensionNotificationEvent = {
+export type ExtensionNotificationEvent = AgentEventEnvelope & {
   type: "extension.notification";
-  sessionId: SessionId;
-  turnId: TurnId;
   message: string;
   level: "info" | "warning" | "error";
 };
 
-export type ExtensionStatusEvent = {
+export type ExtensionStatusEvent = AgentEventEnvelope & {
   type: "extension.status";
-  sessionId: SessionId;
-  turnId: TurnId;
   key: string;
   text?: string;
 };
 
-export type ExtensionWidgetEvent = {
+export type ExtensionWidgetEvent = AgentEventEnvelope & {
   type: "extension.widget";
-  sessionId: SessionId;
-  turnId: TurnId;
   key: string;
   lines?: string[];
 };
@@ -176,10 +172,8 @@ export type HumanInputRequestPayload = {
   remark?: HumanInputRemark;
 };
 
-export type HumanInputRequestEvent = HumanInputRequestPayload & {
+export type HumanInputRequestEvent = HumanInputRequestPayload & AgentEventEnvelope & {
   type: "human.input.request";
-  sessionId: SessionId;
-  turnId: TurnId;
   requestId: string;
 };
 
@@ -200,10 +194,8 @@ export type HumanInputResponse = {
   remark?: string;
 };
 
-export type ResponseFallbackEvent = {
+export type ResponseFallbackEvent = AgentEventEnvelope & {
   type: "response.fallback";
-  sessionId: SessionId;
-  turnId: TurnId;
   from: "live";
   to: "smooth";
   reason: string;
@@ -243,10 +235,8 @@ export type InspectableSoulContext = {
   byteLength: number;
 };
 
-export type ModelRequestEvent = {
+export type ModelRequestEvent = AgentEventEnvelope & {
   type: "model.request";
-  sessionId: SessionId;
-  turnId: TurnId;
   requestId: string;
   providerId: string;
   model: string;
@@ -258,20 +248,16 @@ export type ModelRequestEvent = {
 
 export type ContextUsageSource = "provider" | "estimate";
 
-export type ContextUsageEvent = {
+export type ContextUsageEvent = AgentEventEnvelope & {
   type: "context.usage";
-  sessionId: SessionId;
-  turnId: TurnId;
   usedTokens: number;
   budgetTokens: number;
   windowTokens: number;
   source: ContextUsageSource;
 };
 
-export type ContextCompactedEvent = {
+export type ContextCompactedEvent = AgentEventEnvelope & {
   type: "context.compacted";
-  sessionId: SessionId;
-  turnId: TurnId;
   trigger: "auto" | "manual";
   beforeTokens?: number;
   afterTokens?: number;
@@ -279,21 +265,44 @@ export type ContextCompactedEvent = {
   retainedRounds?: number;
 };
 
-export type AutomationProposalEvent = {
+export type AutomationProposalEvent = AgentEventEnvelope & {
   type: "automation.proposal";
-  sessionId: SessionId;
-  turnId: TurnId;
   proposalId: string;
   proposal: AutomationProposalView;
 };
 
-export type TaskListUpdatedEvent = {
+export type TaskListUpdatedEvent = AgentEventEnvelope & {
   type: "task.list.updated";
-  sessionId: SessionId;
-  turnId: TurnId;
   tasks: SessionTask[];
   changedTaskId?: TaskId;
   reason: "created" | "updated" | "loaded" | "guard";
+};
+
+export type AgentExecutionQueuedEvent = AgentEventEnvelope & {
+  type: "agent.execution.queued";
+  role: ChildAgentRole;
+  objective: string;
+};
+
+export type AgentExecutionStartedEvent = AgentEventEnvelope & {
+  type: "agent.execution.started";
+};
+
+export type AgentExecutionCompletedEvent = AgentEventEnvelope & {
+  type: "agent.execution.completed";
+  usage: AgentExecutionUsage;
+  report: AgentReport;
+  truncated: boolean;
+};
+
+export type AgentExecutionFailedEvent = AgentEventEnvelope & {
+  type: "agent.execution.failed";
+  usage: AgentExecutionUsage;
+  error: string;
+};
+
+export type AgentExecutionCancelledEvent = AgentEventEnvelope & {
+  type: "agent.execution.cancelled";
 };
 
 export type AgentEvent =
@@ -314,7 +323,24 @@ export type AgentEvent =
   | ContextUsageEvent
   | ContextCompactedEvent
   | AutomationProposalEvent
-  | TaskListUpdatedEvent;
+  | TaskListUpdatedEvent
+  | AgentExecutionQueuedEvent
+  | AgentExecutionStartedEvent
+  | AgentExecutionCompletedEvent
+  | AgentExecutionFailedEvent
+  | AgentExecutionCancelledEvent;
+
+type LiveEnvelopeKey =
+  | "eventId"
+  | "sequence"
+  | "occurredAt"
+  | "agentExecutionId"
+  | "parentAgentExecutionId";
+
+type RemoveLiveEnvelope<T> = T extends unknown ? Omit<T, LiveEnvelopeKey> : never;
+
+/** Events emitted by a worker before the coordinator attributes and sequences them. */
+export type UnsequencedAgentEvent = RemoveLiveEnvelope<AgentEvent>;
 
 export function createSessionId(): SessionId {
   const entropy = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -331,5 +357,21 @@ export function createTurnId(): TurnId {
 export type TerminalAgentEvent = RuntimeCompletedEvent | RuntimeErrorEvent;
 
 export function isTerminalAgentEvent(event: AgentEvent): event is TerminalAgentEvent {
-  return event.type === "runtime.completed" || event.type === "runtime.error";
+  return event.parentAgentExecutionId === undefined
+    && (event.type === "runtime.completed" || event.type === "runtime.error");
+}
+
+export function hasAgentEventEnvelope(value: unknown): value is AgentEventEnvelope {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const event = value as Partial<AgentEventEnvelope>;
+  return typeof event.eventId === "string"
+    && typeof event.sequence === "number"
+    && Number.isSafeInteger(event.sequence)
+    && event.sequence > 0
+    && typeof event.occurredAt === "string"
+    && typeof event.sessionId === "string"
+    && typeof event.turnId === "string"
+    && typeof event.agentExecutionId === "string";
 }

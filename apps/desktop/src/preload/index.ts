@@ -64,6 +64,10 @@ const api = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.turnEvent, wrapped);
     },
   },
+  agentRuns: {
+    get: (turnId: TurnId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.agentRunsGet, turnId),
+  },
   permissions: {
     respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.permissionRespond, input),
   },

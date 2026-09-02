@@ -7,6 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import { AutomationRepository } from "../automation-repository";
 import { AutomationScheduler } from "../automation-scheduler";
 import { AutomationService } from "../automation-service";
+import type { TurnOutcome } from "@story-forge/agent";
+
+const completedOutcome = {
+  status: "completed",
+  stopReason: "completed",
+  steps: 0,
+} satisfies TurnOutcome;
 
 describe("AutomationScheduler", () => {
   it("runs due automations in a fresh agent session and schedules the next run", async () => {
@@ -52,8 +59,8 @@ describe("AutomationScheduler", () => {
 
   it("skips overlapping runs for the same automation", async () => {
     const fixture = await createFixture();
-    const completion = createDeferred<void>();
-    fixture.waitForTurn.mockImplementation(() => completion.promise.then(() => undefined));
+    const completion = createDeferred<TurnOutcome>();
+    fixture.waitForTurn.mockImplementation(() => completion.promise);
     const automation = await fixture.service.create({
       name: "Hourly audit",
       status: "active",
@@ -73,7 +80,7 @@ describe("AutomationScheduler", () => {
     const firstRun = fixture.scheduler.runDue();
     await vi.waitFor(() => expect(fixture.startAutomationRun).toHaveBeenCalledTimes(1));
     await fixture.scheduler.runDue();
-    completion.resolve();
+    completion.resolve(completedOutcome);
     await firstRun;
 
     await expect(fixture.service.getRuns(automation.id)).resolves.toEqual([
@@ -88,6 +95,40 @@ describe("AutomationScheduler", () => {
   it("marks failed agent starts as failed runs", async () => {
     const fixture = await createFixture();
     fixture.startAutomationRun.mockRejectedValueOnce(new Error("provider unavailable"));
+    const automation = await fixture.service.create({
+      name: "Hourly audit",
+      status: "active",
+      workspaceId: "workspace-1",
+      providerId: "deepseek",
+      model: "deepseek-v4-pro",
+      schedule: {
+        sourceText: "hourly",
+        cron: "0 * * * *",
+        timezone: "UTC",
+        summary: "",
+      },
+      prompt: "Audit the repo.",
+    });
+    fixture.now = new Date("2026-06-20T01:00:00.000Z");
+
+    await fixture.scheduler.runDue();
+
+    await expect(fixture.service.getRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({
+        status: "failed",
+        error: "provider unavailable",
+      }),
+    ]);
+  });
+
+  it("marks an error Turn outcome as a failed Automation run", async () => {
+    const fixture = await createFixture();
+    fixture.waitForTurn.mockResolvedValueOnce({
+      status: "error",
+      stopReason: "unrecoverable-error",
+      steps: 2,
+      error: "provider unavailable",
+    });
     const automation = await fixture.service.create({
       name: "Hourly audit",
       status: "active",
@@ -221,7 +262,7 @@ async function createFixture() {
   const start = vi.fn(async () => ({
     turnId: "sf_turn_existing" as const,
   }));
-  const waitForTurn = vi.fn(async () => undefined);
+  const waitForTurn = vi.fn(async (): Promise<TurnOutcome> => completedOutcome);
   const scheduler = new AutomationScheduler({
     service,
     coordinator: {

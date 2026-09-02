@@ -7,6 +7,7 @@ import type {
   TurnId,
   UpdateAutomationInput,
 } from "@story-forge/shared";
+import type { TurnOutcome } from "@story-forge/agent";
 import { createAutomationRun } from "./automation-repository";
 import type { AutomationService } from "./automation-service";
 
@@ -22,7 +23,7 @@ type AutomationCoordinator = {
     prompt: string;
     title?: string;
   }): Promise<{ sessionId: SessionId; turnId: TurnId }>;
-  waitForTurn(turnId: TurnId): Promise<void>;
+  waitForTurn(turnId: TurnId): Promise<TurnOutcome>;
 };
 
 export class AutomationScheduler {
@@ -178,7 +179,15 @@ export class AutomationScheduler {
         ...run,
         sessionId,
       });
-      await this.coordinator.waitForTurn(turnId);
+      const outcome = await this.coordinator.waitForTurn(turnId);
+      if (outcome.status !== "completed") {
+        return await this.service.updateRun({
+          ...run,
+          status: "failed",
+          completedAt: this.now().toISOString(),
+          error: outcome.error ?? outcome.stopReason,
+        });
+      }
       return await this.service.updateRun({
         ...run,
         status: "completed",

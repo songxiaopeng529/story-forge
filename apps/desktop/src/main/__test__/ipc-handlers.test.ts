@@ -21,6 +21,7 @@ describe("registerIpcHandlers", () => {
     expect(fixture.handlers.has(IPC_CHANNELS.providersList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.providersRevealSecret)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.turnsStart)).toBe(true);
+    expect(fixture.handlers.has(IPC_CHANNELS.agentRunsGet)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.automationsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.skillsList)).toBe(true);
     expect(fixture.handlers.has(IPC_CHANNELS.mcpGet)).toBe(true);
@@ -35,6 +36,12 @@ describe("registerIpcHandlers", () => {
       fixture.invoke(IPC_CHANNELS.sessionsGet, "sf_session_../../providers"),
     ).rejects.toThrow();
     expect(fixture.start).not.toHaveBeenCalled();
+    await expect(
+      fixture.invoke(IPC_CHANNELS.agentRunsGet, "invalid"),
+    ).rejects.toThrow("Invalid IPC payload");
+    await expect(
+      fixture.invoke(IPC_CHANNELS.agentRunsGet, "sf_turn_valid"),
+    ).resolves.toBeUndefined();
 
     await expect(
       fixture.invoke(IPC_CHANNELS.turnsStart, {
@@ -639,6 +646,8 @@ function createFixture(options: { providers?: ProviderView[] } = {}) {
   const coordinator = {
     start,
     stop: vi.fn(),
+    compactSession: vi.fn(),
+    getAgentRun: vi.fn(async () => undefined),
     respondToPermission: vi.fn(),
     respondToExtensionUi: vi.fn(),
     respondToHumanInput: vi.fn(),

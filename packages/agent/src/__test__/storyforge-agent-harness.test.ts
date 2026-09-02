@@ -2,13 +2,17 @@ import type {
   AgentSession,
   AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
-import type { AgentEvent, HumanInputRequestPayload } from "@story-forge/shared";
+import type {
+  HumanInputRequestPayload,
+  UnsequencedAgentEvent,
+} from "@story-forge/shared";
 import { HUMAN_INPUT_TOOL_NAME, type HumanInputToolResponse } from "@story-forge/extensions";
 import { describe, expect, it, vi } from "vitest";
 import {
   StoryForgeAgentHarness,
   toContextUsageEvent,
 } from "../runtime/storyforge-agent-harness";
+import type { TurnOutcome } from "../runtime/turn-outcome";
 import type { SessionMetadataRecord, SessionRepository } from "../persistence/session-repository";
 import type { PiModelService } from "../pi/pi-model-service";
 import type { PiSessionAdapter } from "../pi/pi-session-adapter";
@@ -50,7 +54,7 @@ describe("toContextUsageEvent", () => {
 
 describe("StoryForgeAgentHarness context usage events", () => {
   it("retries usage at agent_end after the final post-compaction message is persisted", () => {
-    const emitted: AgentEvent[] = [];
+    const emitted: UnsequencedAgentEvent[] = [];
     const harness = new StoryForgeAgentHarness({
       sessionRepository: {} as SessionRepository,
       workspaceRepository: {} as StoryForgeWorkspaceStore,
@@ -159,7 +163,7 @@ describe("StoryForgeAgentHarness model selection", () => {
       piSessionId: "pi-existing",
       piSessionFile: "/tmp/pi-existing.jsonl",
     } satisfies SessionMetadataRecord;
-    const emitted: AgentEvent[] = [];
+    const emitted: UnsequencedAgentEvent[] = [];
     const resolveModel = vi.fn(async () => resolvedModel);
     const updateModel = vi.fn(async () => updatedSession);
     const ensurePiSession = vi.fn(async () => ({
@@ -259,6 +263,149 @@ describe("StoryForgeAgentHarness model selection", () => {
   });
 });
 
+describe("StoryForgeAgentHarness terminal outcomes", () => {
+  it("persists the terminal Session status before emitting runtime.completed", async () => {
+    const terminalWrite = createDeferred<SessionMetadataRecord>();
+    const fixture = createTurnFixture({
+      markStatus: async (_sessionId, input) => {
+        if (input.status === "running") {
+          return fixtureSession;
+        }
+        return terminalWrite.promise;
+      },
+    });
+
+    const { turnId: activeTurnId } = await fixture.harness.start({
+      sessionId,
+      prompt: "Inspect the workspace.",
+    });
+    const outcome = fixture.harness.waitForTurn(activeTurnId);
+
+    await vi.waitFor(() => {
+      expect(fixture.markStatus).toHaveBeenCalledWith(sessionId, {
+        status: "completed",
+        stopReason: "completed",
+      });
+    });
+    expect(fixture.emitted).not.toContainEqual(expect.objectContaining({
+      type: "runtime.completed",
+    }));
+
+    terminalWrite.resolve({ ...fixtureSession, status: "completed" });
+
+    await expect(outcome).resolves.toEqual({
+      status: "completed",
+      stopReason: "completed",
+      steps: 0,
+    });
+    expect(fixture.emitted).toContainEqual(expect.objectContaining({
+      type: "runtime.completed",
+      sessionId,
+      turnId: activeTurnId,
+      stopReason: "completed",
+      steps: 0,
+    }));
+  });
+
+  it("persists an execution error before emitting runtime.error", async () => {
+    const lifecycle: string[] = [];
+    const fixture = createTurnFixture({
+      prompt: async () => {
+        throw new Error("provider unavailable");
+      },
+      markStatus: async (_sessionId, input) => {
+        if (input.status !== "running") {
+          lifecycle.push(`persist:${input.status}`);
+        }
+        return { ...fixtureSession, status: input.status };
+      },
+      emit: (event) => {
+        if (event.type === "runtime.completed" || event.type === "runtime.error") {
+          lifecycle.push(`emit:${event.type}`);
+        }
+      },
+    });
+
+    const { turnId: activeTurnId } = await fixture.harness.start({
+      sessionId,
+      prompt: "Inspect the workspace.",
+    });
+
+    await expect(fixture.harness.waitForTurn(activeTurnId)).resolves.toEqual({
+      status: "error",
+      stopReason: "unrecoverable-error",
+      steps: 0,
+      error: "provider unavailable",
+    });
+    expect(lifecycle).toEqual([
+      "persist:error",
+      "emit:runtime.error",
+    ]);
+    expect(fixture.markStatus).toHaveBeenLastCalledWith(sessionId, {
+      status: "error",
+      stopReason: "unrecoverable-error",
+    });
+  });
+
+  it("returns the durable outcome from waitForTurn", async () => {
+    const fixture = createTurnFixture();
+    const { turnId: activeTurnId } = await fixture.harness.start({
+      sessionId,
+      prompt: "Inspect the workspace.",
+    });
+
+    const outcome: TurnOutcome = await fixture.harness.waitForTurn(activeTurnId);
+
+    expect(outcome).toEqual({
+      status: "completed",
+      stopReason: "completed",
+      steps: 0,
+    });
+  });
+
+  it("returns a stopped outcome after the user stops a running turn", async () => {
+    const promptCompletion = createDeferred<void>();
+    let emitPiEvent: ((event: AgentSessionEvent) => void) | undefined;
+    let agentEnded = false;
+    const abort = vi.fn(async () => {
+      if (!agentEnded) {
+        agentEnded = true;
+        emitPiEvent?.({
+          type: "agent_end",
+          messages: [],
+          willRetry: false,
+        } as AgentSessionEvent);
+        promptCompletion.resolve();
+      }
+    });
+    const fixture = createTurnFixture({
+      prompt: () => promptCompletion.promise,
+      abort,
+      subscribe: (listener) => {
+        emitPiEvent = listener;
+        return () => undefined;
+      },
+    });
+
+    const { turnId: activeTurnId } = await fixture.harness.start({
+      sessionId,
+      prompt: "Inspect the workspace.",
+    });
+    await vi.waitFor(() => expect(fixture.prompt).toHaveBeenCalledOnce());
+    await fixture.harness.stop(activeTurnId);
+
+    await expect(fixture.harness.waitForTurn(activeTurnId)).resolves.toEqual({
+      status: "stopped",
+      stopReason: "user-stopped",
+      steps: 0,
+    });
+    expect(fixture.markStatus).toHaveBeenLastCalledWith(sessionId, {
+      status: "stopped",
+      stopReason: "user-stopped",
+    });
+  });
+});
+
 describe("StoryForgeAgentHarness human input", () => {
   it("registers the ask_user tool with StoryForge tools", () => {
     const harness = createHarness([]);
@@ -301,7 +448,7 @@ describe("StoryForgeAgentHarness human input", () => {
   });
 
   it("emits human input requests and resolves with renderer responses", async () => {
-    const emitted: AgentEvent[] = [];
+    const emitted: UnsequencedAgentEvent[] = [];
     const harness = createHarness(emitted);
     const requestHumanInput = (
       harness as unknown as {
@@ -381,7 +528,7 @@ describe("StoryForgeAgentHarness human input", () => {
   });
 });
 
-function createHarness(emitted: AgentEvent[]): StoryForgeAgentHarness {
+function createHarness(emitted: UnsequencedAgentEvent[]): StoryForgeAgentHarness {
   return new StoryForgeAgentHarness({
     sessionRepository: {} as SessionRepository,
     workspaceRepository: {} as StoryForgeWorkspaceStore,
@@ -389,4 +536,78 @@ function createHarness(emitted: AgentEvent[]): StoryForgeAgentHarness {
     piSessions: {} as PiSessionAdapter,
     emit: (event) => emitted.push(event),
   });
+}
+
+const fixtureSession = {
+  schemaVersion: 2,
+  id: sessionId,
+  workspaceId: "workspace-1",
+  title: "Existing session",
+  providerId: "deepseek",
+  model: "deepseek-v4-pro",
+  status: "idle",
+  createdAt: "2026-08-12T00:00:00.000Z",
+  updatedAt: "2026-08-12T00:00:00.000Z",
+  tasks: [],
+} satisfies SessionMetadataRecord;
+
+function createTurnFixture(options: {
+  prompt?: () => Promise<void>;
+  abort?: () => Promise<void>;
+  subscribe?: (listener: (event: AgentSessionEvent) => void) => () => void;
+  markStatus?: (
+    sessionId: SessionMetadataRecord["id"],
+    input: Parameters<SessionRepository["markStatus"]>[1],
+  ) => Promise<SessionMetadataRecord>;
+  emit?: (event: UnsequencedAgentEvent) => void;
+} = {}) {
+  const emitted: UnsequencedAgentEvent[] = [];
+  const prompt = vi.fn(options.prompt ?? (async () => undefined));
+  const piSession = {
+    subscribe: vi.fn(options.subscribe ?? (() => () => undefined)),
+    prompt,
+    waitForIdle: vi.fn(async () => undefined),
+    abort: vi.fn(options.abort ?? (async () => undefined)),
+    dispose: vi.fn(),
+    getContextUsage: vi.fn(() => undefined),
+  } as unknown as AgentSession;
+  const markStatus = vi.fn(options.markStatus ?? (async (_sessionId, input) => ({
+    ...fixtureSession,
+    status: input.status,
+  })));
+  const harness = new StoryForgeAgentHarness({
+    sessionRepository: {
+      get: vi.fn(async () => fixtureSession),
+      markStatus,
+    } as unknown as SessionRepository,
+    workspaceRepository: {} as StoryForgeWorkspaceStore,
+    piModels: {} as PiModelService,
+    piSessions: {} as PiSessionAdapter,
+    emit: (event) => {
+      emitted.push(event);
+      options.emit?.(event);
+    },
+  });
+  (
+    harness as unknown as {
+      createPiSessionForTurn(): Promise<AgentSession>;
+    }
+  ).createPiSessionForTurn = vi.fn(async () => piSession);
+
+  return {
+    harness,
+    emitted,
+    markStatus,
+    prompt,
+  };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
 }

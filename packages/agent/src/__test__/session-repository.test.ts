@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -59,6 +59,58 @@ describe("SessionRepository", () => {
     expect(await repository.get(session.id)).toMatchObject({
       status: "interrupted",
       stopReason: "application-restarted",
+      lastTurnId: "sf_turn_active",
+    });
+    expect((await repository.get(session.id)).currentTurnId).toBeUndefined();
+  });
+
+  it("retains the latest turn id after terminal status updates", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const repository = new SessionRepository({ rootDir });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    const running = await repository.markStatus(session.id, {
+      status: "running",
+      turnId: "sf_turn_latest",
+    });
+    expect(running).toMatchObject({
+      currentTurnId: "sf_turn_latest",
+      lastTurnId: "sf_turn_latest",
+    });
+
+    const completed = await repository.markStatus(session.id, {
+      status: "completed",
+      stopReason: "completed",
+    });
+    expect(completed.lastTurnId).toBe("sf_turn_latest");
+    expect(completed.currentTurnId).toBeUndefined();
+  });
+
+  it("accepts existing schema-v2 metadata without lastTurnId", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const sessionsDir = join(rootDir, "sessions", "metadata");
+    const sessionId = "sf_session_existing";
+    await mkdir(sessionsDir, { recursive: true });
+    await writeFile(join(sessionsDir, `${sessionId}.json`), JSON.stringify({
+      schemaVersion: 2,
+      id: sessionId,
+      workspaceId: "sf_workspace_project",
+      title: "Existing session",
+      providerId: "openai",
+      model: "gpt-test",
+      status: "completed",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      updatedAt: "2026-08-28T00:00:00.000Z",
+      tasks: [],
+    }), "utf8");
+
+    await expect(new SessionRepository({ rootDir }).get(sessionId as never)).resolves.toMatchObject({
+      id: sessionId,
+      status: "completed",
     });
   });
 
@@ -160,6 +212,61 @@ describe("SessionRepository", () => {
     await expect(
       repository.delete("sf_session_../../providers" as never),
     ).rejects.toThrow("Invalid session id");
+  });
+
+  it("deletes agent runs before the PI transcript and session metadata", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    const calls: string[] = [];
+    const piAdapter = createFakePiAdapter();
+    piAdapter.deletePiSession = async () => {
+      calls.push("pi");
+    };
+    const repository = new SessionRepository({
+      rootDir,
+      piAdapter,
+      agentRunStore: {
+        async deleteSessionRuns() {
+          calls.push("runs");
+        },
+      },
+    });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    await repository.delete(session.id);
+
+    expect(calls).toEqual(["runs", "pi"]);
+    await expect(repository.get(session.id)).rejects.toThrow(`Session not found: ${session.id}`);
+  });
+
+  it("does not delete the PI transcript when agent-run cleanup fails", async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), "story-forge-session-"));
+    let piDeleted = false;
+    const piAdapter = createFakePiAdapter();
+    piAdapter.deletePiSession = async () => {
+      piDeleted = true;
+    };
+    const repository = new SessionRepository({
+      rootDir,
+      piAdapter,
+      agentRunStore: {
+        async deleteSessionRuns() {
+          throw new Error("Run cleanup failed");
+        },
+      },
+    });
+    const session = await repository.create({
+      workspaceId: "sf_workspace_project",
+      providerId: "openai",
+      model: "gpt-test",
+    });
+
+    await expect(repository.delete(session.id)).rejects.toThrow("Run cleanup failed");
+    expect(piDeleted).toBe(false);
+    await expect(repository.get(session.id)).resolves.toMatchObject({ id: session.id });
   });
 
   it("serializes concurrent metadata updates so titles and tasks are not lost", async () => {

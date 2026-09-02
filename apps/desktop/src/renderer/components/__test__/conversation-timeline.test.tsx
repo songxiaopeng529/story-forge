@@ -127,6 +127,31 @@ describe("ConversationTimeline assistant markdown", () => {
       .toHaveAttribute("aria-hidden", "false");
   });
 
+  it("renders agent delegation as one aggregate summary card", () => {
+    const items: TimelineItem[] = [{
+      type: "delegate-summary",
+      id: "delegate-1",
+      callId: "call-delegate",
+      status: "completed",
+      taskCount: 2,
+      objectives: ["Map the runtime", "Review cancellation"],
+      resultStatus: "partial",
+      completedCount: 1,
+      failedCount: 1,
+      cancelledCount: 0,
+    }];
+
+    render(<ConversationTimeline items={items} />);
+
+    expect(screen.getAllByTestId("delegate-summary-card")).toHaveLength(1);
+    expect(screen.getByRole("article", { name: "Agent delegation Partial" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("2 child agents · 1 completed · 1 failed")).toBeInTheDocument();
+    expect(screen.getByText("Map the runtime")).toBeInTheDocument();
+    expect(screen.getByText("Review cancellation")).toBeInTheDocument();
+    expect(screen.queryByTestId("tool-activity-group")).not.toBeInTheDocument();
+  });
+
   it("maps coding and MCP tools to human-readable activity labels", () => {
     const tools: Array<[string, string]> = [
       ["write", "Write file"],

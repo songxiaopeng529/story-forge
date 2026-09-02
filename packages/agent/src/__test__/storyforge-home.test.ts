@@ -20,6 +20,8 @@ describe("StoryForge home", () => {
       soulPath: "/Users/storyforge/.story-forge/soul.md",
       sessionMetadataDir: "/Users/storyforge/.story-forge/sessions/metadata",
       sessionTranscriptsDir: "/Users/storyforge/.story-forge/sessions/transcripts",
+      agentRunsDir: "/Users/storyforge/.story-forge/sessions/agent-runs",
+      agentTranscriptsDir: "/Users/storyforge/.story-forge/sessions/agent-transcripts",
     });
 
     expect(resolveStoryForgePaths({

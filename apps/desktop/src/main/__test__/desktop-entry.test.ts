@@ -48,4 +48,16 @@ describe("desktop entry configuration", () => {
       "corepack pnpm --filter @story-forge/desktop dev",
     );
   });
+
+  it("recovers durable Agent runs before exposing the desktop window", () => {
+    const mainSource = readFileSync(resolve(process.cwd(), "src/main/main.ts"), "utf8");
+    const recovery = mainSource.indexOf("await agentRunRepository.recoverInterruptedRuns()");
+    const windowCreation = mainSource.lastIndexOf("createWindow()");
+
+    expect(mainSource).toContain("const agentRunRepository = new AgentRunRepository({ rootDir })");
+    expect(mainSource).toContain("agentRunStore: agentRunRepository");
+    expect(mainSource).toContain("agentRunRepository,");
+    expect(recovery).toBeGreaterThan(-1);
+    expect(windowCreation).toBeGreaterThan(recovery);
+  });
 });
